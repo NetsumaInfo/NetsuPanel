@@ -13,6 +13,7 @@ interface GeneralGridProps {
   onSelectAll(checked: boolean): void;
   onDownload(): void;
   onCompare(candidate: ImageCandidate): void;
+  onOpen(candidate: ImageCandidate): void;
 }
 
 export function GeneralGrid({
@@ -26,6 +27,7 @@ export function GeneralGrid({
   onSelectAll,
   onDownload,
   onCompare,
+  onOpen,
 }: GeneralGridProps) {
   const selectedCount = items.filter((item) => selected[item.id]).length;
   const allSelected = selectedCount === items.length && items.length > 0;
@@ -87,23 +89,30 @@ export function GeneralGrid({
                     ? 'border-accent ring-1 ring-accent/40'
                     : 'border-border hover:border-border/80'
                 }`}
-                onClick={() => onToggle(item.id)}
-                role="checkbox"
-                aria-checked={isSelected}
+                onClick={() => onOpen(item)}
+                role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    onToggle(item.id);
+                    onOpen(item);
                   }
                 }}
               >
                 {/* Checkbox overlay */}
-                <div className={`absolute left-1.5 top-1.5 z-10 flex h-4.5 w-4.5 items-center justify-center rounded-md border transition-colors ${
+                <button
+                  type="button"
+                  className={`absolute left-1.5 top-1.5 z-10 flex h-4.5 w-4.5 items-center justify-center rounded-md border transition-colors ${
                   isSelected ? 'border-accent bg-accent text-white' : 'border-border bg-white/85'
-                }`}>
+                }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle(item.id);
+                  }}
+                  aria-label={isSelected ? 'Désélectionner' : 'Sélectionner'}
+                >
                   {isSelected && <CheckIcon size={12} />}
-                </div>
+                </button>
 
                 {/* Image */}
                 <SafeImage
