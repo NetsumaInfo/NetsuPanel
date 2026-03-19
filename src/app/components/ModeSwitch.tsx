@@ -1,4 +1,5 @@
 import type { AppMode } from '@shared/types';
+import { BookIcon, GridIcon } from './icons';
 
 interface ModeSwitchProps {
   value: AppMode;
@@ -8,7 +9,7 @@ interface ModeSwitchProps {
 export function ModeSwitch({ value, onChange }: ModeSwitchProps) {
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-xl border border-border bg-border/30 p-0.5"
+      className="grid grid-cols-2 gap-1 rounded-[14px] border border-border bg-white p-1"
       role="group"
       aria-label="Mode de téléchargement"
     >
@@ -20,7 +21,8 @@ export function ModeSwitch({ value, onChange }: ModeSwitchProps) {
         onClick={() => onChange('manga')}
         aria-pressed={value === 'manga'}
       >
-        📖 Manga
+        <BookIcon size={14} />
+        <span className="block text-left text-[11px] font-semibold">Manga</span>
       </button>
       <button
         type="button"
@@ -30,7 +32,8 @@ export function ModeSwitch({ value, onChange }: ModeSwitchProps) {
         onClick={() => onChange('general')}
         aria-pressed={value === 'general'}
       >
-        🖼 Général
+        <GridIcon size={14} />
+        <span className="block text-left text-[11px] font-semibold">Général</span>
       </button>
     </div>
   );

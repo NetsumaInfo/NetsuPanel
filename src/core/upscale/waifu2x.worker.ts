@@ -108,7 +108,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           mime: blob.type || 'image/png',
           backend,
         },
-        { transfer: [bytes] }
+        [bytes]
       );
       return;
     } catch (error) {

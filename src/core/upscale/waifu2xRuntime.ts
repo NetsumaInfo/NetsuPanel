@@ -109,6 +109,7 @@ export class Waifu2xRuntime {
 
         const worker = this.ensureWorker();
         const jobId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const requestBytes = options.bytes.slice(0);
         this.pending.set(jobId, {
           resolve: (blob) => {
             this.cache.set(options.cacheKey, blob);
@@ -122,11 +123,12 @@ export class Waifu2xRuntime {
           {
             type: 'process',
             jobId,
-            bytes: options.bytes.slice(0),
+            bytes: requestBytes,
             mime: options.mime,
             modelUrl: getWaifuModelUrl(options.mode),
             blockSizes: preferredBlockSizes(options.bytes.byteLength),
-          }
+          },
+          [requestBytes]
         );
       };
 

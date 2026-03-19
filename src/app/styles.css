@@ -7,6 +7,7 @@
   body,
   #root {
     width: 100%;
+    height: 100%;
     min-height: 100%;
   }
 
@@ -14,8 +15,8 @@
     margin: 0;
     color: #0f1117;
     background: #f5f6fa;
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.4;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -31,28 +32,28 @@
 @layer components {
   /* ─── Surface ─── */
   .surface {
-    @apply rounded-2xl border border-border bg-white shadow-sm;
+    @apply rounded-[18px] border border-border bg-white shadow-sm;
   }
 
   /* ─── Card ─── */
   .card {
-    @apply rounded-xl border border-border bg-white;
+    @apply rounded-[16px] border border-border bg-white;
   }
 
   /* ─── Mode Switch pill ─── */
   .mode-btn {
-    @apply flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150;
+    @apply flex items-center gap-1.5 rounded-xl px-2 py-1.5 text-left transition-all duration-150;
   }
   .mode-btn-active {
-    @apply bg-accent text-white shadow-sm;
+    @apply bg-ink text-white shadow-sm;
   }
   .mode-btn-inactive {
-    @apply text-ink/50 hover:text-ink/80;
+    @apply text-ink/70 hover:bg-border/50 hover:text-ink;
   }
 
   /* ─── Pill button ─── */
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-ink transition-all duration-150 hover:border-accent/60 hover:text-accent;
+    @apply inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink transition-all duration-150 hover:border-accent/60 hover:text-accent;
   }
   .btn-primary {
     @apply border-accent bg-accent text-white hover:border-accent/90 hover:bg-accent/90 hover:text-white;
@@ -61,14 +62,14 @@
     @apply border-danger/30 bg-danger/10 text-danger hover:bg-danger/20;
   }
   .btn-sm {
-    @apply px-2 py-1 text-[11px];
+    @apply px-2 py-1 text-[10px];
   }
 
   /* ─── Status badge ─── */
-  .badge-idle    { @apply rounded-md bg-border/60 px-2 py-0.5 text-[11px] text-ink/50; }
-  .badge-loading { @apply rounded-md bg-accent/10 px-2 py-0.5 text-[11px] text-accent; }
-  .badge-ready   { @apply rounded-md bg-success/10 px-2 py-0.5 text-[11px] text-success; }
-  .badge-error   { @apply rounded-md bg-danger/10 px-2 py-0.5 text-[11px] text-danger; }
+  .badge-idle    { @apply rounded-md bg-border/60 px-1.5 py-0.5 text-[10px] text-ink/50; }
+  .badge-loading { @apply rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent; }
+  .badge-ready   { @apply rounded-md bg-success/10 px-1.5 py-0.5 text-[10px] text-success; }
+  .badge-error   { @apply rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger; }
 
   /* ─── Progress bar ─── */
   .progress-track {
@@ -77,11 +78,6 @@
   }
   .progress-fill {
     @apply h-full rounded-full bg-accent transition-all duration-300;
-  }
-
-  /* ─── Accordion ─── */
-  .accordion-row {
-    @apply flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-border/20;
   }
 
   /* ─── Chapter page thumbnail ─── */
