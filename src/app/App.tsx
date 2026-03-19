@@ -1,15 +1,24 @@
+import { useState } from 'react';
 import type { ChapterItem, ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
 import { ChapterAccordion } from '@app/components/ChapterAccordion';
 import { GeneralGrid } from '@app/components/GeneralGrid';
+import { ImageViewerModal } from '@app/components/ImageViewerModal';
 import { useNetsuController } from '@app/hooks/useNetsuController';
 import { useWindowWidth } from '@app/hooks/useWindowWidth';
 
 interface AutoUiSettings {
   thumbnailSize: number;
-  chapterPreviewLimit: number;
   compactMode: boolean;
+}
+
+interface ViewerState {
+  title: string;
+  items: ImageCandidate[];
+  index: number;
+  referrer?: string;
+  sourceTabId?: number;
 }
 
 function pickPreviewCandidate(chapter: ChapterItem): ImageCandidate | undefined {
@@ -18,15 +27,15 @@ function pickPreviewCandidate(chapter: ChapterItem): ImageCandidate | undefined 
 
 function resolveAutoUiSettings(windowWidth: number): AutoUiSettings {
   if (windowWidth < 920) {
-    return { thumbnailSize: 126, chapterPreviewLimit: 6, compactMode: true };
+    return { thumbnailSize: 126, compactMode: true };
   }
   if (windowWidth < 1320) {
-    return { thumbnailSize: 138, chapterPreviewLimit: 8, compactMode: true };
+    return { thumbnailSize: 138, compactMode: true };
   }
   if (windowWidth < 1760) {
-    return { thumbnailSize: 150, chapterPreviewLimit: 10, compactMode: false };
+    return { thumbnailSize: 150, compactMode: false };
   }
-  return { thumbnailSize: 164, chapterPreviewLimit: 12, compactMode: false };
+  return { thumbnailSize: 164, compactMode: false };
 }
 
 function LoadingScreen({ message }: { message: string }) {
@@ -64,6 +73,7 @@ export function App() {
   const controller = useNetsuController();
   const { state } = controller;
   const windowWidth = useWindowWidth();
+  const [viewer, setViewer] = useState<ViewerState | null>(null);
 
   if (state.loading) {
     return <LoadingScreen message={state.loadingMessage || 'Initialisation…'} />;
@@ -73,9 +83,11 @@ export function App() {
     return <ErrorScreen error={state.error ?? 'Erreur inconnue'} />;
   }
 
+  const source = state.source;
+  const scan = state.scan;
   const currentChapter = state.chapters.find((chapter) => chapter.relation === 'current') || state.chapters[0];
   const isManga = state.mode === 'manga';
-  const generalCount = state.scan.general.items.length;
+  const generalCount = scan.general.items.length;
   const generalSelectedCount = controller.selectedGeneralImages.length;
   const chapterCount = state.chapters.length;
   const autoUi = resolveAutoUiSettings(windowWidth);
@@ -85,7 +97,6 @@ export function App() {
 
   const sidebar = (
     <AppSidebar
-      mode={state.mode}
       archiveFormat={state.archiveFormat}
       currentChapter={currentChapter}
       chapterCount={chapterCount}
@@ -94,7 +105,6 @@ export function App() {
       upscaleEnabled={state.upscaleEnabled}
       backendLabel={state.waifuBackendLabel}
       preview={state.upscalePreview}
-      onModeChange={controller.setMode}
       onArchiveFormatChange={controller.setArchiveFormat}
       onUpscaleToggle={controller.setUpscaleEnabled}
       onDownloadCurrent={() => currentChapter && void controller.downloadChapter(currentChapter)}
@@ -121,7 +131,8 @@ export function App() {
               mode={state.mode}
               chapterCount={chapterCount}
               generalCount={generalCount}
-              mangaPageCount={state.scan.manga.currentPages.items.length}
+              mangaPageCount={scan.manga.currentPages.items.length}
+              onModeChange={controller.setMode}
             />
 
             {!showDesktopSidebar && (
@@ -141,15 +152,23 @@ export function App() {
                         <ChapterAccordion
                           key={chapter.canonicalUrl}
                           chapter={chapter}
-                          sourceTabId={state.source?.id}
+                          sourceTabId={source.id}
                           compact={autoUi.compactMode}
                           thumbnailSize={chapterThumbnailSize}
-                          previewLimit={autoUi.chapterPreviewLimit}
                           onEnsurePreview={controller.ensureChapterPreview}
                           onDownload={(item) => void controller.downloadChapter(item)}
                           onCompareFirst={() => {
                             const candidate = pickPreviewCandidate(chapter);
                             if (candidate) void controller.previewUpscale(candidate, chapter.url);
+                          }}
+                          onOpenImage={(item, items, index) => {
+                            setViewer({
+                              title: item.label,
+                              items,
+                              index,
+                              referrer: item.url,
+                              sourceTabId: source.id,
+                            });
                           }}
                         />
                       ))
@@ -157,16 +176,25 @@ export function App() {
                   </>
                 ) : (
                   <GeneralGrid
-                    items={state.scan.general.items}
+                    items={scan.general.items}
                     selected={state.generalSelection}
                     thumbnailSize={autoUi.thumbnailSize}
                     compact={autoUi.compactMode}
-                    referrer={state.source.url}
-                    sourceTabId={state.source.id}
+                    referrer={source.url}
+                    sourceTabId={source.id}
                     onToggle={controller.toggleGeneralItem}
                     onSelectAll={controller.selectAllGeneral}
                     onDownload={() => void controller.downloadGeneral()}
-                    onCompare={(candidate) => void controller.previewUpscale(candidate, state.source?.url)}
+                    onCompare={(candidate) => void controller.previewUpscale(candidate, source.url)}
+                    onOpen={(candidate) => {
+                      setViewer({
+                        title: source.title || 'Images détectées',
+                        items: scan.general.items,
+                        index: scan.general.items.findIndex((item) => item.id === candidate.id),
+                        referrer: source.url,
+                        sourceTabId: source.id,
+                      });
+                    }}
                   />
                 )}
               </div>
@@ -174,6 +202,20 @@ export function App() {
           </div>
         </main>
       </div>
+
+      {viewer && (
+        <ImageViewerModal
+          title={viewer.title}
+          items={viewer.items}
+          index={viewer.index}
+          referrer={viewer.referrer}
+          sourceTabId={viewer.sourceTabId}
+          preview={state.upscalePreview}
+          onClose={() => setViewer(null)}
+          onNavigate={(nextIndex) => setViewer((current) => (current ? { ...current, index: nextIndex } : current))}
+          onRequestCompare={(candidate) => void controller.previewUpscale(candidate, viewer.referrer)}
+        />
+      )}
     </div>
   );
 }
