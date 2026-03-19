@@ -33,7 +33,13 @@ export class Waifu2xRuntime {
 
   private cache = new Map<string, Blob>();
 
+  private disabledReason: string | null = null;
+
   private ensureWorker(): Worker {
+    if (this.disabledReason) {
+      throw new Error(this.disabledReason);
+    }
+
     if (this.worker) return this.worker;
 
     this.worker = new Worker(new URL('./waifu2x.worker.ts', import.meta.url), {
@@ -41,14 +47,16 @@ export class Waifu2xRuntime {
     });
     this.worker.onerror = (event) => {
       event.preventDefault();
-      const error = new Error('waifu2x unavailable in this browser context (CSP or worker error).');
+      this.disabledReason = 'waifu2x unavailable in this browser context (CSP or worker error).';
+      const error = new Error(this.disabledReason);
       this.pending.forEach((job) => job.reject(error));
       this.pending.clear();
       this.worker?.terminate();
       this.worker = null;
     };
     this.worker.onmessageerror = () => {
-      const error = new Error('waifu2x worker message transport failed.');
+      this.disabledReason = 'waifu2x worker message transport failed.';
+      const error = new Error(this.disabledReason);
       this.pending.forEach((job) => job.reject(error));
       this.pending.clear();
       this.worker?.terminate();

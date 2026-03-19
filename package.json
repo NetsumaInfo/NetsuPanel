@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension"
+    "url": "https://github.com/NetsumaInfo/extension-telechargement-images"
   },
   "scripts": {
     "start:firefox": "webpack --config webpack.config.js",

@@ -32,7 +32,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension">
+  <a href="https://github.com/NetsumaInfo/extension-telechargement-images">
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
@@ -40,7 +40,7 @@
   <p align="center">
     🦊 <a href="https://addons.mozilla.org/en-US/firefox/addon/comics-manga-dl-by-saptarshi/"><b>Install on Firefox (AMO)</b></a>
     &nbsp;•&nbsp;
-    ⭐ <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension"><b>Star on GitHub</b></a>
+    ⭐ <a href="https://github.com/NetsumaInfo/extension-telechargement-images"><b>Star on GitHub</b></a>
   </p>
 
   <p align="center">
@@ -51,9 +51,9 @@
     <br />
     <!-- <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension">View Demo</a> -->
     <!-- · -->
-    <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/issues">Report Bug</a>
+    <a href="https://github.com/NetsumaInfo/extension-telechargement-images/issues">Report Bug</a>
     ·
-    <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/issues">Request Feature</a>
+    <a href="https://github.com/NetsumaInfo/extension-telechargement-images/issues">Request Feature</a>
   </p>
 </div>
 
@@ -114,11 +114,26 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Comics / Manga Downloader Screen Shot][product-screenshot]](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension) 
+[![Comics / Manga Downloader Screen Shot][product-screenshot]](https://github.com/NetsumaInfo/extension-telechargement-images) 
 
 A simple cross-browser extension to download comics / manga as CBZ, PDF, or ZIP from any site.
 
 **Although this extension was created to download comics / manga, it will also work on websites that render pages using `<img>` or `<canvas>` elements.**
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+## Project Lineage
+
+This project currently builds on:
+
+- Original upstream: [saptarshimondal/Comics-Manga-Downloader-Extension](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension)
+- Image extraction / hotlink handling inspiration: [sparky8512/Manga-Downloader-Plus](https://github.com/sparky8512/Manga-Downloader-Plus)
+- Upscale backend reference: [HighCWu/waifu2x-tfjs](https://github.com/HighCWu/waifu2x-tfjs)
+
+Branch workflow used during development:
+
+- `codex`: active development branch, pushed continuously during implementation
+- `Beta`: branch kept updated as the project stabilizes
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -274,7 +289,7 @@ Please read the following to setup the project locally for development.
 
 1. Clone the repo
    ```sh
-   git clone https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension.git
+   git clone https://github.com/NetsumaInfo/extension-telechargement-images.git
    ```
 
 2. Install NPM packages
@@ -378,7 +393,7 @@ Please read the following to setup the project locally for development.
 - [x] Add "Direct download" feature
 - [x] Migrate to Manifest v3
 
-See the [open issues](https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/issues) for a full list of proposed features (and known issues).
+See the [open issues](https://github.com/NetsumaInfo/extension-telechargement-images/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -418,7 +433,7 @@ Saptarshi Mondal - [@Saptarshi_77](https://twitter.com/Saptarshi_77) - mondalsap
 
 Project Link: [GitHub Repo][repo-url]
 
-Follow me on GitHub - [saptarshimondal](https://github.com/saptarshimondal)
+Project maintainer workspace: [NetsumaInfo](https://github.com/NetsumaInfo)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -437,16 +452,16 @@ Follow me on GitHub - [saptarshimondal](https://github.com/saptarshimondal)
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/saptarshimondal/Comics-Manga-Downloader-Extension?style=for-the-badge
-[contributors-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/saptarshimondal/Comics-Manga-Downloader-Extension?style=for-the-badge
-[forks-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/network/members
-[stars-shield]: https://img.shields.io/github/stars/saptarshimondal/Comics-Manga-Downloader-Extension?style=for-the-badge
-[stars-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/stargazers
-[issues-shield]: https://img.shields.io/github/issues/saptarshimondal/Comics-Manga-Downloader-Extension?style=for-the-badge
-[issues-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/issues
-[license-shield]: https://img.shields.io/github/license/saptarshimondal/Comics-Manga-Downloader-Extension?style=for-the-badge
-[license-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/NetsumaInfo/extension-telechargement-images?style=for-the-badge
+[contributors-url]: https://github.com/NetsumaInfo/extension-telechargement-images/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/NetsumaInfo/extension-telechargement-images?style=for-the-badge
+[forks-url]: https://github.com/NetsumaInfo/extension-telechargement-images/network/members
+[stars-shield]: https://img.shields.io/github/stars/NetsumaInfo/extension-telechargement-images?style=for-the-badge
+[stars-url]: https://github.com/NetsumaInfo/extension-telechargement-images/stargazers
+[issues-shield]: https://img.shields.io/github/issues/NetsumaInfo/extension-telechargement-images?style=for-the-badge
+[issues-url]: https://github.com/NetsumaInfo/extension-telechargement-images/issues
+[license-shield]: https://img.shields.io/github/license/NetsumaInfo/extension-telechargement-images?style=for-the-badge
+[license-url]: https://github.com/NetsumaInfo/extension-telechargement-images/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [product-screenshot]: images/screenshot.jpg
 [release-screenshot]: images/release.png
@@ -460,5 +475,5 @@ Follow me on GitHub - [saptarshimondal](https://github.com/saptarshimondal)
 [amo-shield]: https://img.shields.io/amo/v/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white
 <!-- [amo-users-shield]: https://img.shields.io/amo/users/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=mozilla-firefox&logoColor=white
 [amo-rating-shield]: https://img.shields.io/amo/rating/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white -->
-[repo-url]: https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension
+[repo-url]: https://github.com/NetsumaInfo/extension-telechargement-images
 <!-- [amo-downloads-shield]: https://img.shields.io/amo/dw/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white -->
