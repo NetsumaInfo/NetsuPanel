@@ -18,7 +18,7 @@ export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: Upsca
             <LightningIcon size={14} />
           </span>
           <div className="min-w-0">
-            <h2 className="text-xs font-semibold text-ink">Upscale</h2>
+            <h2 className="text-xs font-semibold text-ink">Real-CUGAN</h2>
             {(enabled || preview) && (
               <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel}</p>
             )}

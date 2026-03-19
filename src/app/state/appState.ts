@@ -44,7 +44,7 @@ export const initialAppState: NetsuAppState = {
     message: '',
     cancelled: false,
   },
-  waifuBackendLabel: 'waifu2x inactif',
+  waifuBackendLabel: 'AI upscale inactif',
 };
 
 export type AppAction =

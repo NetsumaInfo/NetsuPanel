@@ -1,6 +1,4 @@
 import type { AppMode } from '@shared/types';
-import { getWaifuModelUrl } from './waifu2xModels';
-import { preferredBlockSizes } from './waifu2xFallback';
 
 type ProgressCallback = (message: string, progress: number) => void;
 
@@ -37,12 +35,12 @@ export class Waifu2xRuntime {
 
     if (this.worker) return this.worker;
 
-    this.worker = new Worker(new URL('./waifu2x.worker.ts', import.meta.url), {
+    this.worker = new Worker(new URL('./realesrgan.worker.ts', import.meta.url), {
       type: 'module',
     });
     this.worker.onerror = (event) => {
       event.preventDefault();
-      this.disabledReason = 'waifu2x unavailable in this browser context (CSP or worker error).';
+      this.disabledReason = 'AI upscale unavailable in this browser context (CSP or worker error).';
       const error = new Error(this.disabledReason);
       this.pending.forEach((job) => job.reject(error));
       this.pending.clear();
@@ -50,7 +48,7 @@ export class Waifu2xRuntime {
       this.worker = null;
     };
     this.worker.onmessageerror = () => {
-      this.disabledReason = 'waifu2x worker message transport failed.';
+      this.disabledReason = 'AI upscale worker message transport failed.';
       const error = new Error(this.disabledReason);
       this.pending.forEach((job) => job.reject(error));
       this.pending.clear();
@@ -65,20 +63,30 @@ export class Waifu2xRuntime {
 
       if (data.type === 'progress' && pending.onProgress) {
         const ratio = Number(data.ratio || 0);
-        const stage = String(data.stage || 'predict');
-        pending.onProgress(stage === 'model' ? 'Loading waifu2x model...' : 'Upscaling image...', ratio);
+        const info = String(data.info || '');
+        pending.onProgress(info || 'Upscaling image...', ratio);
         return;
       }
 
       if (data.type === 'backend' && pending.onProgress) {
-        pending.onProgress(`waifu2x backend: ${String(data.backend)}`, 0.05);
+        pending.onProgress(`AI backend: ${String(data.backend)}`, 0.05);
+        return;
+      }
+
+      if (data.type === 'model-download' && pending.onProgress) {
+        pending.onProgress('Downloading AI model...', 0.01);
+        return;
+      }
+
+      if (data.type === 'model-cache' && pending.onProgress) {
+        pending.onProgress('Loaded AI model from cache.', 0.01);
         return;
       }
 
       if (data.type === 'attempt-error' && pending.onProgress) {
         const backend = String(data.backend || 'unknown');
         const blockSize = Number(data.blockSize || 0);
-        pending.onProgress(`waifu2x retry: ${backend} tile ${blockSize}`, 0.1);
+        pending.onProgress(`Retrying AI tile ${blockSize} on ${backend}...`, 0.1);
         return;
       }
 
@@ -127,8 +135,7 @@ export class Waifu2xRuntime {
             jobId,
             bytes: requestBytes,
             mime: options.mime,
-            modelUrl: getWaifuModelUrl(options.mode),
-            blockSizes: preferredBlockSizes(options.bytes.byteLength),
+            mode: options.mode,
           }
         );
       };

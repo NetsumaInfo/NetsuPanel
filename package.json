@@ -19,13 +19,16 @@
     "react-doctor": "npx -y react-doctor@latest . --verbose --diff"
   },
   "dependencies": {
-    "@tensorflow/tfjs": "3.4.0",
-    "@tensorflow/tfjs-backend-cpu": "3.4.0",
+    "@tensorflow/tfjs-backend-cpu": "4.22.0",
+    "@tensorflow/tfjs-backend-webgl": "4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "4.22.0",
+    "@tensorflow/tfjs-converter": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
+    "@tensorflow/tfjs-layers": "4.22.0",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "waifu2x-tfjs": "1.0.4",
     "webextension-polyfill": "^0.12.0"
   },
   "devDependencies": {
@@ -33,6 +36,7 @@
     "@babel/preset-env": "^7.28.6",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
