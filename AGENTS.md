@@ -85,6 +85,6 @@
 
 ## Workflow branches Git
 - Branche de travail par défaut: `codex`.
-- Pendant le travail sur `codex`, faire des commits réguliers à chaque étape significative.
+- Très important: pendant le travail sur `codex`, faire un commit à chaque étape significative. Ne pas accumuler de gros changements non commités.
 - Ne pas commit sur `Beta` automatiquement.
 - Quand l'utilisateur le demande explicitement, alors commit les changements dans la branche `Beta`.

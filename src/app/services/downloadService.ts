@@ -1,7 +1,9 @@
 import FileSaver from 'file-saver';
-import type { AppMode, ChapterItem, ImageCandidate } from '@shared/types';
+import type { AppMode, ArchiveFormat, ChapterItem, ImageCandidate } from '@shared/types';
 import { dataUrlToBytes } from '@shared/utils/dataUrl';
 import { buildChapterArchiveName, buildChapterFolderName, buildGlobalArchiveName, buildPageEntryName } from '@core/download/fileNaming';
+import { getArchiveFormatPreset } from '@core/download/archiveFormats';
+import { transcodeImageBytes } from '@core/download/imageTranscode';
 import { buildZipBlob, type ZipEntry } from '@core/download/zipBuilder';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 import { captureImage, fetchBinary } from './runtimeClient';
@@ -42,7 +44,7 @@ export async function resolveCandidateBytes(
     return captureImage(tabId, candidate.id);
   }
 
-  throw new Error('Unable to resolve image bytes.');
+  throw new Error('Impossible de récupérer les données de l’image.');
 }
 
 export interface DownloadDependencies {
@@ -80,6 +82,19 @@ async function maybeUpscale(
   };
 }
 
+async function maybeConvertForArchiveFormat(
+  bytes: ArrayBuffer,
+  mime: string,
+  format: ArchiveFormat
+): Promise<{ bytes: ArrayBuffer; mime: string }> {
+  const preset = getArchiveFormatPreset(format);
+  if (!preset.pageMime) {
+    return { bytes, mime };
+  }
+
+  return transcodeImageBytes(bytes, mime, preset.pageMime, preset.quality);
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -104,6 +119,7 @@ async function mapWithConcurrency<T, R>(
 
 async function buildEntries(
   images: ImageCandidate[],
+  format: ArchiveFormat,
   dependencies: DownloadDependencies,
   context: {
     referrer?: string;
@@ -117,12 +133,13 @@ async function buildEntries(
 
   return mapWithConcurrency(images, concurrency, async (image, index) => {
     const original = await resolveCandidateBytes(image, dependencies.tabId, context.referrer);
-    const processed = await maybeUpscale(
+    const upscaled = await maybeUpscale(
       original.bytes,
       original.mime,
       context.buildCacheKey(index, image),
       dependencies
     );
+    const processed = await maybeConvertForArchiveFormat(upscaled.bytes, upscaled.mime, format);
     completed += 1;
     dependencies.onProgress(`${context.progressLabel} ${completed}/${images.length}`, completed / images.length);
     return {
@@ -135,56 +152,60 @@ async function buildEntries(
 export async function downloadGeneralSelection(
   title: string,
   images: ImageCandidate[],
+  format: ArchiveFormat,
   dependencies: DownloadDependencies
 ): Promise<void> {
-  const entries = await buildEntries(images, dependencies, {
+  const preset = getArchiveFormatPreset(format);
+  const entries = await buildEntries(images, format, dependencies, {
     referrer: dependencies.sourceReferrer,
-    progressLabel: 'Preparing image',
+    progressLabel: 'Préparation image',
     buildPath: (index, image, mime) => buildPageEntryName(index, images.length, mimeToExtension(mime, image.extensionHint)),
     buildCacheKey: (_index, image) => `${image.id}-${dependencies.mode}`,
   });
 
-  const archive = await buildZipBlob(entries, 'application/zip');
-  FileSaver.saveAs(archive, buildGlobalArchiveName(title, 'zip'));
+  const archive = await buildZipBlob(entries, preset.archiveMime);
+  FileSaver.saveAs(archive, buildGlobalArchiveName(title, preset.extension));
 }
 
 export async function downloadSingleChapter(
   seriesTitle: string,
   chapter: ChapterItem,
   images: ImageCandidate[],
-  format: 'cbz' | 'zip',
+  format: ArchiveFormat,
   dependencies: DownloadDependencies
 ): Promise<void> {
-  const entries = await buildEntries(images, dependencies, {
+  const preset = getArchiveFormatPreset(format);
+  const entries = await buildEntries(images, format, dependencies, {
     referrer: chapter.url,
-    progressLabel: `Preparing ${chapter.label}:`,
+    progressLabel: `${chapter.label}:`,
     buildPath: (index, image, mime) => buildPageEntryName(index, images.length, mimeToExtension(mime, image.extensionHint)),
     buildCacheKey: (_index, image) => `${chapter.canonicalUrl}-${image.id}-${dependencies.mode}`,
   });
 
-  const mime = format === 'cbz' ? 'application/vnd.comicbook+zip' : 'application/zip';
-  const archive = await buildZipBlob(entries, mime);
-  FileSaver.saveAs(archive, buildChapterArchiveName(seriesTitle, chapter.label, format));
+  const archive = await buildZipBlob(entries, preset.archiveMime);
+  FileSaver.saveAs(archive, buildChapterArchiveName(seriesTitle, chapter.label, preset.extension));
 }
 
 export async function downloadAllChapters(
   seriesTitle: string,
   chapters: Array<{ chapter: ChapterItem; images: ImageCandidate[] }>,
+  format: ArchiveFormat,
   dependencies: DownloadDependencies
 ): Promise<void> {
+  const preset = getArchiveFormatPreset(format);
   const entries: ZipEntry[] = [];
 
   for (const { chapter, images } of chapters) {
     const folder = buildChapterFolderName(chapter.label);
-    const chapterEntries = await buildEntries(images, dependencies, {
+    const chapterEntries = await buildEntries(images, format, dependencies, {
       referrer: chapter.url,
-      progressLabel: `Building ${chapter.label}:`,
+      progressLabel: `${chapter.label}:`,
       buildPath: (index, image, mime) => `${folder}/${buildPageEntryName(index, images.length, mimeToExtension(mime, image.extensionHint))}`,
       buildCacheKey: (_index, image) => `${chapter.canonicalUrl}-${image.id}-${dependencies.mode}`,
     });
     entries.push(...chapterEntries);
   }
 
-  const archive = await buildZipBlob(entries, 'application/zip');
-  FileSaver.saveAs(archive, buildGlobalArchiveName(seriesTitle, 'zip'));
+  const archive = await buildZipBlob(entries, preset.archiveMime);
+  FileSaver.saveAs(archive, buildGlobalArchiveName(seriesTitle, preset.extension));
 }

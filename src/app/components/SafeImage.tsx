@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { captureImage, fetchBinary } from '@app/services/runtimeClient';
 
 interface SafeImageProps {
@@ -10,8 +10,74 @@ interface SafeImageProps {
   captureCandidateId?: string;
 }
 
+interface SafeImageState {
+  sourceKey: string;
+  resolvedSrc: string;
+  failed: boolean;
+  loadingFallback: boolean;
+}
+
+type SafeImageAction =
+  | { type: 'sync-source'; sourceKey: string; resolvedSrc: string }
+  | { type: 'loading-start'; sourceKey: string }
+  | { type: 'loading-stop'; sourceKey: string }
+  | { type: 'resolved'; sourceKey: string; resolvedSrc: string }
+  | { type: 'failed'; sourceKey: string };
+
 const FALLBACK_CACHE_LIMIT = 180;
 const objectUrlCache = new Map<string, string>();
+const initialSafeImageState: SafeImageState = {
+  sourceKey: '',
+  resolvedSrc: '',
+  failed: false,
+  loadingFallback: false,
+};
+
+function safeImageReducer(state: SafeImageState, action: SafeImageAction): SafeImageState {
+  switch (action.type) {
+    case 'sync-source':
+      return {
+        sourceKey: action.sourceKey,
+        resolvedSrc: action.resolvedSrc,
+        failed: false,
+        loadingFallback: false,
+      };
+
+    case 'loading-start':
+      if (state.sourceKey !== action.sourceKey) return state;
+      return {
+        ...state,
+        loadingFallback: true,
+      };
+
+    case 'loading-stop':
+      if (state.sourceKey !== action.sourceKey) return state;
+      return {
+        ...state,
+        loadingFallback: false,
+      };
+
+    case 'resolved':
+      if (state.sourceKey !== action.sourceKey) return state;
+      return {
+        ...state,
+        resolvedSrc: action.resolvedSrc,
+        failed: false,
+        loadingFallback: false,
+      };
+
+    case 'failed':
+      if (state.sourceKey !== action.sourceKey) return state;
+      return {
+        ...state,
+        failed: true,
+        loadingFallback: false,
+      };
+
+    default:
+      return state;
+  }
+}
 
 function buildCacheKey(src: string, referrer?: string): string {
   return `${src}::${referrer ?? ''}`;
@@ -19,6 +85,15 @@ function buildCacheKey(src: string, referrer?: string): string {
 
 function buildCaptureKey(tabId?: number, candidateId?: string): string {
   return `capture:${tabId ?? 'none'}:${candidateId ?? 'none'}`;
+}
+
+function buildSourceKey(
+  src: string,
+  referrer?: string,
+  captureTabId?: number,
+  captureCandidateId?: string
+): string {
+  return `${buildCacheKey(src, referrer)}::${buildCaptureKey(captureTabId, captureCandidateId)}`;
 }
 
 function isNetworkUrl(src: string): boolean {
@@ -61,12 +136,31 @@ export function SafeImage({
   captureTabId,
   captureCandidateId,
 }: SafeImageProps) {
-  const [resolvedSrc, setResolvedSrc] = useState(src);
-  const [failed, setFailed] = useState(false);
-  const [loadingFallback, setLoadingFallback] = useState(false);
+  const [state, dispatchState] = useReducer(safeImageReducer, initialSafeImageState);
   const requestTokenRef = useRef(0);
   const captureAttemptedRef = useRef(false);
   const networkAttemptedRef = useRef(false);
+  const sourceKey = buildSourceKey(src, referrer, captureTabId, captureCandidateId);
+
+  useEffect(() => {
+    requestTokenRef.current += 1;
+    captureAttemptedRef.current = false;
+    networkAttemptedRef.current = false;
+
+    const captureKey = buildCaptureKey(captureTabId, captureCandidateId);
+    const cachedCapture = getCachedObjectUrl(captureKey);
+    if (cachedCapture) {
+      dispatchState({ type: 'sync-source', sourceKey, resolvedSrc: cachedCapture });
+      return;
+    }
+
+    const networkKey = buildCacheKey(src, referrer);
+    dispatchState({
+      type: 'sync-source',
+      sourceKey,
+      resolvedSrc: getCachedObjectUrl(networkKey) || src,
+    });
+  }, [captureCandidateId, captureTabId, referrer, sourceKey, src]);
 
   const fetchFromCapture = useCallback(async (): Promise<boolean> => {
     if (!captureTabId || !captureCandidateId) return false;
@@ -74,12 +168,12 @@ export function SafeImage({
     const cacheKey = buildCaptureKey(captureTabId, captureCandidateId);
     const cached = getCachedObjectUrl(cacheKey);
     if (cached) {
-      setResolvedSrc(cached);
+      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: cached });
       return true;
     }
 
     const token = requestTokenRef.current;
-    setLoadingFallback(true);
+    dispatchState({ type: 'loading-start', sourceKey });
     captureAttemptedRef.current = true;
 
     try {
@@ -88,17 +182,16 @@ export function SafeImage({
       setCachedObjectUrl(cacheKey, objectUrl);
 
       if (requestTokenRef.current !== token) return false;
-      setResolvedSrc(objectUrl);
-      setFailed(false);
+      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: objectUrl });
       return true;
     } catch {
       return false;
     } finally {
       if (requestTokenRef.current === token) {
-        setLoadingFallback(false);
+        dispatchState({ type: 'loading-stop', sourceKey });
       }
     }
-  }, [captureCandidateId, captureTabId]);
+  }, [captureCandidateId, captureTabId, sourceKey]);
 
   const fetchFromNetwork = useCallback(async (): Promise<boolean> => {
     if (!isNetworkUrl(src)) {
@@ -108,12 +201,12 @@ export function SafeImage({
     const cacheKey = buildCacheKey(src, referrer);
     const cached = getCachedObjectUrl(cacheKey);
     if (cached) {
-      setResolvedSrc(cached);
+      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: cached });
       return true;
     }
 
     const token = requestTokenRef.current;
-    setLoadingFallback(true);
+    dispatchState({ type: 'loading-start', sourceKey });
     networkAttemptedRef.current = true;
 
     try {
@@ -122,35 +215,20 @@ export function SafeImage({
       setCachedObjectUrl(cacheKey, objectUrl);
 
       if (requestTokenRef.current !== token) return false;
-      setResolvedSrc(objectUrl);
-      setFailed(false);
+      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: objectUrl });
       return true;
     } catch {
       return false;
     } finally {
       if (requestTokenRef.current === token) {
-        setLoadingFallback(false);
+        dispatchState({ type: 'loading-stop', sourceKey });
       }
     }
-  }, [referrer, src]);
+  }, [captureTabId, referrer, sourceKey, src]);
 
-  useEffect(() => {
-    requestTokenRef.current += 1;
-    setLoadingFallback(false);
-    setFailed(false);
-    captureAttemptedRef.current = false;
-    networkAttemptedRef.current = false;
-
-    const captureKey = buildCaptureKey(captureTabId, captureCandidateId);
-    const cachedCapture = getCachedObjectUrl(captureKey);
-    if (cachedCapture) {
-      setResolvedSrc(cachedCapture);
-      return;
-    }
-
-    const networkKey = buildCacheKey(src, referrer);
-    setResolvedSrc(getCachedObjectUrl(networkKey) || src);
-  }, [captureCandidateId, captureTabId, referrer, src]);
+  const loadingFallback = state.sourceKey === sourceKey ? state.loadingFallback : false;
+  const failed = state.sourceKey === sourceKey ? state.failed : false;
+  const resolvedSrc = state.sourceKey === sourceKey && state.resolvedSrc ? state.resolvedSrc : src;
 
   const handleError = useCallback(() => {
     if (loadingFallback) return;
@@ -166,11 +244,11 @@ export function SafeImage({
         if (loaded) return;
       }
 
-      setFailed(true);
+      dispatchState({ type: 'failed', sourceKey });
     };
 
     void tryFallbacks();
-  }, [captureCandidateId, captureTabId, fetchFromCapture, fetchFromNetwork, loadingFallback]);
+  }, [captureCandidateId, captureTabId, fetchFromCapture, fetchFromNetwork, loadingFallback, sourceKey]);
 
   const title = captureCandidateId ? `${src}\n[candidate=${captureCandidateId}]` : src;
 

@@ -1,5 +1,6 @@
 import type {
   AppMode,
+  ArchiveFormat,
   ChapterItem,
   DownloadJobState,
   PageScanResult,
@@ -14,7 +15,7 @@ export interface NetsuAppState {
   chapters: ChapterItem[];
   generalSelection: Record<string, boolean>;
   mode: AppMode;
-  archiveFormat: 'cbz' | 'zip';
+  archiveFormat: ArchiveFormat;
   loading: boolean;
   loadingMessage: string;
   error: string | null;
@@ -33,7 +34,7 @@ export const initialAppState: NetsuAppState = {
   mode: 'manga',
   archiveFormat: 'cbz',
   loading: true,
-  loadingMessage: 'Bootstrapping current tab...',
+  loadingMessage: 'Initialisation de l’onglet source…',
   error: null,
   upscaleEnabled: false,
   upscalePreview: null,
@@ -43,16 +44,16 @@ export const initialAppState: NetsuAppState = {
     message: '',
     cancelled: false,
   },
-  waifuBackendLabel: 'waifu2x idle',
+  waifuBackendLabel: 'waifu2x inactif',
 };
 
-type AppAction =
+export type AppAction =
   | { type: 'bootstrap-start'; tabId: number }
   | { type: 'bootstrap-success'; source: SourceTabContext; scan: PageScanResult; chapters: ChapterItem[] }
   | { type: 'bootstrap-error'; error: string }
   | { type: 'set-loading-message'; message: string }
   | { type: 'set-mode'; mode: AppMode }
-  | { type: 'set-archive-format'; format: 'cbz' | 'zip' }
+  | { type: 'set-archive-format'; format: ArchiveFormat }
   | { type: 'toggle-general-item'; imageId: string }
   | { type: 'set-general-selection'; selection: Record<string, boolean> }
   | { type: 'set-chapters'; chapters: ChapterItem[] }
