@@ -46,7 +46,6 @@ function createConfig(targetBrowser) {
         '@content': path.join(SRC_DIR, 'content'),
         '@core': path.join(SRC_DIR, 'core'),
         '@shared': path.join(SRC_DIR, 'shared'),
-        '@tensorflow/tfjs$': path.join(SRC_DIR, 'core', 'upscale', 'tfjsCompat.ts'),
       },
     },
     module: {
