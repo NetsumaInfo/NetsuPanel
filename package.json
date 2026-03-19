@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NetsumaInfo/extension-telechargement-images"
+    "url": "https://github.com/NetsumaInfo/NetsuPanel"
   },
   "scripts": {
     "start:firefox": "webpack --config webpack.config.js",
