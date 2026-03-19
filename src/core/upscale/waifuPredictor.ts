@@ -115,11 +115,16 @@ export class WaifuPredictor {
     if (inputChannel === 1) {
       imageWrapper.mode = 'YCbCr';
       const nextTensor = imageWrapper.tensor;
-      workTensor = nextTensor.expandDims(0);
+      const luminanceTensor = nextTensor.slice(
+        [0, 0, 0],
+        [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]
+      ) as Tensor3D;
+      workTensor = luminanceTensor.expandDims(0) as Tensor4D;
+      luminanceTensor.dispose();
       nextTensor.dispose();
     } else {
       const nextTensor = imageWrapper.tensor;
-      workTensor = nextTensor.expandDims(0);
+      workTensor = nextTensor.expandDims(0) as Tensor4D;
       nextTensor.dispose();
     }
 
