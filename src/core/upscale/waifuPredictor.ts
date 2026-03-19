@@ -1,6 +1,6 @@
 import '@tensorflow/tfjs-backend-webgl';
 import type { Tensor3D, Tensor4D } from '@tensorflow/tfjs-core';
-import { concat, image, layers, mirrorPad, model, tensor, tidy } from './tfjsCompat';
+import { concat, getBackend, image, layers, mirrorPad, model, tensor, tidy } from './tfjsCompat';
 import { WaifuImage } from './waifuImage';
 
 interface ParamsObject {
@@ -15,6 +15,14 @@ interface ParamsObject {
 if (self.OffscreenCanvas !== undefined) {
   const canvas = new OffscreenCanvas(320, 200);
   canvas.getContext('webgl2') || canvas.getContext('webgl');
+}
+
+function predictionBatchSize(channelCount: number): number {
+  const backend = getBackend();
+  if (backend === 'webgl') {
+    return channelCount === 1 ? 12 : 8;
+  }
+  return channelCount === 1 ? 6 : 4;
 }
 
 export class WaifuPredictor {
@@ -161,33 +169,51 @@ export class WaifuPredictor {
     ) as Tensor4D;
     tensorBeforePad.dispose();
 
-    const rowTensors: Tensor4D[] = [];
+    const batchedTiles = predictionBatchSize(inputChannel);
+    const rowTileGroups = Array.from({ length: hNBlock }, () => [] as Tensor4D[]);
+    const tileQueue: Array<{ rowIndex: number; tensor: Tensor4D }> = [];
+
     for (let rowIndex = 0; rowIndex < hNBlock; rowIndex += 1) {
-      const columnTensors: Tensor4D[] = [];
       for (let columnIndex = 0; columnIndex < wNBlock; columnIndex += 1) {
-        const slice = workTensor.slice(
-          [0, rowIndex * this.blockSize, columnIndex * this.blockSize, 0],
-          [1, this.blockSizeEx, this.blockSizeEx, workTensor.shape[3]!]
-        ) as Tensor4D;
-
-        const prediction = this.modelInstance.predict(slice) as typeof slice;
-        slice.dispose();
-
-        columnTensors.push(
-          prediction.slice([0, exValue, exValue, 0], [1, this.blockSize, this.blockSize, prediction.shape[3]!]) as Tensor4D
-        );
-        prediction.dispose();
-
-        this.modelPredictProgress += stepProgress;
-        this.modelPredictCallback(this.modelPredictProgress);
+        tileQueue.push({
+          rowIndex,
+          tensor: workTensor.slice(
+            [0, rowIndex * this.blockSize, columnIndex * this.blockSize, 0],
+            [1, this.blockSizeEx, this.blockSizeEx, workTensor.shape[3]!]
+          ) as Tensor4D,
+        });
       }
-
-      const rowTensor = concat(columnTensors, 2);
-      columnTensors.forEach((item) => item.dispose());
-      rowTensors.push(rowTensor);
     }
 
     workTensor.dispose();
+
+    for (let offset = 0; offset < tileQueue.length; offset += batchedTiles) {
+      const batchItems = tileQueue.slice(offset, offset + batchedTiles);
+      const batchTensor = concat(batchItems.map((item) => item.tensor), 0) as Tensor4D;
+      batchItems.forEach((item) => item.tensor.dispose());
+
+      const batchPrediction = this.modelInstance.predict(batchTensor) as Tensor4D;
+      batchTensor.dispose();
+
+      batchItems.forEach((item, localIndex) => {
+        rowTileGroups[item.rowIndex]!.push(
+          batchPrediction.slice(
+            [localIndex, exValue, exValue, 0],
+            [1, this.blockSize, this.blockSize, batchPrediction.shape[3]!]
+          ) as Tensor4D
+        );
+        this.modelPredictProgress += stepProgress;
+        this.modelPredictCallback(this.modelPredictProgress);
+      });
+
+      batchPrediction.dispose();
+    }
+
+    const rowTensors: Tensor4D[] = rowTileGroups.map((tiles) => {
+      const rowTensor = concat(tiles, 2) as Tensor4D;
+      tiles.forEach((item) => item.dispose());
+      return rowTensor;
+    });
 
     const mergedTensor = concat(rowTensors, 1) as Tensor4D;
     rowTensors.forEach((item) => item.dispose());
