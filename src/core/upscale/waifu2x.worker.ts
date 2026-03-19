@@ -3,8 +3,11 @@
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-cpu';
 import { Predictor } from 'waifu2x-tfjs';
-
-type BackendPreference = 'webgl' | 'cpu';
+import {
+  buildUpscaleFailureMessage,
+  isRetryableUpscaleError,
+  type UpscaleBackend,
+} from './waifu2xFallback';
 
 interface ProcessRequest {
   type: 'process';
@@ -23,24 +26,39 @@ type WorkerRequest = ProcessRequest | ResetRequest;
 
 const predictors = new Map<string, Predictor>();
 
-async function ensureBackend(): Promise<BackendPreference> {
+function predictorKey(modelUrl: string, blockSize: number, backend: UpscaleBackend): string {
+  return `${backend}::${modelUrl}::${blockSize}`;
+}
+
+function disposePredictor(modelUrl: string, blockSize: number, backend: UpscaleBackend): void {
+  const key = predictorKey(modelUrl, blockSize, backend);
+  const predictor = predictors.get(key);
+  if (!predictor) return;
+  predictor.destroy();
+  predictors.delete(key);
+}
+
+function resetPredictors(): void {
+  predictors.forEach((predictor) => predictor.destroy());
+  predictors.clear();
+}
+
+async function activateBackend(backend: UpscaleBackend): Promise<UpscaleBackend> {
+  await tf.setBackend(backend);
+  await tf.ready();
+  return backend;
+}
+
+async function getInitialBackend(): Promise<UpscaleBackend> {
   try {
-    await tf.setBackend('webgl');
-    await tf.ready();
-    return 'webgl';
+    return await activateBackend('webgl');
   } catch {
-    await tf.setBackend('cpu');
-    await tf.ready();
-    return 'cpu';
+    return activateBackend('cpu');
   }
 }
 
-function predictorKey(modelUrl: string, blockSize: number): string {
-  return `${modelUrl}::${blockSize}`;
-}
-
-function getPredictor(modelUrl: string, blockSize: number, jobId: string): Predictor {
-  const key = predictorKey(modelUrl, blockSize);
+function getPredictor(modelUrl: string, blockSize: number, jobId: string, backend: UpscaleBackend): Predictor {
+  const key = predictorKey(modelUrl, blockSize, backend);
   const existing = predictors.get(key);
   if (existing) return existing;
 
@@ -71,33 +89,28 @@ async function imageBitmapToBlob(bitmap: ImageBitmap): Promise<Blob> {
   if (!context) {
     throw new Error('OffscreenCanvas 2D context unavailable');
   }
-  context.drawImage(bitmap, 0, 0);
-  return canvas.convertToBlob({ type: 'image/png' });
+
+  try {
+    context.drawImage(bitmap, 0, 0);
+    return canvas.convertToBlob({ type: 'image/png' });
+  } finally {
+    if (typeof bitmap.close === 'function') {
+      bitmap.close();
+    }
+  }
 }
 
-self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const data = event.data;
-
-  if (data.type === 'reset') {
-    predictors.forEach((predictor) => predictor.destroy());
-    predictors.clear();
-    return;
-  }
-
-  const backend = await ensureBackend();
-  self.postMessage({
-    type: 'backend',
-    jobId: data.jobId,
-    backend,
-  });
-
-  const sourceBlob = new Blob([data.bytes], { type: data.mime });
-  const bitmap = await createImageBitmap(sourceBlob);
+async function runAttempt(
+  data: ProcessRequest,
+  sourceBitmap: ImageBitmap,
+  backend: UpscaleBackend
+): Promise<{ success: true } | { success: false; lastError?: string; shouldFallbackToCpu: boolean }> {
+  let lastError: string | undefined;
 
   for (const blockSize of data.blockSizes) {
     try {
-      const predictor = getPredictor(data.modelUrl, blockSize, data.jobId);
-      const output = await predictor.predict(bitmap, false);
+      const predictor = getPredictor(data.modelUrl, blockSize, data.jobId, backend);
+      const output = await predictor.predict(sourceBitmap, false);
       const blob = await imageBitmapToBlob(output);
       const bytes = await blob.arrayBuffer();
       self.postMessage(
@@ -110,24 +123,95 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         },
         [bytes]
       );
-      return;
+      return { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown waifu2x error';
-      const retryable = /oom|memory|allocate/i.test(message);
+      lastError = `${backend}/${blockSize}: ${message}`;
+      const retryable = isRetryableUpscaleError(message);
+
       self.postMessage({
         type: 'attempt-error',
         jobId: data.jobId,
+        backend,
         blockSize,
         error: message,
         retryable,
       });
-      if (!retryable) break;
+
+      disposePredictor(data.modelUrl, blockSize, backend);
+
+      if (!retryable) {
+        return {
+          success: false,
+          lastError,
+          shouldFallbackToCpu: backend === 'webgl',
+        };
+      }
+    }
+  }
+
+  return {
+    success: false,
+    lastError,
+    shouldFallbackToCpu: backend === 'webgl',
+  };
+}
+
+self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
+  const data = event.data;
+
+  if (data.type === 'reset') {
+    resetPredictors();
+    return;
+  }
+
+  let sourceBitmap: ImageBitmap | null = null;
+  let lastError: string | undefined;
+
+  try {
+    let backend = await getInitialBackend();
+    self.postMessage({
+      type: 'backend',
+      jobId: data.jobId,
+      backend,
+    });
+
+    const sourceBlob = new Blob([data.bytes], { type: data.mime });
+    sourceBitmap = await createImageBitmap(sourceBlob);
+
+    const firstPass = await runAttempt(data, sourceBitmap, backend);
+    if (firstPass.success) {
+      return;
+    }
+
+    lastError = firstPass.lastError;
+    if (firstPass.shouldFallbackToCpu && backend !== 'cpu') {
+      resetPredictors();
+      backend = await activateBackend('cpu');
+      self.postMessage({
+        type: 'backend',
+        jobId: data.jobId,
+        backend,
+      });
+
+      const cpuPass = await runAttempt(data, sourceBitmap, backend);
+      if (cpuPass.success) {
+        return;
+      }
+
+      lastError = cpuPass.lastError ?? lastError;
+    }
+  } catch (error) {
+    lastError = error instanceof Error ? error.message : 'Unknown waifu2x error';
+  } finally {
+    if (sourceBitmap && typeof sourceBitmap.close === 'function') {
+      sourceBitmap.close();
     }
   }
 
   self.postMessage({
     type: 'error',
     jobId: data.jobId,
-    error: 'Upscale failed after exhausting available tile sizes.',
+    error: buildUpscaleFailureMessage(lastError),
   });
 };
