@@ -1,5 +1,6 @@
 import type { ImageCandidate } from '@shared/types';
 import { SafeImage } from './SafeImage';
+import { CheckIcon, DownloadIcon, ImageIcon, LightningIcon } from './icons';
 
 interface GeneralGridProps {
   items: ImageCandidate[];
@@ -31,36 +32,44 @@ export function GeneralGrid({
 
   return (
     <div className="flex h-full flex-col">
-      {/* ─── Toolbar ─── */}
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+      <div className="mb-2.5 rounded-[18px] border border-border bg-white px-3 py-2.5 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 text-xs font-semibold text-ink">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-border/50 text-ink">
+              <ImageIcon size={14} />
+            </span>
+            {selectedCount}/{items.length}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[11px] text-muted">
+              <span className={`flex h-4 w-4 items-center justify-center rounded border ${allSelected ? 'border-accent bg-accent text-white' : 'border-border bg-white'}`}>
+                {allSelected && <CheckIcon size={12} />}
+              </span>
             <input
               type="checkbox"
               checked={allSelected}
               onChange={(e) => onSelectAll(e.target.checked)}
-              className="h-3.5 w-3.5 accent-accent"
+              className="sr-only"
             />
-            Tout sélectionner
-          </label>
-          <span className="text-2xs text-muted">
-            {selectedCount}/{items.length}
-          </span>
+              Tout
+            </label>
+            <button
+              type="button"
+              id="general-download-btn"
+              className="btn btn-primary"
+              disabled={selectedCount === 0}
+              onClick={onDownload}
+            >
+              <DownloadIcon size={16} />
+              Export {selectedCount}
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          id="general-download-btn"
-          className="btn btn-primary btn-sm"
-          disabled={selectedCount === 0}
-          onClick={onDownload}
-        >
-          ↓ Télécharger ({selectedCount})
-        </button>
       </div>
 
-      {/* ─── Grid ─── */}
       {items.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border py-10 text-xs text-muted">
+        <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border py-8 text-xs text-muted">
           Aucune image détectée sur cette page.
         </div>
       ) : (
@@ -90,10 +99,10 @@ export function GeneralGrid({
                 }}
               >
                 {/* Checkbox overlay */}
-                <div className={`absolute left-1.5 top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                  isSelected ? 'border-accent bg-accent' : 'border-border bg-white/80'
+                <div className={`absolute left-1.5 top-1.5 z-10 flex h-4.5 w-4.5 items-center justify-center rounded-md border transition-colors ${
+                  isSelected ? 'border-accent bg-accent text-white' : 'border-border bg-white/85'
                 }`}>
-                  {isSelected && <span className="text-2xs text-white leading-none">✓</span>}
+                  {isSelected && <CheckIcon size={12} />}
                 </div>
 
                 {/* Image */}
@@ -107,7 +116,7 @@ export function GeneralGrid({
                 />
 
                 {/* Footer */}
-                <div className="px-1.5 py-1 border-t border-border/50 bg-white">
+                <div className="border-t border-border/50 bg-white px-2 py-1.5">
                   <p className="truncate text-2xs text-muted" title={item.filenameHint}>
                     {item.width > 0 ? `${item.width}×${item.height}` : item.filenameHint}
                   </p>
@@ -116,11 +125,11 @@ export function GeneralGrid({
                 {/* Upscale compare button */}
                 <button
                   type="button"
-                  className="absolute right-1 top-1 z-10 rounded bg-black/50 px-1 py-0.5 text-2xs text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/70"
+                  className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/75"
                   title="Aperçu upscale"
                   onClick={(e) => { e.stopPropagation(); onCompare(item); }}
                 >
-                  ⚡
+                  <LightningIcon size={12} />
                 </button>
               </article>
             );

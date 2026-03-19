@@ -1,4 +1,5 @@
 export type AppMode = 'manga' | 'general';
+export type ArchiveFormat = 'cbz' | 'cbz-jpg' | 'zip' | 'zip-jpg' | 'zip-png' | 'zip-webp';
 
 export type CaptureStrategy = 'network' | 'content';
 export type DetectionOrigin = 'live-dom' | 'static-html';

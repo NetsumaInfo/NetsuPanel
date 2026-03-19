@@ -1,5 +1,6 @@
 import type { UpscalePreviewState } from '@shared/types';
 import { SafeImage } from './SafeImage';
+import { LightningIcon } from './icons';
 
 interface UpscalePanelProps {
   enabled: boolean;
@@ -10,37 +11,36 @@ interface UpscalePanelProps {
 
 export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: UpscalePanelProps) {
   return (
-    <section className="surface p-3 space-y-3">
-      {/* ─── Header with toggle ─── */}
+    <section className="surface space-y-2 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-ink">Upscale waifu2x</h2>
-          <p className="mt-0.5 text-2xs text-muted truncate" title={backendLabel}>{backendLabel}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-border/50 text-ink">
+            <LightningIcon size={14} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-xs font-semibold text-ink">Upscale</h2>
+            {(enabled || preview) && (
+              <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel}</p>
+            )}
+          </div>
         </div>
         <label
-          className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-white px-2.5 py-1.5 text-xs"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-white px-2 py-1.5 text-[11px] font-medium"
           title="Activer l'upscale avant téléchargement"
         >
           <input
             type="checkbox"
             id="upscale-toggle"
-            className="h-3.5 w-3.5 accent-accent"
+            className="h-3 w-3 accent-accent"
             checked={enabled}
             onChange={(e) => onToggle(e.target.checked)}
           />
-          {enabled ? 'Activé' : 'Désactivé'}
+          {enabled ? 'On' : 'Off'}
         </label>
       </div>
 
-      {enabled && (
-        <p className="rounded-lg bg-accentSoft px-2.5 py-1.5 text-2xs text-accent">
-          Les images seront upscalées ×2 avant téléchargement. Peut rallonger le temps d'export.
-        </p>
-      )}
-
-      {/* ─── Before/After comparison ─── */}
       {preview ? (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <div className="compare-panel">
             <p className="bg-border/20 px-2 py-1 text-2xs font-semibold uppercase tracking-wide text-muted">
               Avant
@@ -49,7 +49,7 @@ export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: Upsca
               src={preview.originalUrl}
               alt="Original"
               referrer={preview.originalReferrer}
-              className="h-32 w-full object-contain bg-border/20"
+              className="h-24 w-full object-contain bg-border/20"
             />
           </div>
           <div className="compare-panel">
@@ -57,28 +57,24 @@ export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: Upsca
               Après
             </p>
             {preview.loading ? (
-              <div className="flex h-32 items-center justify-center bg-border/10 text-2xs text-muted gap-1.5">
+              <div className="flex h-24 items-center justify-center gap-1.5 bg-border/10 text-2xs text-muted">
                 <span className="h-3 w-3 animate-spin-slow rounded-full border-2 border-accent border-t-transparent" />
                 Upscaling…
               </div>
             ) : preview.error ? (
-              <div className="flex h-32 items-center justify-center bg-danger/5 px-2 text-center text-2xs text-danger">
+              <div className="flex h-24 items-center justify-center bg-danger/5 px-2 text-center text-2xs text-danger">
                 {preview.error}
               </div>
             ) : preview.upscaledUrl ? (
               <SafeImage
                 src={preview.upscaledUrl}
                 alt="Upscaled"
-                className="h-32 w-full object-contain bg-border/20"
+                className="h-24 w-full object-contain bg-border/20"
               />
             ) : null}
           </div>
         </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-border py-4 text-center text-2xs text-muted">
-          Clique sur "⚡ Upscale aperçu" depuis un chapitre pour comparer avant/après.
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }
