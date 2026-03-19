@@ -11,17 +11,19 @@
     "128": "./icon/128.png"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_title": "Open Netsu Panel",
     "default_icon": {
-      "16": "./popup/icon/16.png",
-      "32": "./popup/icon/32.png",
-      "64": "./popup/icon/64.png"
+      "16": "./icon/16.png",
+      "48": "./icon/48.png",
+      "96": "./icon/96.png"
     }
   },
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "<all_urls>"

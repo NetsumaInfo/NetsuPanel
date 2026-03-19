@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: #0f1117;
+    background: #f5f6fa;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * { box-sizing: border-box; }
+
+  button, select, input { font: inherit; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d0d5e0; border-radius: 2px; }
+}
+
+@layer components {
+  /* ─── Surface ─── */
+  .surface {
+    @apply rounded-2xl border border-border bg-white shadow-sm;
+  }
+
+  /* ─── Card ─── */
+  .card {
+    @apply rounded-xl border border-border bg-white;
+  }
+
+  /* ─── Mode Switch pill ─── */
+  .mode-btn {
+    @apply flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150;
+  }
+  .mode-btn-active {
+    @apply bg-accent text-white shadow-sm;
+  }
+  .mode-btn-inactive {
+    @apply text-ink/50 hover:text-ink/80;
+  }
+
+  /* ─── Pill button ─── */
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-ink transition-all duration-150 hover:border-accent/60 hover:text-accent;
+  }
+  .btn-primary {
+    @apply border-accent bg-accent text-white hover:border-accent/90 hover:bg-accent/90 hover:text-white;
+  }
+  .btn-danger {
+    @apply border-danger/30 bg-danger/10 text-danger hover:bg-danger/20;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-[11px];
+  }
+
+  /* ─── Status badge ─── */
+  .badge-idle    { @apply rounded-md bg-border/60 px-2 py-0.5 text-[11px] text-ink/50; }
+  .badge-loading { @apply rounded-md bg-accent/10 px-2 py-0.5 text-[11px] text-accent; }
+  .badge-ready   { @apply rounded-md bg-success/10 px-2 py-0.5 text-[11px] text-success; }
+  .badge-error   { @apply rounded-md bg-danger/10 px-2 py-0.5 text-[11px] text-danger; }
+
+  /* ─── Progress bar ─── */
+  .progress-track {
+    @apply overflow-hidden rounded-full bg-border/60;
+    height: 3px;
+  }
+  .progress-fill {
+    @apply h-full rounded-full bg-accent transition-all duration-300;
+  }
+
+  /* ─── Accordion ─── */
+  .accordion-row {
+    @apply flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-border/20;
+  }
+
+  /* ─── Chapter page thumbnail ─── */
+  .page-thumb {
+    @apply aspect-[2/3] w-full rounded-lg object-contain;
+    background: #f0f1f5;
+  }
+
+  /* ─── Upscale compare ─── */
+  .compare-panel {
+    @apply overflow-hidden rounded-xl border border-border;
+  }
+}
