@@ -1,0 +1,94 @@
+name: Build and Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  build_then_release:
+    if: |
+      github.event.pull_request.merged == true &&
+      (
+        startsWith(github.event.pull_request.title, 'chore(master): release') ||
+        startsWith(github.event.pull_request.title, 'chore: release')
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - run: npm ci
+
+      # 1) Pack Firefox first
+      - run: npm run pack:firefox -- --prod
+
+      # 2) Sign Firefox, then rename the signed XPI using the same TAG rule
+      - name: Sign Firefox XPI (AMO) + stage Firefox artifacts
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+
+          mkdir -p release-assets
+
+          # Keep your existing Firefox zip (unsigned) and name it with your rule
+          FIREFOX_ZIP=$(find web-ext-artifacts/firefox -name "*.zip" -type f | head -n 1)
+          cp "$FIREFOX_ZIP" "release-assets/comics-manga-downloader-${TAG}-firefox.zip"
+
+          # Sign using AMO (unlisted)
+          npx web-ext sign \
+            --source-dir dist \
+            --artifacts-dir signed-firefox \
+            --channel unlisted \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET"
+
+          # Find the signed .xpi and rename it using your rule
+          FIREFOX_XPI=$(find signed-firefox -name "*.xpi" -type f | head -n 1)
+          cp "$FIREFOX_XPI" "release-assets/comics-manga-downloader-${TAG}-firefox.xpi"
+
+          ls -la release-assets
+
+      # 3) Pack Chrome after Firefox is signed & staged
+      - run: npm run pack:chrome -- --prod
+
+      - name: Create tag + GitHub Release (release-only)
+        id: rp_release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+
+      # 4) Upload all three artifacts (firefox zip, firefox xpi, chrome zip)
+      - name: Upload built artifacts to the GitHub Release
+        if: ${{ steps.rp_release.outputs.release_created == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+
+          # Stage chrome zip using your rule
+          cp web-ext-artifacts/chrome/chrome-extension.zip "release-assets/comics-manga-downloader-${TAG}-chrome.zip"
+
+          # Upload all three
+          gh release upload "$TAG" release-assets/*.zip release-assets/*.xpi --clobber

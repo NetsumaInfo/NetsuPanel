@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "__NAME__",
+  "version": "__VERSION__",
+  "description": "__DESC__",
+  "author": "__AUTHOR__",
+  "icons": {
+    "16": "./icon/16.png",
+    "48": "./icon/48.png",
+    "96": "./icon/96.png",
+    "128": "./icon/128.png"
+  },
+  "action": {
+    "default_title": "Open Netsu Panel",
+    "default_icon": {
+      "16": "./icon/16.png",
+      "48": "./icon/48.png",
+      "96": "./icon/96.png"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.bundle.js"
+  }
+}
