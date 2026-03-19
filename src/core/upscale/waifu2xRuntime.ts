@@ -1,5 +1,6 @@
 import type { AppMode } from '@shared/types';
 import { getWaifuModelUrl } from './waifu2xModels';
+import { preferredBlockSizes } from './waifu2xFallback';
 
 type ProgressCallback = (message: string, progress: number) => void;
 
@@ -16,12 +17,6 @@ interface PendingJob {
   resolve: (value: Blob) => void;
   reject: (reason?: unknown) => void;
   onProgress?: ProgressCallback;
-}
-
-function preferredBlockSizes(byteLength: number): number[] {
-  if (byteLength < 1_000_000) return [64, 48, 32];
-  if (byteLength < 4_000_000) return [48, 32, 24];
-  return [32, 24, 16];
 }
 
 export class Waifu2xRuntime {
@@ -77,6 +72,13 @@ export class Waifu2xRuntime {
 
       if (data.type === 'backend' && pending.onProgress) {
         pending.onProgress(`waifu2x backend: ${String(data.backend)}`, 0.05);
+        return;
+      }
+
+      if (data.type === 'attempt-error' && pending.onProgress) {
+        const backend = String(data.backend || 'unknown');
+        const blockSize = Number(data.blockSize || 0);
+        pending.onProgress(`waifu2x retry: ${backend} tile ${blockSize}`, 0.1);
         return;
       }
 
