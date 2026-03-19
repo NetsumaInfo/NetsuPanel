@@ -1,19 +1,21 @@
 import type {
-  AppMode,
   ArchiveFormat,
   ChapterItem,
   DownloadJobState,
   UpscalePreviewState,
 } from '@shared/types';
-import { ArchiveFormatSelect } from './ArchiveFormatSelect';
-import { BrandLogo } from './BrandLogo';
-import { ModeSwitch } from './ModeSwitch';
+import {
+  ARCHIVE_CONTAINER_OPTIONS,
+  ARCHIVE_IMAGE_FORMAT_OPTIONS,
+  resolveArchiveFormat,
+  splitArchiveFormat,
+} from '@core/download/archiveFormats';
+import { CompactSelect } from './CompactSelect';
 import { StatusStrip } from './StatusStrip';
 import { UpscalePanel } from './UpscalePanel';
-import { ArchiveIcon, DownloadIcon } from './icons';
+import { ArchiveIcon, DownloadIcon, ImageIcon } from './icons';
 
 interface AppSidebarProps {
-  mode: AppMode;
   archiveFormat: ArchiveFormat;
   currentChapter?: ChapterItem;
   chapterCount: number;
@@ -22,7 +24,6 @@ interface AppSidebarProps {
   upscaleEnabled: boolean;
   backendLabel: string;
   preview: UpscalePreviewState | null;
-  onModeChange(mode: AppMode): void;
   onArchiveFormatChange(format: ArchiveFormat): void;
   onUpscaleToggle(enabled: boolean): void;
   onDownloadCurrent(): void;
@@ -31,7 +32,6 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({
-  mode,
   archiveFormat,
   currentChapter,
   chapterCount,
@@ -40,7 +40,6 @@ export function AppSidebar({
   upscaleEnabled,
   backendLabel,
   preview,
-  onModeChange,
   onArchiveFormatChange,
   onUpscaleToggle,
   onDownloadCurrent,
@@ -48,26 +47,31 @@ export function AppSidebar({
   onDownloadGeneral,
 }: AppSidebarProps) {
   const showStatus = Boolean(activity.error) || activity.active;
+  const { container, imageFormat } = splitArchiveFormat(archiveFormat);
 
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="rounded-[18px] border border-border bg-white p-3 shadow-sm">
-        <BrandLogo compact />
-        <div className="mt-2">
-          <ModeSwitch value={mode} onChange={onModeChange} />
-        </div>
-      </div>
-
-      <div className="rounded-[18px] border border-border bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Format</span>
-          <div className="min-w-[104px]">
-            <ArchiveFormatSelect value={archiveFormat} onChange={onArchiveFormatChange} />
+        <div className="grid gap-2">
+          <div className="grid gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Export</span>
+            <CompactSelect
+              value={imageFormat}
+              options={ARCHIVE_IMAGE_FORMAT_OPTIONS}
+              onChange={(nextImageFormat) => onArchiveFormatChange(resolveArchiveFormat(container, nextImageFormat))}
+            />
           </div>
-        </div>
 
-        {mode === 'manga' ? (
-          <div className="mt-2 grid gap-1.5">
+          <div className="grid gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Archive</span>
+            <CompactSelect
+              value={container}
+              options={ARCHIVE_CONTAINER_OPTIONS}
+              onChange={(nextContainer) => onArchiveFormatChange(resolveArchiveFormat(nextContainer, imageFormat))}
+            />
+          </div>
+
+          <div className="mt-1 grid gap-1.5">
             <button
               type="button"
               className="btn btn-primary w-full justify-center"
@@ -75,7 +79,7 @@ export function AppSidebar({
               onClick={onDownloadCurrent}
             >
               <DownloadIcon size={16} />
-              Ch.
+              Chapitre
             </button>
             <button
               type="button"
@@ -84,22 +88,19 @@ export function AppSidebar({
               onClick={onDownloadAll}
             >
               <ArchiveIcon size={16} />
-              Série {chapterCount}
+              Série
             </button>
-          </div>
-        ) : (
-          <div className="mt-2">
             <button
               type="button"
-              className="btn btn-primary w-full justify-center"
+              className="btn w-full justify-center"
               disabled={selectedGeneralCount === 0}
               onClick={onDownloadGeneral}
             >
-              <DownloadIcon size={16} />
-              Export {selectedGeneralCount}
+              <ImageIcon size={16} />
+              Général
             </button>
           </div>
-        )}
+        </div>
       </div>
 
       {showStatus && <StatusStrip message={activity.message} progress={activity.progress} error={activity.error} />}

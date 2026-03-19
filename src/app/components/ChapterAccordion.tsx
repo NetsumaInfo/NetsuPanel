@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ChapterItem, ImageCollectionResult } from '@shared/types';
+import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
 import { SafeImage } from './SafeImage';
 import { ChevronDownIcon, DownloadIcon, LightningIcon } from './icons';
 
@@ -7,18 +7,18 @@ interface ChapterAccordionProps {
   chapter: ChapterItem;
   sourceTabId?: number;
   thumbnailSize: number;
-  previewLimit: number;
   compact: boolean;
   onEnsurePreview(chapter: ChapterItem): Promise<ImageCollectionResult>;
   onDownload(chapter: ChapterItem): void;
   onCompareFirst(chapter: ChapterItem): void;
+  onOpenImage(chapter: ChapterItem, items: ImageCandidate[], index: number): void;
 }
 
 function PreviewStatusBadge({ status, count }: { status: ChapterItem['previewStatus']; count?: number }) {
   if (status === 'loading') return <span className="badge-loading">Analyse…</span>;
   if (status === 'error')   return <span className="badge-error">Erreur</span>;
   if (status === 'ready' && count !== undefined)
-    return <span className="badge-ready">{count}</span>;
+    return <span className="badge-ready">{count} pages</span>;
   return <span className="badge-idle">Non chargé</span>;
 }
 
@@ -26,11 +26,11 @@ export function ChapterAccordion({
   chapter,
   sourceTabId,
   thumbnailSize,
-  previewLimit,
   compact,
   onEnsurePreview,
   onDownload,
   onCompareFirst,
+  onOpenImage,
 }: ChapterAccordionProps) {
   const [open, setOpen] = useState(chapter.relation === 'current');
   const isCurrentChapter = chapter.relation === 'current';
@@ -48,8 +48,7 @@ export function ChapterAccordion({
   };
 
   const pageCount = chapter.preview?.items.length;
-  const previewItems = chapter.preview?.items.slice(0, previewLimit) || [];
-  const remainingCount = Math.max((chapter.preview?.items.length || 0) - previewItems.length, 0);
+  const previewItems = chapter.preview?.items || [];
   return (
     <article className={`surface overflow-hidden transition-shadow ${isCurrentChapter ? 'ring-1 ring-accent/25 shadow-panel' : ''}`}>
       <div className="flex items-center gap-2.5 px-3 py-2.5">
@@ -68,11 +67,11 @@ export function ChapterAccordion({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="truncate text-[13px] font-semibold text-ink" title={chapter.label}>
+                {chapter.label}
+              </h3>
               <PreviewStatusBadge status={chapter.previewStatus} count={pageCount} />
             </div>
-            <h3 className="mt-0.5 truncate text-[13px] font-semibold text-ink" title={chapter.label}>
-              {chapter.label}
-            </h3>
           </div>
         </button>
 
@@ -115,9 +114,7 @@ export function ChapterAccordion({
           {chapter.previewStatus === 'ready' && chapter.preview && (
             <>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-muted">
-                  {chapter.preview.items.length} pages
-                </span>
+                <span className="text-[11px] text-muted">{chapter.preview.items.length} pages</span>
                 {chapter.preview.items[0] && (
                   <button
                     type="button"
@@ -137,13 +134,12 @@ export function ChapterAccordion({
                   style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))` }}
                 >
                   {previewItems.map((item, i) => (
-                    <a
+                    <button
                       key={item.id}
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
+                      type="button"
                       title={item.filenameHint}
                       className="relative overflow-hidden rounded-lg border border-border bg-border/20 transition-opacity hover:opacity-80"
+                      onClick={() => onOpenImage(chapter, previewItems, i)}
                     >
                       <SafeImage
                         src={item.previewUrl || item.url}
@@ -156,13 +152,8 @@ export function ChapterAccordion({
                       <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-2xs text-white">
                         {i + 1}
                       </span>
-                    </a>
+                    </button>
                   ))}
-                  {remainingCount > 0 && (
-                    <div className="flex items-center justify-center rounded-lg border border-dashed border-border text-2xs text-muted">
-                      +{remainingCount}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <p className="text-[11px] text-muted">Aucune page détectée.</p>
