@@ -32,7 +32,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/NetsumaInfo/extension-telechargement-images">
+  <a href="https://github.com/NetsumaInfo/NetsuPanel">
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
@@ -40,7 +40,7 @@
   <p align="center">
     🦊 <a href="https://addons.mozilla.org/en-US/firefox/addon/comics-manga-dl-by-saptarshi/"><b>Install on Firefox (AMO)</b></a>
     &nbsp;•&nbsp;
-    ⭐ <a href="https://github.com/NetsumaInfo/extension-telechargement-images"><b>Star on GitHub</b></a>
+    ⭐ <a href="https://github.com/NetsumaInfo/NetsuPanel"><b>Star on GitHub</b></a>
   </p>
 
   <p align="center">
@@ -51,9 +51,9 @@
     <br />
     <!-- <a href="https://github.com/saptarshimondal/Comics-Manga-Downloader-Extension">View Demo</a> -->
     <!-- · -->
-    <a href="https://github.com/NetsumaInfo/extension-telechargement-images/issues">Report Bug</a>
+    <a href="https://github.com/NetsumaInfo/NetsuPanel/issues">Report Bug</a>
     ·
-    <a href="https://github.com/NetsumaInfo/extension-telechargement-images/issues">Request Feature</a>
+    <a href="https://github.com/NetsumaInfo/NetsuPanel/issues">Request Feature</a>
   </p>
 </div>
 
@@ -114,7 +114,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Comics / Manga Downloader Screen Shot][product-screenshot]](https://github.com/NetsumaInfo/extension-telechargement-images) 
+[![Comics / Manga Downloader Screen Shot][product-screenshot]](https://github.com/NetsumaInfo/NetsuPanel) 
 
 A simple cross-browser extension to download comics / manga as CBZ, PDF, or ZIP from any site.
 
@@ -289,7 +289,7 @@ Please read the following to setup the project locally for development.
 
 1. Clone the repo
    ```sh
-   git clone https://github.com/NetsumaInfo/extension-telechargement-images.git
+   git clone https://github.com/NetsumaInfo/NetsuPanel.git
    ```
 
 2. Install NPM packages
@@ -393,7 +393,7 @@ Please read the following to setup the project locally for development.
 - [x] Add "Direct download" feature
 - [x] Migrate to Manifest v3
 
-See the [open issues](https://github.com/NetsumaInfo/extension-telechargement-images/issues) for a full list of proposed features (and known issues).
+See the [open issues](https://github.com/NetsumaInfo/NetsuPanel/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -452,16 +452,16 @@ Project maintainer workspace: [NetsumaInfo](https://github.com/NetsumaInfo)
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/NetsumaInfo/extension-telechargement-images?style=for-the-badge
-[contributors-url]: https://github.com/NetsumaInfo/extension-telechargement-images/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/NetsumaInfo/extension-telechargement-images?style=for-the-badge
-[forks-url]: https://github.com/NetsumaInfo/extension-telechargement-images/network/members
-[stars-shield]: https://img.shields.io/github/stars/NetsumaInfo/extension-telechargement-images?style=for-the-badge
-[stars-url]: https://github.com/NetsumaInfo/extension-telechargement-images/stargazers
-[issues-shield]: https://img.shields.io/github/issues/NetsumaInfo/extension-telechargement-images?style=for-the-badge
-[issues-url]: https://github.com/NetsumaInfo/extension-telechargement-images/issues
-[license-shield]: https://img.shields.io/github/license/NetsumaInfo/extension-telechargement-images?style=for-the-badge
-[license-url]: https://github.com/NetsumaInfo/extension-telechargement-images/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/NetsumaInfo/NetsuPanel?style=for-the-badge
+[contributors-url]: https://github.com/NetsumaInfo/NetsuPanel/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/NetsumaInfo/NetsuPanel?style=for-the-badge
+[forks-url]: https://github.com/NetsumaInfo/NetsuPanel/network/members
+[stars-shield]: https://img.shields.io/github/stars/NetsumaInfo/NetsuPanel?style=for-the-badge
+[stars-url]: https://github.com/NetsumaInfo/NetsuPanel/stargazers
+[issues-shield]: https://img.shields.io/github/issues/NetsumaInfo/NetsuPanel?style=for-the-badge
+[issues-url]: https://github.com/NetsumaInfo/NetsuPanel/issues
+[license-shield]: https://img.shields.io/github/license/NetsumaInfo/NetsuPanel?style=for-the-badge
+[license-url]: https://github.com/NetsumaInfo/NetsuPanel/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [product-screenshot]: images/screenshot.jpg
 [release-screenshot]: images/release.png
@@ -475,5 +475,5 @@ Project maintainer workspace: [NetsumaInfo](https://github.com/NetsumaInfo)
 [amo-shield]: https://img.shields.io/amo/v/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white
 <!-- [amo-users-shield]: https://img.shields.io/amo/users/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=mozilla-firefox&logoColor=white
 [amo-rating-shield]: https://img.shields.io/amo/rating/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white -->
-[repo-url]: https://github.com/NetsumaInfo/extension-telechargement-images
+[repo-url]: https://github.com/NetsumaInfo/NetsuPanel
 <!-- [amo-downloads-shield]: https://img.shields.io/amo/dw/comics-manga-dl-by-saptarshi?style=for-the-badge&logo=firefoxbrowser&logoColor=white -->
