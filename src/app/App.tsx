@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ChapterItem, ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
@@ -74,6 +74,13 @@ export function App() {
   const { state } = controller;
   const windowWidth = useWindowWidth();
   const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const handleViewerCompare = useCallback(
+    (candidate: ImageCandidate) => {
+      if (!viewer?.referrer) return;
+      void controller.previewUpscale(candidate, viewer.referrer);
+    },
+    [controller.previewUpscale, viewer?.referrer]
+  );
 
   if (state.loading) {
     return <LoadingScreen message={state.loadingMessage || 'Initialisation…'} />;
@@ -213,7 +220,7 @@ export function App() {
           preview={state.upscalePreview}
           onClose={() => setViewer(null)}
           onNavigate={(nextIndex) => setViewer((current) => (current ? { ...current, index: nextIndex } : current))}
-          onRequestCompare={(candidate) => void controller.previewUpscale(candidate, viewer.referrer)}
+          onRequestCompare={handleViewerCompare}
         />
       )}
     </div>

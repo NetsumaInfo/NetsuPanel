@@ -67,10 +67,10 @@ export function ImageViewerModal({
   const previewMatches = preview?.sourceImageId === currentItem?.id;
 
   useEffect(() => {
-    if (compareMode && currentItem) {
-      onRequestCompare(currentItem);
-    }
-  }, [compareMode, currentItem, onRequestCompare]);
+    if (!compareMode || !currentItem) return;
+    if (previewMatches || preview?.loading) return;
+    onRequestCompare(currentItem);
+  }, [compareMode, currentItem, onRequestCompare, preview?.loading, previewMatches]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
