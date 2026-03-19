@@ -1,22 +1,36 @@
 import type { GraphModel } from '@tensorflow/tfjs-converter';
 import type { Tensor, Tensor3D } from '@tensorflow/tfjs-core';
-import { browser, dispose, tidy } from './tfjsCompat';
+import {
+  browser,
+  cast,
+  clipByValue,
+  dispose,
+  div,
+  expandDims,
+  greater,
+  mul,
+  reshape,
+  scalar,
+  tidy,
+} from './tfjsCompat';
 import { RealesrganImage } from './realesrganImage';
 
 function imgToTensor(image: RealesrganImage): Tensor {
   const imageData = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
-  return (browser.fromPixels(imageData) as any).div(255).toFloat().expandDims() as Tensor;
+  const pixels = browser.fromPixels(imageData) as Tensor3D;
+  const normalized = div(pixels, scalar(255));
+  const floatTensor = cast(normalized, 'float32');
+  return expandDims(floatTensor, 0);
 }
 
 async function tensorToImage(tensor: Tensor): Promise<RealesrganImage> {
   const [, height, width] = tensor.shape;
-  const clipped = tidy(() =>
-    (tensor as any)
-      .reshape([height!, width!, 3])
-      .mul(255)
-      .cast('int32')
-      .clipByValue(0, 255)
-  ) as Tensor3D;
+  const clipped = tidy(() => {
+    const reshaped = reshape(tensor, [height!, width!, 3]);
+    const scaled = mul(reshaped, scalar(255));
+    const intTensor = cast(scaled, 'int32');
+    return clipByValue(intTensor, 0, 255) as Tensor3D;
+  }) as Tensor3D;
 
   tensor.dispose();
   const pixels = await browser.toPixels(clipped);
@@ -31,9 +45,9 @@ export async function upscaleWithGraphModel(
 ): Promise<RealesrganImage> {
   const result = tidy(() => {
     const tensor = imgToTensor(image);
-    let predicted = model.predict(tensor) as any;
+    let predicted = model.predict(tensor) as Tensor;
     if (alpha) {
-      predicted = predicted.greater(0.5);
+      predicted = greater(predicted, scalar(0.5));
     }
     tensor.dispose();
     return predicted;
