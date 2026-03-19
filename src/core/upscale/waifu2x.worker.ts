@@ -1,13 +1,13 @@
 /// <reference lib="webworker" />
 
-import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-cpu';
-import { Predictor } from 'waifu2x-tfjs';
+import { ready, setBackend } from './tfjsCompat';
 import {
   buildUpscaleFailureMessage,
   isRetryableUpscaleError,
   type UpscaleBackend,
 } from './waifu2xFallback';
+import { WaifuPredictor } from './waifuPredictor';
 
 interface ProcessRequest {
   type: 'process';
@@ -24,7 +24,7 @@ interface ResetRequest {
 
 type WorkerRequest = ProcessRequest | ResetRequest;
 
-const predictors = new Map<string, Predictor>();
+const predictors = new Map<string, WaifuPredictor>();
 
 function predictorKey(modelUrl: string, blockSize: number, backend: UpscaleBackend): string {
   return `${backend}::${modelUrl}::${blockSize}`;
@@ -44,8 +44,8 @@ function resetPredictors(): void {
 }
 
 async function activateBackend(backend: UpscaleBackend): Promise<UpscaleBackend> {
-  await tf.setBackend(backend);
-  await tf.ready();
+  await setBackend(backend);
+  await ready();
   return backend;
 }
 
@@ -57,12 +57,12 @@ async function getInitialBackend(): Promise<UpscaleBackend> {
   }
 }
 
-function getPredictor(modelUrl: string, blockSize: number, jobId: string, backend: UpscaleBackend): Predictor {
+function getPredictor(modelUrl: string, blockSize: number, jobId: string, backend: UpscaleBackend): WaifuPredictor {
   const key = predictorKey(modelUrl, blockSize, backend);
   const existing = predictors.get(key);
   if (existing) return existing;
 
-  const predictor = new Predictor(modelUrl, blockSize);
+  const predictor = new WaifuPredictor(modelUrl, blockSize);
   predictor.listenToModelDownloadProgress((ratio) => {
     self.postMessage({
       type: 'progress',
@@ -120,8 +120,7 @@ async function runAttempt(
           bytes,
           mime: blob.type || 'image/png',
           backend,
-        },
-        [bytes]
+        }
       );
       return { success: true };
     } catch (error) {

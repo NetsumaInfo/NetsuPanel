@@ -129,8 +129,7 @@ export class Waifu2xRuntime {
             mime: options.mime,
             modelUrl: getWaifuModelUrl(options.mode),
             blockSizes: preferredBlockSizes(options.bytes.byteLength),
-          },
-          [requestBytes]
+          }
         );
       };
 
