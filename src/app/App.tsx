@@ -107,10 +107,12 @@ export function App() {
       activity={state.activity}
       mode={state.mode}
       upscaleEnabled={state.upscaleEnabled}
+      settings={state.upscaleSettings[state.mode]}
       backendLabel={state.waifuBackendLabel}
       preview={state.upscalePreview}
       onArchiveFormatChange={controller.setArchiveFormat}
       onUpscaleToggle={controller.setUpscaleEnabled}
+      onUpscaleSettingsChange={controller.setUpscaleSettings}
       onDownloadCurrent={() => currentChapter && void controller.downloadChapter(currentChapter)}
       onDownloadAll={() => void controller.downloadAllChapters()}
       onDownloadGeneral={() => void controller.downloadGeneral()}

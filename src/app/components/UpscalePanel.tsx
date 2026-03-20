@@ -1,78 +1,77 @@
-import type { AppMode, UpscalePreviewState } from '@shared/types';
+import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleSettings, UpscalePreviewState } from '@shared/types';
 import { getBackendPriority, getRealesrganPreset } from '@core/upscale/realesrganModels';
+import { CompactSelect } from './CompactSelect';
 import { SafeImage } from './SafeImage';
 import { LightningIcon } from './icons';
 
 interface UpscalePanelProps {
   mode: AppMode;
   enabled: boolean;
+  settings: UpscaleSettings;
   backendLabel: string;
   preview: UpscalePreviewState | null;
   onToggle(enabled: boolean): void;
+  onSettingsChange(settings: Partial<UpscaleSettings>): void;
 }
 
-function formatDenoiseLabel(value?: string): string {
-  switch (value) {
-    case 'conservative':
-      return 'Denoise doux';
-    case 'no-denoise':
-      return 'Sans denoise';
-    case 'denoise1x':
-      return 'Denoise 1x';
-    case 'denoise2x':
-      return 'Denoise 2x';
-    case 'denoise3x':
-      return 'Denoise 3x';
-    default:
-      return 'Auto';
-  }
+const DENOISE_OPTIONS: Array<{ value: UpscaleDenoiseLevel; label: string }> = [
+  { value: 'conservative', label: 'Denoise doux' },
+  { value: 'no-denoise', label: 'Sans denoise' },
+  { value: 'denoise1x', label: 'Denoise 1x' },
+  { value: 'denoise2x', label: 'Denoise 2x' },
+  { value: 'denoise3x', label: 'Denoise 3x' },
+];
+
+const BACKEND_OPTIONS: Array<{ value: UpscaleBackendPreference; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'webgpu', label: 'WebGPU' },
+  { value: 'webgl', label: 'WebGL' },
+  { value: 'cpu', label: 'CPU' },
+];
+
+const FACTOR_OPTIONS: Array<{ value: '2' | '4'; label: string }> = [
+  { value: '2', label: 'Échelle x2' },
+  { value: '4', label: 'Échelle x4' },
+];
+
+function formatBackendList(): string {
+  return getBackendPriority()
+    .map((backend) => BACKEND_OPTIONS.find((option) => option.value === backend)?.label ?? backend)
+    .join(' / ');
 }
 
-function formatBackendLabel(value: string): string {
-  switch (value) {
-    case 'webgpu':
-      return 'WebGPU';
-    case 'webgl':
-      return 'WebGL';
-    case 'cpu':
-      return 'CPU';
-    default:
-      return value;
-  }
-}
-
-export function UpscalePanel({ mode, enabled, backendLabel, preview, onToggle }: UpscalePanelProps) {
-  const preset = getRealesrganPreset(mode);
-  const supportedBackends = getBackendPriority().map(formatBackendLabel).join(' / ');
-  const parameterPills = [
-    preset.label,
-    `Échelle x${preset.factor}`,
-    formatDenoiseLabel(preset.denoise),
-    `Tuiles ${preset.tileSizes[0]} → ${preset.tileSizes[preset.tileSizes.length - 1]}`,
-  ];
+export function UpscalePanel({
+  mode,
+  enabled,
+  settings,
+  backendLabel,
+  preview,
+  onToggle,
+  onSettingsChange,
+}: UpscalePanelProps) {
+  const preset = getRealesrganPreset(mode, settings);
+  const factorValue = String(settings.factor) as '2' | '4';
 
   return (
-    <section className="surface space-y-2 p-3">
+    <section className="surface space-y-2.5 p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-border/50 text-ink">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-border/45 text-ink">
             <LightningIcon size={14} />
           </span>
           <div className="min-w-0">
-            <h2 className="text-xs font-semibold text-ink">Upscale</h2>
-            {(enabled || preview) && (
-              <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel}</p>
-            )}
+            <h2 className="text-[13px] font-semibold text-ink">Upscale</h2>
+            <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel}</p>
           </div>
         </div>
         <label
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-white px-2 py-1.5 text-[11px] font-medium"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-border/80 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ink shadow-sm"
           title="Activer l'upscale avant téléchargement"
         >
           <input
             type="checkbox"
             id="upscale-toggle"
-            className="h-3 w-3 accent-accent"
+            className="h-3.5 w-3.5 accent-accent"
             checked={enabled}
             onChange={(e) => onToggle(e.target.checked)}
           />
@@ -80,23 +79,49 @@ export function UpscalePanel({ mode, enabled, backendLabel, preview, onToggle }:
         </label>
       </div>
 
-      <div className="rounded-[14px] border border-border/70 bg-[#f8f9fb] px-2.5 py-2">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Paramètres</span>
+      <div className="rounded-[16px] border border-border/75 bg-[#f8f9fb] p-2.5">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Réglages</span>
           <span className="text-[10px] text-muted">{mode === 'manga' ? 'Mode manga' : 'Mode général'}</span>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {parameterPills.map((item) => (
-            <span
-              key={item}
-              className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-ink shadow-[0_1px_3px_rgba(15,17,23,0.05)]"
-            >
-              {item}
-            </span>
-          ))}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-1">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Échelle</span>
+            <CompactSelect
+              value={factorValue}
+              options={FACTOR_OPTIONS}
+              onChange={(value) => onSettingsChange({ factor: Number(value) as 2 | 4 })}
+            />
+          </div>
+
+          <div className="grid gap-1">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Denoise</span>
+            <CompactSelect
+              value={settings.denoise}
+              options={DENOISE_OPTIONS}
+              onChange={(value) => onSettingsChange({ denoise: value })}
+            />
+          </div>
+
+          <div className="grid gap-1">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Backend</span>
+            <CompactSelect
+              value={settings.preferredBackend}
+              options={BACKEND_OPTIONS}
+              onChange={(value) => onSettingsChange({ preferredBackend: value })}
+            />
+          </div>
+
+          <div className="rounded-xl bg-white px-3 py-2 shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
+            <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Modèle</span>
+            <span className="mt-1 block text-[11px] font-semibold text-ink">{preset.label}</span>
+            <span className="mt-1 block text-[10px] text-muted">Tuiles auto: {preset.tileSizes[0]} → {preset.tileSizes[preset.tileSizes.length - 1]}</span>
+          </div>
         </div>
-        <p className="mt-1.5 text-[10px] text-muted">
-          Backends auto: {supportedBackends}
+
+        <p className="mt-2 text-[10px] text-muted">
+          Fallback auto disponible: {formatBackendList()}
         </p>
       </div>
 
