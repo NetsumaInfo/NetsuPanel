@@ -194,7 +194,7 @@ export function getWaifuModeOptions(modelId: UpscaleModelId): Array<{ value: Wai
   const variants = WAIFU2X_MODELS[modelId];
   return (Object.keys(variants) as Waifu2xMode[]).map((value) => ({
     value,
-    label: value === 'noise' ? 'Noise' : value === 'noise_scale' ? 'Noise + Scale' : 'Scale',
+    label: value === 'noise' ? 'Denoise' : value === 'noise_scale' ? 'Denoise + x2' : 'x2',
   }));
 }
 
