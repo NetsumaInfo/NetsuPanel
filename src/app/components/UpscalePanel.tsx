@@ -60,10 +60,10 @@ export function UpscalePanel({
   const availableBackends = BACKEND_OPTIONS.filter((option) => getSupportedBackendPreferences(settings.modelId).includes(option.value));
   const showDenoise = modelSupportsDenoise(settings.modelId);
   const tileOptions = modelDefinition.tileSizes.map((size) => ({ value: String(size), label: `${size}` }));
-  const isWaifu = settings.modelId === 'waifu2x';
-  const waifuModeOptions = getWaifuModeOptions(mode);
-  const waifuNoiseOptions = getWaifuNoiseOptions(mode, settings.waifuMode);
-  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(mode, settings.waifuMode);
+  const isWaifu = settings.modelId === 'waifu2x-anime' || settings.modelId === 'waifu2x-photo';
+  const waifuModeOptions = getWaifuModeOptions(settings.modelId);
+  const waifuNoiseOptions = getWaifuNoiseOptions(settings.modelId, settings.waifuMode);
+  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(settings.modelId, settings.waifuMode);
   const showWaifuControls = isWaifu && (waifuModeOptions.length > 1 || showWaifuNoise);
 
   return (
@@ -165,7 +165,7 @@ export function UpscalePanel({
                   value={settings.waifuMode}
                   options={waifuModeOptions}
                   onChange={(value) => {
-                    const nextNoiseOptions = getWaifuNoiseOptions(mode, value);
+                    const nextNoiseOptions = getWaifuNoiseOptions(settings.modelId, value);
                     onSettingsChange({
                       waifuMode: value,
                       waifuNoiseLevel: nextNoiseOptions[0]?.value ?? settings.waifuNoiseLevel,

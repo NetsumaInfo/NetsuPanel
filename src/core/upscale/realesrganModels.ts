@@ -82,10 +82,18 @@ const UPSCALE_MODELS: Record<UpscaleModelId, RealesrganModelPreset> = {
     tileSizes: TILE_SIZES,
     minOverlap: 12,
   },
-  waifu2x: {
-    id: 'waifu2x',
+  'waifu2x-anime': {
+    id: 'waifu2x-anime',
     type: 'waifu2x',
-    label: 'waifu2x x2',
+    label: 'waifu2x Anime x2',
+    factor: 2,
+    tileSizes: [64, 48, 32, 24, 16, 12, 8],
+    minOverlap: 0,
+  },
+  'waifu2x-photo': {
+    id: 'waifu2x-photo',
+    type: 'waifu2x',
+    label: 'waifu2x Photo x2',
     factor: 2,
     tileSizes: [64, 48, 32, 24, 16, 12, 8],
     minOverlap: 0,
@@ -95,13 +103,19 @@ const UPSCALE_MODELS: Record<UpscaleModelId, RealesrganModelPreset> = {
 type WaifuVariantMap = Partial<Record<Waifu2xNoiseLevel | 'scale', string>>;
 type WaifuModeMap = Partial<Record<Waifu2xMode, WaifuVariantMap>>;
 
-const WAIFU2X_MODELS: Record<AppMode, WaifuModeMap> = {
-  manga: {
+const WAIFU2X_MODELS: Record<'waifu2x-anime' | 'waifu2x-photo', WaifuModeMap> = {
+  'waifu2x-anime': {
+    noise: {
+      '0': 'models/manga-scale2x.json',
+    },
     scale: {
       scale: 'models/manga-scale2x.json',
     },
   },
-  general: {
+  'waifu2x-photo': {
+    noise: {
+      '0': 'models/general-scale2x.json',
+    },
     scale: {
       scale: 'models/general-scale2x.json',
     },
@@ -143,19 +157,23 @@ export function getUpscaleModelOptions(): Array<{ value: UpscaleModelId; label: 
     { value: 'realesrgan-anime_plus', label: 'Real-ESRGAN Anime Plus' },
     { value: 'realesrgan-general_fast', label: 'Real-ESRGAN General Fast' },
     { value: 'realesrgan-general_plus', label: 'Real-ESRGAN General Plus' },
-    { value: 'waifu2x', label: 'waifu2x x2' },
+    { value: 'waifu2x-anime', label: 'waifu2x Anime x2' },
+    { value: 'waifu2x-photo', label: 'waifu2x Photo x2' },
   ];
 }
 
 export function getSupportedBackendPreferences(modelId: UpscaleModelId): UpscaleBackendPreference[] {
-  if (modelId === 'waifu2x') {
+  if (modelId === 'waifu2x-anime' || modelId === 'waifu2x-photo') {
     return ['auto', 'webgl', 'cpu'];
   }
   return ['auto', 'webgpu', 'webgl', 'cpu'];
 }
 
-export function getWaifuModeOptions(mode: AppMode): Array<{ value: Waifu2xMode; label: string }> {
-  const variants = WAIFU2X_MODELS[mode];
+export function getWaifuModeOptions(modelId: UpscaleModelId): Array<{ value: Waifu2xMode; label: string }> {
+  if (modelId !== 'waifu2x-anime' && modelId !== 'waifu2x-photo') {
+    return [];
+  }
+  const variants = WAIFU2X_MODELS[modelId];
   return (Object.keys(variants) as Waifu2xMode[]).map((value) => ({
     value,
     label: value === 'noise' ? 'Noise' : value === 'noise_scale' ? 'Noise + Scale' : 'Scale',
@@ -163,10 +181,13 @@ export function getWaifuModeOptions(mode: AppMode): Array<{ value: Waifu2xMode; 
 }
 
 export function getWaifuNoiseOptions(
-  mode: AppMode,
+  modelId: UpscaleModelId,
   waifuMode: Waifu2xMode
 ): Array<{ value: Waifu2xNoiseLevel; label: string }> {
-  const variants = WAIFU2X_MODELS[mode][waifuMode];
+  if (modelId !== 'waifu2x-anime' && modelId !== 'waifu2x-photo') {
+    return [];
+  }
+  const variants = WAIFU2X_MODELS[modelId][waifuMode];
   if (!variants) return [];
 
   return (Object.keys(variants) as Array<Waifu2xNoiseLevel | 'scale'>)
@@ -174,12 +195,15 @@ export function getWaifuNoiseOptions(
     .map((value) => ({ value, label: value }));
 }
 
-export function waifuModeSupportsNoise(mode: AppMode, waifuMode: Waifu2xMode): boolean {
-  return getWaifuNoiseOptions(mode, waifuMode).length > 0;
+export function waifuModeSupportsNoise(modelId: UpscaleModelId, waifuMode: Waifu2xMode): boolean {
+  return getWaifuNoiseOptions(modelId, waifuMode).length > 0;
 }
 
-export function resolveWaifuModelAsset(mode: AppMode, settings: UpscaleSettings): string {
-  const variants = WAIFU2X_MODELS[mode][settings.waifuMode];
+export function resolveWaifuModelAsset(_mode: AppMode, settings: UpscaleSettings): string {
+  if (settings.modelId !== 'waifu2x-anime' && settings.modelId !== 'waifu2x-photo') {
+    return 'models/manga-scale2x.json';
+  }
+  const variants = WAIFU2X_MODELS[settings.modelId][settings.waifuMode];
   if (variants) {
     if (settings.waifuMode === 'scale' && variants.scale) {
       return variants.scale;
@@ -191,7 +215,7 @@ export function resolveWaifuModelAsset(mode: AppMode, settings: UpscaleSettings)
     }
   }
 
-  return WAIFU2X_MODELS[mode].scale?.scale || `models/${mode}-scale2x.json`;
+  return WAIFU2X_MODELS[settings.modelId].scale?.scale || 'models/manga-scale2x.json';
 }
 
 export function getSupportedDenoiseOptions(modelId: UpscaleModelId): UpscaleDenoiseLevel[] {
