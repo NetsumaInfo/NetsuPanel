@@ -135,7 +135,7 @@ export function ChapterAccordion({
                     >
                       <button
                         type="button"
-                        className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-white/60 bg-white/82 text-ink shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-white"
+                        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(15,17,23,0.44)] text-white/92 shadow-[0_10px_18px_rgba(15,17,23,0.18)] backdrop-blur-md transition-all duration-200 hover:scale-[1.06] hover:bg-[rgba(15,17,23,0.62)] hover:text-white"
                         title="Télécharger l'image"
                         aria-label="Télécharger l'image"
                         onClick={(event) => {
@@ -143,7 +143,7 @@ export function ChapterAccordion({
                           onDownloadImage(item, chapter);
                         }}
                       >
-                        <DownloadIcon size={12} />
+                        <DownloadIcon size={13} />
                       </button>
                       <SafeImage
                         src={item.previewUrl || item.url}
