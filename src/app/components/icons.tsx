@@ -72,6 +72,17 @@ export function LightningIcon(props: IconProps) {
   );
 }
 
+export function CompareIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect x="4" y="5" width="16" height="14" rx="2.5" />
+      <path d="M12 5v14" />
+      <path d="M8.5 9.5h1" />
+      <path d="M14.5 14.5h1" />
+    </IconBase>
+  );
+}
+
 export function ArchiveIcon(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -135,6 +146,15 @@ export function GlobeIcon(props: IconProps) {
       <path d="M3 12h18" />
       <path d="M12 3a15 15 0 0 1 0 18" />
       <path d="M12 3a15 15 0 0 0 0 18" />
+    </IconBase>
+  );
+}
+
+export function XIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M6 6 18 18" />
+      <path d="M18 6 6 18" />
     </IconBase>
   );
 }

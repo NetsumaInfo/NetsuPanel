@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject } from 'react';
 import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
-import { downloadAllChapters, downloadGeneralSelection, downloadSingleChapter } from '@app/services/downloadService';
+import {
+  downloadAllChapters,
+  downloadGeneralSelection,
+  downloadSingleChapter,
+  downloadSingleImage,
+} from '@app/services/downloadService';
 import type { AppAction, NetsuAppState } from '@app/state/appState';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 
@@ -137,9 +142,57 @@ export function useDownloadActions({
     waifuRuntimeRef,
   ]);
 
+  const handleDownloadImage = useCallback(
+    async (image: ImageCandidate, options?: { referrer?: string; fileName?: string }) => {
+      if (!state.source) return;
+
+      try {
+        const label = options?.fileName || image.filenameHint;
+        updateActivity(`Préparation de ${label}`, 0);
+        await downloadSingleImage(
+          image,
+          state.archiveFormat,
+          {
+            tabId: state.source.id,
+            waifuRuntime: waifuRuntimeRef.current,
+            onProgress: (message, progress) => updateActivity(message, progress),
+            upscaleEnabled: state.upscaleEnabled,
+            mode: state.mode,
+            sourceReferrer: options?.referrer,
+          },
+          {
+            referrer: options?.referrer,
+            fileName: options?.fileName,
+          }
+        );
+        dispatch({
+          type: 'set-activity',
+          activity: {
+            active: false,
+            cancelled: false,
+            progress: 1,
+            message: `${label} téléchargée.`,
+          },
+        });
+      } catch (error) {
+        updateActivity('Téléchargement impossible', 0, error instanceof Error ? error.message : 'Téléchargement impossible');
+      }
+    },
+    [
+      dispatch,
+      state.archiveFormat,
+      state.mode,
+      state.source,
+      state.upscaleEnabled,
+      updateActivity,
+      waifuRuntimeRef,
+    ]
+  );
+
   return {
     downloadGeneral: handleDownloadGeneral,
     downloadChapter: handleDownloadChapter,
     downloadAllChapters: handleDownloadAll,
+    downloadImage: handleDownloadImage,
   };
 }
