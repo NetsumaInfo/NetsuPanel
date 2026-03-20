@@ -17,7 +17,6 @@ interface ProcessRequest {
   modelUrl: string;
   blockSizes: number[];
   taskMode?: 'scale' | 'noise' | 'noise_scale';
-  noiseLevel?: number;
   preferredBackend?: UpscaleBackend;
 }
 
@@ -106,23 +105,6 @@ async function imageBitmapToBlob(bitmap: ImageBitmap): Promise<Blob> {
   }
 }
 
-async function applyNoiseReduction(bitmap: ImageBitmap, level: number): Promise<ImageBitmap> {
-  if (level <= 0) {
-    return bitmap;
-  }
-
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const context = canvas.getContext('2d');
-  if (!context) {
-    return bitmap;
-  }
-
-  context.filter = `blur(${Math.min(2.4, 0.45 + level * 0.45)}px)`;
-  context.drawImage(bitmap, 0, 0);
-  context.filter = 'none';
-  return createImageBitmap(canvas.transferToImageBitmap());
-}
-
 async function runAttempt(
   data: ProcessRequest,
   sourceBitmap: ImageBitmap,
@@ -133,14 +115,7 @@ async function runAttempt(
   for (const blockSize of data.blockSizes) {
     try {
       const predictor = getPredictor(data.modelUrl, blockSize, data.jobId, backend);
-      const preparedBitmap =
-        data.taskMode === 'noise' || data.taskMode === 'noise_scale'
-          ? await applyNoiseReduction(sourceBitmap, data.noiseLevel ?? 0)
-          : sourceBitmap;
-      const output = await predictor.predict(preparedBitmap, data.taskMode === 'noise');
-      if (preparedBitmap !== sourceBitmap && typeof preparedBitmap.close === 'function') {
-        preparedBitmap.close();
-      }
+      const output = await predictor.predict(sourceBitmap, false);
       const blob = await imageBitmapToBlob(output);
       const bytes = await blob.arrayBuffer();
       self.postMessage(
