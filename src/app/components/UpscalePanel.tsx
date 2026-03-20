@@ -1,4 +1,4 @@
-import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleModelId, UpscaleSettings, UpscalePreviewState } from '@shared/types';
+import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleSettings, UpscalePreviewState } from '@shared/types';
 import {
   getRealesrganPreset,
   getSupportedBackendPreferences,
@@ -22,11 +22,11 @@ interface UpscalePanelProps {
 }
 
 const DENOISE_OPTIONS: Array<{ value: UpscaleDenoiseLevel; label: string }> = [
-  { value: 'conservative', label: 'Denoise doux' },
-  { value: 'no-denoise', label: 'Sans denoise' },
-  { value: 'denoise1x', label: 'Denoise 1x' },
-  { value: 'denoise2x', label: 'Denoise 2x' },
-  { value: 'denoise3x', label: 'Denoise 3x' },
+  { value: 'conservative', label: 'Doux' },
+  { value: 'no-denoise', label: '0x' },
+  { value: 'denoise1x', label: '1x' },
+  { value: 'denoise2x', label: '2x' },
+  { value: 'denoise3x', label: '3x' },
 ];
 
 const BACKEND_OPTIONS: Array<{ value: UpscaleBackendPreference; label: string }> = [
@@ -50,6 +50,7 @@ export function UpscalePanel({
   const availableDenoise = getSupportedDenoiseOptions(settings.modelId);
   const availableBackends = BACKEND_OPTIONS.filter((option) => getSupportedBackendPreferences(settings.modelId).includes(option.value));
   const showDenoise = modelSupportsDenoise(settings.modelId);
+  const tileOptions = modelDefinition.tileSizes.map((size) => ({ value: String(size), label: `${size}` }));
 
   return (
     <section className="surface space-y-2.5 p-3">
@@ -60,7 +61,7 @@ export function UpscalePanel({
           </span>
           <div className="min-w-0">
             <h2 className="text-[13px] font-semibold text-ink">Upscale</h2>
-            <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel}</p>
+            <p className="truncate text-2xs text-muted" title={backendLabel}>{backendLabel || 'Prêt'}</p>
           </div>
         </div>
         <label
@@ -79,9 +80,8 @@ export function UpscalePanel({
       </div>
 
       <div className="rounded-[16px] border border-border/75 bg-[#f8f9fb] p-2.5">
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-2 flex items-center gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Réglages</span>
-          <span className="text-[10px] text-muted">{mode === 'manga' ? 'Manga' : 'Général'}</span>
         </div>
 
         <div className="grid gap-2">
@@ -91,6 +91,7 @@ export function UpscalePanel({
               value={settings.modelId}
               options={getUpscaleModelOptions()}
               onChange={(value) => {
+                const nextModel = getUpscaleModelDefinition(value);
                 const nextDenoise = getSupportedDenoiseOptions(value)[0] ?? settings.denoise;
                 const nextBackend = getSupportedBackendPreferences(value).includes(settings.preferredBackend)
                   ? settings.preferredBackend
@@ -98,16 +99,17 @@ export function UpscalePanel({
                 onSettingsChange({
                   modelId: value,
                   denoise: nextDenoise,
+                  tileSize: nextModel.tileSizes[0] ?? settings.tileSize,
                   preferredBackend: nextBackend,
                 });
               }}
             />
           </div>
 
-          <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-[minmax(0,1fr)_auto]'}`}>
+          <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
             {showDenoise && (
               <div className="grid gap-1">
-                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Denoise</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Niveau</span>
                 <CompactSelect
                   value={settings.denoise}
                   options={DENOISE_OPTIONS.filter((option) => availableDenoise.includes(option.value))}
@@ -125,18 +127,15 @@ export function UpscalePanel({
               />
             </div>
           </div>
-        </div>
 
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
-            x{modelDefinition.factor}
-          </span>
-          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
-            {preset.label}
-          </span>
-          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
-            Tuiles {preset.tileSizes[0]} → {preset.tileSizes[preset.tileSizes.length - 1]}
-          </span>
+          <div className="grid gap-1">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Tuiles</span>
+            <CompactSelect
+              value={String(settings.tileSize)}
+              options={tileOptions}
+              onChange={(value) => onSettingsChange({ tileSize: Number(value) })}
+            />
+          </div>
         </div>
       </div>
 

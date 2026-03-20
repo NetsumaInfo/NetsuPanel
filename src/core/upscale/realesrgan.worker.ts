@@ -289,8 +289,13 @@ function selectTileSizes(
   preset: RealesrganModelPreset,
   backend: UpscaleBackend,
   input: RealesrganImage,
-  isIntegratedGpu: boolean
+  isIntegratedGpu: boolean,
+  forcedTileSize?: number
 ): number[] {
+  if (forcedTileSize && preset.tileSizes.includes(forcedTileSize)) {
+    return [forcedTileSize];
+  }
+
   const megapixels = (input.width * input.height) / 1_000_000;
   let candidates = preset.tileSizes;
 
@@ -498,7 +503,7 @@ async function processWithPreset(
 ): Promise<{ bytes: ArrayBuffer; mime: string; tileSize: number; backend: UpscaleBackend }> {
   const input = await decodeSource(data.bytes, data.mime);
   const hasAlpha = input.hasAlpha();
-  const tileSizes = selectTileSizes(preset, backend, input, activeWebglIntegrated);
+  const tileSizes = selectTileSizes(preset, backend, input, activeWebglIntegrated, data.settings?.tileSize);
   const yieldEveryTiles =
     backend === 'webgpu'
       ? 0
