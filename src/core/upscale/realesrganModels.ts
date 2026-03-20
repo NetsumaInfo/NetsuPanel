@@ -36,6 +36,14 @@ const PRESET_BY_MODE: Record<AppMode, RealesrganModelPreset> = {
 
 export const BACKEND_PRIORITY: UpscaleBackend[] = ['webgpu', 'webgl', 'cpu'];
 
+export function getBackendPriority(): UpscaleBackend[] {
+  const platform = navigator.platform || navigator.userAgent || '';
+  if (/win/i.test(platform)) {
+    return ['webgl', 'cpu', 'webgpu'];
+  }
+  return BACKEND_PRIORITY;
+}
+
 export function getRealesrganPreset(mode: AppMode): RealesrganModelPreset {
   return PRESET_BY_MODE[mode];
 }

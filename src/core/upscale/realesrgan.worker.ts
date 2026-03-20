@@ -8,7 +8,7 @@ import type { AppMode } from '@shared/types';
 import { loadGraphModel, ready, setBackend } from './tfjsCompat';
 import { RealesrganImage } from './realesrganImage';
 import {
-  BACKEND_PRIORITY,
+  getBackendPriority,
   getRealesrganModelUrl,
   getRealesrganPreset,
   getRealesrganStorageKey,
@@ -50,8 +50,8 @@ function buildAttemptError(backend: UpscaleBackend, tileSize: number, message: s
 
 async function activateBackend(preferred?: UpscaleBackend): Promise<UpscaleBackend> {
   const backends = preferred
-    ? [preferred, ...BACKEND_PRIORITY.filter((item) => item !== preferred)]
-    : BACKEND_PRIORITY;
+    ? [preferred, ...getBackendPriority().filter((item) => item !== preferred)]
+    : getBackendPriority();
 
   for (const backend of backends) {
     try {

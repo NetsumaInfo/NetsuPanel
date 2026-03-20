@@ -114,14 +114,20 @@ export function ImageViewerModal({
     referrer,
     captureTabId: currentItem.origin === 'live-dom' ? sourceTabId : undefined,
     captureCandidateId: currentItem.origin === 'live-dom' ? currentItem.id : undefined,
-    className: 'max-h-[62vh] w-auto max-w-none object-contain select-none',
+    className: 'max-h-[56vh] w-auto max-w-none object-contain select-none',
   };
 
   const compareAvailable = compareMode && previewMatches;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.54)] p-8 backdrop-blur-sm">
-      <div className="relative flex h-auto max-h-[74vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_22px_60px_rgba(15,17,23,0.10)]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.50)] p-8 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex h-auto max-h-[72vh] w-full max-w-[860px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_22px_60px_rgba(15,17,23,0.10)]"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-semibold text-ink">{title}</p>
@@ -196,7 +202,7 @@ export function ImageViewerModal({
 
           <div className="flex h-full items-center justify-center p-4">
             {!compareMode || !previewMatches ? (
-              <div className="flex min-h-[48vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner">
+              <div className="flex min-h-[44vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner">
                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
                   <SafeImage
                     src={currentItem.previewUrl || currentItem.url}
@@ -206,26 +212,31 @@ export function ImageViewerModal({
                 </div>
               </div>
             ) : preview?.error ? (
-              <div className="flex min-h-[48vh] w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-4 text-center text-sm text-danger">
+              <div className="flex min-h-[44vh] w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-4 text-center text-sm text-danger">
                 {preview.error}
               </div>
             ) : preview?.loading || !preview?.upscaledUrl ? (
-              <div className="flex min-h-[48vh] w-full items-center justify-center rounded-[24px] border border-border bg-white p-4 text-sm text-muted">
+              <div className="flex min-h-[44vh] w-full items-center justify-center rounded-[24px] border border-border bg-white p-4 text-sm text-muted">
                 Upscaling…
               </div>
             ) : (
               <div
-                className="flex min-h-[48vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner"
+                className="flex min-h-[44vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner"
               >
-                <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
-                  <div ref={compareRef} className="relative inline-grid place-items-center">
+                <div ref={compareRef} className="relative inline-grid place-items-center">
+                  <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }} className="col-start-1 row-start-1">
                     <div className="col-start-1 row-start-1">
                       <SafeImage
                         src={preview.upscaledUrl}
                         alt={`${currentItem.filenameHint} upscaled`}
-                        className="max-h-[62vh] w-auto max-w-none object-contain select-none"
+                        className="max-h-[56vh] w-auto max-w-none object-contain select-none"
                       />
                     </div>
+                  </div>
+                  <div
+                    style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+                    className="col-start-1 row-start-1"
+                  >
                     <div
                       className="col-start-1 row-start-1 overflow-hidden"
                       style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}
@@ -236,36 +247,36 @@ export function ImageViewerModal({
                         {...imageProps}
                       />
                     </div>
+                  </div>
 
-                    <div
-                      className="absolute inset-y-0 z-10"
-                      style={{ left: `${split}%` }}
+                  <div
+                    className="absolute inset-y-0 z-10"
+                    style={{ left: `${split}%` }}
+                  >
+                    <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.08)]" />
+                    <button
+                      type="button"
+                      className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        draggingRef.current = true;
+                        const rect = compareRef.current?.getBoundingClientRect();
+                        if (!rect) return;
+                        const next = ((event.clientX - rect.left) / rect.width) * 100;
+                        setSplit(clampSplit(next));
+                      }}
+                      aria-label="Déplacer le comparateur"
                     >
-                      <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.08)]" />
-                      <button
-                        type="button"
-                        className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg"
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          draggingRef.current = true;
-                          const rect = compareRef.current?.getBoundingClientRect();
-                          if (!rect) return;
-                          const next = ((event.clientX - rect.left) / rect.width) * 100;
-                          setSplit(clampSplit(next));
-                        }}
-                        aria-label="Déplacer le comparateur"
-                      >
-                        <span className="text-[10px] font-semibold">↔</span>
-                      </button>
-                    </div>
+                      <span className="text-[10px] font-semibold">↔</span>
+                    </button>
+                  </div>
 
-                    <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
-                      Avant
-                    </div>
-                    <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
-                      Après
-                    </div>
+                  <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
+                    Avant
+                  </div>
+                  <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
+                    Après
                   </div>
                 </div>
               </div>

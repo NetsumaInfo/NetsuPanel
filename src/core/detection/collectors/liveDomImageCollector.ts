@@ -38,21 +38,38 @@ function isVisible(element: HTMLElement, rect: DOMRect, style: CSSStyleDeclarati
 
 function previewFromCanvas(canvas: HTMLCanvasElement): string {
   try {
-    return canvas.toDataURL('image/png');
+    const maxDimension = 160;
+    const scale = Math.min(1, maxDimension / Math.max(canvas.width || 1, canvas.height || 1));
+    const thumb = document.createElement('canvas');
+    thumb.width = Math.max(1, Math.round((canvas.width || 1) * scale));
+    thumb.height = Math.max(1, Math.round((canvas.height || 1) * scale));
+    const context = thumb.getContext('2d');
+    if (!context) return '';
+    context.drawImage(canvas, 0, 0, thumb.width, thumb.height);
+    return thumb.toDataURL('image/jpeg', 0.72);
   } catch {
     return '';
   }
 }
 
 function previewFromImage(image: HTMLImageElement): string {
+  const directSrc = image.currentSrc || image.src || '';
+  if (directSrc && !directSrc.startsWith('blob:') && !directSrc.startsWith('data:')) {
+    return directSrc;
+  }
+
   try {
+    const maxDimension = 160;
+    const width = Math.max(image.naturalWidth || image.width || 1, 1);
+    const height = Math.max(image.naturalHeight || image.height || 1, 1);
+    const scale = Math.min(1, maxDimension / Math.max(width, height));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(image.naturalWidth || image.width || 1, 1);
-    canvas.height = Math.max(image.naturalHeight || image.height || 1, 1);
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
     const context = canvas.getContext('2d');
     if (!context) return '';
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/png');
+    return canvas.toDataURL('image/jpeg', 0.72);
   } catch {
     if (image.currentSrc && !image.currentSrc.startsWith('blob:')) return image.currentSrc;
     if (image.src && !image.src.startsWith('blob:')) return image.src;

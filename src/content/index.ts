@@ -22,11 +22,11 @@ function sleep(ms: number): Promise<void> {
 async function stabilizePage(): Promise<void> {
   let lastCount = -1;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     const currentCount = document.images.length;
     if (currentCount === lastCount) return;
     lastCount = currentCount;
-    await sleep(350);
+    await sleep(450);
   }
 }
 
@@ -164,14 +164,26 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
 async function scanCurrentPage() {
   await stabilizePage();
   const page = getPageIdentity();
-  const collection = await collectLiveDomImages(page.url);
+  let bestCollection = await collectLiveDomImages(page.url);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await sleep(400);
+    const nextCollection = await collectLiveDomImages(page.url);
+    if (nextCollection.candidates.length > bestCollection.candidates.length) {
+      bestCollection = nextCollection;
+    }
+    if (bestCollection.candidates.length >= 12) {
+      break;
+    }
+  }
+
   capturableRegistry.clear();
-  collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
+  bestCollection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
   return scanPageDocument({
     document,
     page,
     origin: 'live-dom',
-    imageCandidates: collection.candidates,
+    imageCandidates: bestCollection.candidates,
   });
 }
 

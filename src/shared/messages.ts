@@ -21,6 +21,8 @@ export interface GetSourceContextRequest {
 export interface FetchDocumentRequest {
   type: RuntimeMessageType.FetchDocument;
   url: string;
+  referrer?: string;
+  tabId?: number;
 }
 
 export interface FetchBinaryRequest {
@@ -74,6 +76,7 @@ export const enum ContentMessageType {
   ScanPage = 'SCAN_PAGE',
   CaptureImage = 'CAPTURE_IMAGE',
   FetchBinary = 'FETCH_BINARY',
+  FetchDocument = 'FETCH_DOCUMENT',
 }
 
 export interface ScanPageRequest {
@@ -91,4 +94,14 @@ export interface FetchBinaryContentRequest {
   referrer?: string;
 }
 
-export type ContentRequest = ScanPageRequest | CaptureImageContentRequest | FetchBinaryContentRequest;
+export interface FetchDocumentContentRequest {
+  type: ContentMessageType.FetchDocument;
+  url: string;
+  referrer?: string;
+}
+
+export type ContentRequest =
+  | ScanPageRequest
+  | CaptureImageContentRequest
+  | FetchBinaryContentRequest
+  | FetchDocumentContentRequest;
