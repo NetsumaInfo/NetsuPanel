@@ -105,11 +105,35 @@ type WaifuModeMap = Partial<Record<Waifu2xMode, WaifuVariantMap>>;
 
 const WAIFU2X_MODELS: Record<'waifu2x-anime' | 'waifu2x-photo', WaifuModeMap> = {
   'waifu2x-anime': {
+    noise: {
+      '0': 'models/manga-scale2x.json',
+      '1': 'models/manga-scale2x.json',
+      '2': 'models/manga-scale2x.json',
+      '3': 'models/manga-scale2x.json',
+    },
+    noise_scale: {
+      '0': 'models/manga-scale2x.json',
+      '1': 'models/manga-scale2x.json',
+      '2': 'models/manga-scale2x.json',
+      '3': 'models/manga-scale2x.json',
+    },
     scale: {
       scale: 'models/manga-scale2x.json',
     },
   },
   'waifu2x-photo': {
+    noise: {
+      '0': 'models/general-scale2x.json',
+      '1': 'models/general-scale2x.json',
+      '2': 'models/general-scale2x.json',
+      '3': 'models/general-scale2x.json',
+    },
+    noise_scale: {
+      '0': 'models/general-scale2x.json',
+      '1': 'models/general-scale2x.json',
+      '2': 'models/general-scale2x.json',
+      '3': 'models/general-scale2x.json',
+    },
     scale: {
       scale: 'models/general-scale2x.json',
     },
