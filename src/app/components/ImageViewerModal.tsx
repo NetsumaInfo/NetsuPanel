@@ -222,7 +222,7 @@ export function ImageViewerModal({
   const navigationButtonClass =
     'flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 sm:h-12 sm:w-12';
   const overlayLabelClass =
-    'pointer-events-none absolute top-4 z-10 rounded-full bg-white/62 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/78 shadow-sm backdrop-blur-md';
+    'pointer-events-none rounded-full bg-[rgba(247,249,252,0.78)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-ink/78 shadow-[0_8px_18px_rgba(15,17,23,0.08)] backdrop-blur-md';
   const viewerHeightStyle = {
     height: 'min(80vh, calc(100vh - 220px))',
   };
@@ -299,8 +299,28 @@ export function ImageViewerModal({
             </button>
 
             <div className="relative w-full overflow-hidden rounded-[24px] border border-border bg-white shadow-inner" style={viewerHeightStyle}>
+              {compareMode && (
+                <div
+                  className="pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center justify-between px-4"
+                  style={{ width: frameStyle.width, maxWidth: 'calc(100% - 32px)' }}
+                >
+                  <span className={overlayLabelClass}>Avant</span>
+                  <span className={overlayLabelClass}>Après</span>
+                </div>
+              )}
+
               <div ref={viewportRef} className="flex h-full w-full items-center justify-center overflow-auto p-2 sm:p-4">
-                <div ref={compareRef} className="relative shrink-0 overflow-hidden rounded-[20px] bg-white" style={frameStyle}>
+                <div
+                  ref={compareRef}
+                  className="relative shrink-0 overflow-hidden rounded-[20px] bg-white"
+                  style={frameStyle}
+                  onContextMenu={(event) => {
+                    if (!compareReady) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    updateHandleFromPointer(event.clientX, event.clientY);
+                  }}
+                >
                   {compareReady ? (
                     <>
                       <SafeImage
@@ -319,11 +339,11 @@ export function ImageViewerModal({
                         />
                       </div>
                       <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${split}%` }}>
-                        <div className="absolute inset-y-0 -ml-px w-px bg-white/92 shadow-[0_0_18px_rgba(255,255,255,0.72)]" />
+                        <div className="absolute inset-y-0 -ml-[1.5px] w-[3px] rounded-full bg-white/96 shadow-[0_0_0_1px_rgba(15,17,23,0.08),0_0_18px_rgba(255,255,255,0.86)]" />
                       </div>
                       <button
                         type="button"
-                        className="absolute z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-white/70 bg-white/80 text-ink shadow-[0_14px_34px_rgba(15,17,23,0.18)] backdrop-blur-md transition-transform duration-150 hover:scale-[1.04]"
+                        className="absolute z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full bg-[rgba(247,249,252,0.82)] text-ink shadow-[0_14px_34px_rgba(15,17,23,0.16)] backdrop-blur-md transition-transform duration-150 hover:scale-[1.04]"
                         style={{ left: `${split}%`, top: `${handleY}%` }}
                         onPointerDown={(event) => {
                           if (event.button !== 0) return;
@@ -334,9 +354,9 @@ export function ImageViewerModal({
                         }}
                         aria-label="Déplacer le comparateur"
                       >
-                        <span className="flex items-center gap-0.5">
-                          <span className="h-3 w-[2px] rounded-full bg-ink/55" />
-                          <span className="h-3 w-[2px] rounded-full bg-ink/55" />
+                        <span className="flex items-center gap-1">
+                          <span className="h-4 w-[2px] rounded-full bg-ink/45" />
+                          <span className="h-4 w-[2px] rounded-full bg-ink/45" />
                         </span>
                       </button>
                     </>
@@ -346,13 +366,6 @@ export function ImageViewerModal({
                       alt={currentItem.filenameHint}
                       {...imageProps}
                     />
-                  )}
-
-                  {compareMode && (
-                    <>
-                      <span className={`${overlayLabelClass} left-4`}>Avant</span>
-                      <span className={`${overlayLabelClass} right-4`}>Après</span>
-                    </>
                   )}
 
                   {compareStatus && (

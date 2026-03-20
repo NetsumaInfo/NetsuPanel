@@ -135,7 +135,7 @@ export function ChapterAccordion({
                     >
                       <button
                         type="button"
-                        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(15,17,23,0.44)] text-white/92 shadow-[0_10px_18px_rgba(15,17,23,0.18)] backdrop-blur-md transition-all duration-200 hover:scale-[1.06] hover:bg-[rgba(15,17,23,0.62)] hover:text-white"
+                        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-[14px] bg-[rgba(247,249,252,0.78)] text-ink/70 shadow-[0_10px_24px_rgba(15,17,23,0.10)] backdrop-blur-md transition-all duration-200 hover:scale-[1.05] hover:bg-white hover:text-ink"
                         title="Télécharger l'image"
                         aria-label="Télécharger l'image"
                         onClick={(event) => {

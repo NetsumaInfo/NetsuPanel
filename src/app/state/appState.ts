@@ -5,8 +5,10 @@ import type {
   DownloadJobState,
   PageScanResult,
   SourceTabContext,
+  UpscaleSettings,
   UpscalePreviewState,
 } from '@shared/types';
+import { createDefaultUpscaleSettings } from '@core/upscale/realesrganModels';
 
 export interface NetsuAppState {
   tabId: number | null;
@@ -21,6 +23,7 @@ export interface NetsuAppState {
   error: string | null;
   upscaleEnabled: boolean;
   upscalePreview: UpscalePreviewState | null;
+  upscaleSettings: Record<AppMode, UpscaleSettings>;
   activity: DownloadJobState;
   waifuBackendLabel: string;
 }
@@ -38,6 +41,10 @@ export const initialAppState: NetsuAppState = {
   error: null,
   upscaleEnabled: false,
   upscalePreview: null,
+  upscaleSettings: {
+    manga: createDefaultUpscaleSettings('manga'),
+    general: createDefaultUpscaleSettings('general'),
+  },
   activity: {
     active: false,
     progress: 0,
@@ -60,6 +67,7 @@ export type AppAction =
   | { type: 'set-chapter-preview-status'; chapterUrl: string; status: ChapterItem['previewStatus'] }
   | { type: 'set-chapter-preview'; chapterUrl: string; preview: ChapterItem['preview']; error?: string }
   | { type: 'set-upscale-enabled'; enabled: boolean }
+  | { type: 'set-upscale-settings'; mode: AppMode; settings: Partial<UpscaleSettings> }
   | { type: 'set-upscale-preview'; preview: UpscalePreviewState | null }
   | { type: 'set-activity'; activity: DownloadJobState }
   | { type: 'set-waifu-backend'; label: string };
@@ -169,6 +177,20 @@ export function appReducer(state: NetsuAppState, action: AppAction): NetsuAppSta
       return {
         ...state,
         upscaleEnabled: action.enabled,
+      };
+
+    case 'set-upscale-settings':
+      return {
+        ...state,
+        upscalePreview: null,
+        waifuBackendLabel: 'Upscale prêt',
+        upscaleSettings: {
+          ...state.upscaleSettings,
+          [action.mode]: {
+            ...state.upscaleSettings[action.mode],
+            ...action.settings,
+          },
+        },
       };
 
     case 'set-upscale-preview':
