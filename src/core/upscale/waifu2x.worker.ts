@@ -17,6 +17,7 @@ interface ProcessRequest {
   modelUrl: string;
   blockSizes: number[];
   taskMode?: 'scale' | 'noise' | 'noise_scale';
+  noiseLevel?: number;
   preferredBackend?: UpscaleBackend;
 }
 
@@ -105,6 +106,41 @@ async function imageBitmapToBlob(bitmap: ImageBitmap): Promise<Blob> {
   }
 }
 
+async function runWaifuPipeline(
+  predictor: WaifuPredictor,
+  sourceBitmap: ImageBitmap,
+  taskMode: ProcessRequest['taskMode'],
+  noiseLevel: number
+): Promise<ImageBitmap> {
+  const normalizedMode = taskMode ?? 'scale';
+  const denoisePasses =
+    normalizedMode === 'noise' || normalizedMode === 'noise_scale'
+      ? Math.max(0, Math.min(3, noiseLevel))
+      : 0;
+
+  let currentBitmap = sourceBitmap;
+  let ownsCurrentBitmap = false;
+
+  for (let index = 0; index < denoisePasses; index += 1) {
+    const denoised = await predictor.predict(currentBitmap, true);
+    if (ownsCurrentBitmap && typeof currentBitmap.close === 'function') {
+      currentBitmap.close();
+    }
+    currentBitmap = denoised;
+    ownsCurrentBitmap = true;
+  }
+
+  if (normalizedMode === 'noise') {
+    return currentBitmap;
+  }
+
+  const upscaled = await predictor.predict(currentBitmap, false);
+  if (ownsCurrentBitmap && typeof currentBitmap.close === 'function') {
+    currentBitmap.close();
+  }
+  return upscaled;
+}
+
 async function runAttempt(
   data: ProcessRequest,
   sourceBitmap: ImageBitmap,
@@ -115,7 +151,12 @@ async function runAttempt(
   for (const blockSize of data.blockSizes) {
     try {
       const predictor = getPredictor(data.modelUrl, blockSize, data.jobId, backend);
-      const output = await predictor.predict(sourceBitmap, false);
+      const output = await runWaifuPipeline(
+        predictor,
+        sourceBitmap,
+        data.taskMode,
+        data.noiseLevel ?? 0
+      );
       const blob = await imageBitmapToBlob(output);
       const bytes = await blob.arrayBuffer();
       self.postMessage(

@@ -157,7 +157,7 @@ export function UpscalePanel({
             <div className="grid gap-2 border-t border-border/70 pt-2">
               <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
                 <div className="grid gap-1">
-                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Échelle</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Mode</span>
                 <CompactSelect
                   value={settings.waifuMode}
                   options={waifuModeOptions}
