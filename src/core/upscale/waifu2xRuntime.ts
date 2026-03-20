@@ -191,7 +191,7 @@ export class Waifu2xRuntime {
               jobId,
               bytes: requestBytes,
               mime: options.mime,
-              modelUrl: getWaifuModelUrl(options.mode),
+              modelUrl: getWaifuModelUrl(options.mode, options.settings!),
               blockSizes: options.settings?.tileSize ? [options.settings.tileSize] : preferredBlockSizes(options.bytes.byteLength),
               preferredBackend:
                 options.settings?.preferredBackend && options.settings.preferredBackend !== 'auto'

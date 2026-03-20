@@ -1,11 +1,20 @@
-import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleSettings, UpscalePreviewState } from '@shared/types';
+import type {
+  AppMode,
+  UpscaleBackendPreference,
+  UpscaleDenoiseLevel,
+  UpscaleSettings,
+  UpscalePreviewState,
+} from '@shared/types';
 import {
   getRealesrganPreset,
   getSupportedBackendPreferences,
   getSupportedDenoiseOptions,
   getUpscaleModelDefinition,
   getUpscaleModelOptions,
+  getWaifuModeOptions,
+  getWaifuNoiseOptions,
   modelSupportsDenoise,
+  waifuModeSupportsNoise,
 } from '@core/upscale/realesrganModels';
 import { CompactSelect } from './CompactSelect';
 import { SafeImage } from './SafeImage';
@@ -51,6 +60,10 @@ export function UpscalePanel({
   const availableBackends = BACKEND_OPTIONS.filter((option) => getSupportedBackendPreferences(settings.modelId).includes(option.value));
   const showDenoise = modelSupportsDenoise(settings.modelId);
   const tileOptions = modelDefinition.tileSizes.map((size) => ({ value: String(size), label: `${size}` }));
+  const isWaifu = settings.modelId === 'waifu2x';
+  const waifuModeOptions = getWaifuModeOptions(mode);
+  const waifuNoiseOptions = getWaifuNoiseOptions(mode, settings.waifuMode);
+  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(mode, settings.waifuMode);
 
   return (
     <section className="surface space-y-2.5 p-3">
@@ -101,6 +114,8 @@ export function UpscalePanel({
                   denoise: nextDenoise,
                   tileSize: nextModel.tileSizes[0] ?? settings.tileSize,
                   preferredBackend: nextBackend,
+                  waifuMode: 'scale',
+                  waifuNoiseLevel: '0',
                 });
               }}
             />
@@ -136,6 +151,36 @@ export function UpscalePanel({
               onChange={(value) => onSettingsChange({ tileSize: Number(value) })}
             />
           </div>
+
+          {isWaifu && (
+            <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : ''}`}>
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Mode</span>
+                <CompactSelect
+                  value={settings.waifuMode}
+                  options={waifuModeOptions}
+                  onChange={(value) => {
+                    const nextNoiseOptions = getWaifuNoiseOptions(mode, value);
+                    onSettingsChange({
+                      waifuMode: value,
+                      waifuNoiseLevel: nextNoiseOptions[0]?.value ?? settings.waifuNoiseLevel,
+                    });
+                  }}
+                />
+              </div>
+
+              {showWaifuNoise && (
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Noise</span>
+                  <CompactSelect
+                    value={settings.waifuNoiseLevel}
+                    options={waifuNoiseOptions}
+                    onChange={(value) => onSettingsChange({ waifuNoiseLevel: value })}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

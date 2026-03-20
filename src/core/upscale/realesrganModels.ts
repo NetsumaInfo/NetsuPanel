@@ -4,6 +4,8 @@ import type {
   UpscaleDenoiseLevel,
   UpscaleModelId,
   UpscaleSettings,
+  Waifu2xMode,
+  Waifu2xNoiseLevel,
 } from '@shared/types';
 
 export type UpscaleBackend = Exclude<UpscaleBackendPreference, 'auto'>;
@@ -90,6 +92,22 @@ const UPSCALE_MODELS: Record<UpscaleModelId, RealesrganModelPreset> = {
   },
 };
 
+type WaifuVariantMap = Partial<Record<Waifu2xNoiseLevel | 'scale', string>>;
+type WaifuModeMap = Partial<Record<Waifu2xMode, WaifuVariantMap>>;
+
+const WAIFU2X_MODELS: Record<AppMode, WaifuModeMap> = {
+  manga: {
+    scale: {
+      scale: 'models/manga-scale2x.json',
+    },
+  },
+  general: {
+    scale: {
+      scale: 'models/general-scale2x.json',
+    },
+  },
+};
+
 export const BACKEND_PRIORITY: UpscaleBackend[] = ['webgpu', 'webgl', 'cpu'];
 
 export function getBackendPriority(): UpscaleBackend[] {
@@ -104,11 +122,13 @@ export function createDefaultUpscaleSettings(mode: AppMode): UpscaleSettings {
     denoise: mode === 'manga' ? 'conservative' : 'no-denoise',
     tileSize: defaultTileSize,
     preferredBackend: 'auto',
+    waifuMode: 'scale',
+    waifuNoiseLevel: '0',
   };
 }
 
 export function serializeUpscaleSettings(settings: UpscaleSettings): string {
-  return `${settings.modelId}-${settings.denoise}-${settings.tileSize}-${settings.preferredBackend}`;
+  return `${settings.modelId}-${settings.denoise}-${settings.tileSize}-${settings.preferredBackend}-${settings.waifuMode}-${settings.waifuNoiseLevel}`;
 }
 
 export function getUpscaleModelDefinition(modelId: UpscaleModelId): RealesrganModelPreset {
@@ -132,6 +152,46 @@ export function getSupportedBackendPreferences(modelId: UpscaleModelId): Upscale
     return ['auto', 'webgl', 'cpu'];
   }
   return ['auto', 'webgpu', 'webgl', 'cpu'];
+}
+
+export function getWaifuModeOptions(mode: AppMode): Array<{ value: Waifu2xMode; label: string }> {
+  const variants = WAIFU2X_MODELS[mode];
+  return (Object.keys(variants) as Waifu2xMode[]).map((value) => ({
+    value,
+    label: value === 'noise' ? 'Noise' : value === 'noise_scale' ? 'Noise + Scale' : 'Scale',
+  }));
+}
+
+export function getWaifuNoiseOptions(
+  mode: AppMode,
+  waifuMode: Waifu2xMode
+): Array<{ value: Waifu2xNoiseLevel; label: string }> {
+  const variants = WAIFU2X_MODELS[mode][waifuMode];
+  if (!variants) return [];
+
+  return (Object.keys(variants) as Array<Waifu2xNoiseLevel | 'scale'>)
+    .filter((value): value is Waifu2xNoiseLevel => value !== 'scale')
+    .map((value) => ({ value, label: value }));
+}
+
+export function waifuModeSupportsNoise(mode: AppMode, waifuMode: Waifu2xMode): boolean {
+  return getWaifuNoiseOptions(mode, waifuMode).length > 0;
+}
+
+export function resolveWaifuModelAsset(mode: AppMode, settings: UpscaleSettings): string {
+  const variants = WAIFU2X_MODELS[mode][settings.waifuMode];
+  if (variants) {
+    if (settings.waifuMode === 'scale' && variants.scale) {
+      return variants.scale;
+    }
+
+    const noiseVariant = variants[settings.waifuNoiseLevel];
+    if (noiseVariant) {
+      return noiseVariant;
+    }
+  }
+
+  return WAIFU2X_MODELS[mode].scale?.scale || `models/${mode}-scale2x.json`;
 }
 
 export function getSupportedDenoiseOptions(modelId: UpscaleModelId): UpscaleDenoiseLevel[] {
