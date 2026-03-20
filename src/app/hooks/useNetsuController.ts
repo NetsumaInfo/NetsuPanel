@@ -10,6 +10,7 @@ import { isSameChapterUrl, resolveBootstrapTabId } from '@app/services/sourceBoo
 export function useNetsuController() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const waifuRuntimeRef = useRef<Waifu2xRuntime>(new Waifu2xRuntime());
+  const previewObjectUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +53,24 @@ export function useNetsuController() {
   const selectedGeneralImages = useMemo(
     () => state.scan?.general.items.filter((item) => state.generalSelection[item.id]) || [],
     [state.generalSelection, state.scan]
+  );
+
+  useEffect(() => {
+    const nextUrl = state.upscalePreview?.upscaledUrl;
+    if (previewObjectUrlRef.current && previewObjectUrlRef.current !== nextUrl) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+    }
+    previewObjectUrlRef.current = nextUrl ?? null;
+  }, [state.upscalePreview?.upscaledUrl]);
+
+  useEffect(
+    () => () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
+    },
+    []
   );
 
   const updateActivity = useCallback((message: string, progress: number, error?: string) => {
@@ -193,5 +212,6 @@ export function useNetsuController() {
     downloadGeneral: downloads.downloadGeneral,
     downloadChapter: downloads.downloadChapter,
     downloadAllChapters: downloads.downloadAllChapters,
+    downloadImage: downloads.downloadImage,
   };
 }

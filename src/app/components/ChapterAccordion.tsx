@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
 import { SafeImage } from './SafeImage';
-import { ChevronDownIcon, DownloadIcon, LightningIcon } from './icons';
+import { ChevronDownIcon, DownloadIcon } from './icons';
 
 interface ChapterAccordionProps {
   chapter: ChapterItem;
@@ -10,7 +10,7 @@ interface ChapterAccordionProps {
   compact: boolean;
   onEnsurePreview(chapter: ChapterItem): Promise<ImageCollectionResult>;
   onDownload(chapter: ChapterItem): void;
-  onCompareFirst(chapter: ChapterItem): void;
+  onDownloadImage(image: ImageCandidate, chapter: ChapterItem): void;
   onOpenImage(chapter: ChapterItem, items: ImageCandidate[], index: number): void;
 }
 
@@ -29,7 +29,7 @@ export function ChapterAccordion({
   compact,
   onEnsurePreview,
   onDownload,
-  onCompareFirst,
+  onDownloadImage,
   onOpenImage,
 }: ChapterAccordionProps) {
   const [open, setOpen] = useState(chapter.relation === 'current');
@@ -113,46 +113,50 @@ export function ChapterAccordion({
 
           {chapter.previewStatus === 'ready' && chapter.preview && (
             <>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-muted">{chapter.preview.items.length} pages</span>
-                {chapter.preview.items[0] && (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => onCompareFirst(chapter)}
-                    title="Comparer avant/après upscale"
-                  >
-                    <LightningIcon size={14} />
-                    Aperçu
-                  </button>
-                )}
-              </div>
-
               {chapter.preview.items.length > 0 ? (
                 <div
                   className={`grid ${compact ? 'gap-1' : 'gap-1.5'}`}
                   style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))` }}
                 >
                   {previewItems.map((item, i) => (
-                    <button
+                    <article
                       key={item.id}
-                      type="button"
                       title={item.filenameHint}
-                      className="relative overflow-hidden rounded-lg border border-border bg-border/20 transition-opacity hover:opacity-80"
+                      className="group relative cursor-pointer overflow-hidden rounded-lg border border-border bg-border/20 transition-colors hover:border-border/80"
                       onClick={() => onOpenImage(chapter, previewItems, i)}
+                      onKeyDown={(event) => {
+                        if (event.key === ' ' || event.key === 'Enter') {
+                          event.preventDefault();
+                          onOpenImage(chapter, previewItems, i);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
+                      <button
+                        type="button"
+                        className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-white/60 bg-white/82 text-ink shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-white"
+                        title="Télécharger l'image"
+                        aria-label="Télécharger l'image"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDownloadImage(item, chapter);
+                        }}
+                      >
+                        <DownloadIcon size={12} />
+                      </button>
                       <SafeImage
                         src={item.previewUrl || item.url}
                         alt={`Page ${i + 1}`}
                         referrer={chapter.url}
                         captureTabId={item.origin === 'live-dom' ? sourceTabId : undefined}
                         captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
-                        className="page-thumb"
+                        className="page-thumb transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]"
                       />
                       <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-2xs text-white">
                         {i + 1}
                       </span>
-                    </button>
+                    </article>
                   ))}
                 </div>
               ) : (

@@ -1,6 +1,6 @@
 import type { ImageCandidate } from '@shared/types';
 import { SafeImage } from './SafeImage';
-import { CheckIcon, DownloadIcon, ImageIcon, LightningIcon } from './icons';
+import { CheckIcon, DownloadIcon, ImageIcon } from './icons';
 
 interface GeneralGridProps {
   items: ImageCandidate[];
@@ -12,7 +12,7 @@ interface GeneralGridProps {
   onToggle(imageId: string): void;
   onSelectAll(checked: boolean): void;
   onDownload(): void;
-  onCompare(candidate: ImageCandidate): void;
+  onDownloadImage(candidate: ImageCandidate): void;
   onOpen(candidate: ImageCandidate): void;
 }
 
@@ -26,7 +26,7 @@ export function GeneralGrid({
   onToggle,
   onSelectAll,
   onDownload,
-  onCompare,
+  onDownloadImage,
   onOpen,
 }: GeneralGridProps) {
   const selectedCount = items.filter((item) => selected[item.id]).length;
@@ -121,7 +121,7 @@ export function GeneralGrid({
                   referrer={referrer}
                   captureTabId={item.origin === 'live-dom' ? sourceTabId : undefined}
                   captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
-                  className={`${compact ? 'aspect-[3/4]' : 'aspect-[4/5]'} w-full object-contain bg-border/20`}
+                  className={`${compact ? 'aspect-[3/4]' : 'aspect-[4/5]'} w-full object-contain bg-border/20 transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]`}
                 />
 
                 {/* Footer */}
@@ -131,14 +131,17 @@ export function GeneralGrid({
                   </p>
                 </div>
 
-                {/* Upscale compare button */}
                 <button
                   type="button"
-                  className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/75"
-                  title="Aperçu upscale"
-                  onClick={(e) => { e.stopPropagation(); onCompare(item); }}
+                  className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-white/60 bg-white/82 text-ink shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:bg-white"
+                  title="Télécharger l'image"
+                  aria-label="Télécharger l'image"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownloadImage(item);
+                  }}
                 >
-                  <LightningIcon size={12} />
+                  <DownloadIcon size={12} />
                 </button>
               </article>
             );

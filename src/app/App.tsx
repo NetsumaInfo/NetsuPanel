@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { ChapterItem, ImageCandidate } from '@shared/types';
+import type { ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
 import { ChapterAccordion } from '@app/components/ChapterAccordion';
@@ -19,10 +19,6 @@ interface ViewerState {
   index: number;
   referrer?: string;
   sourceTabId?: number;
-}
-
-function pickPreviewCandidate(chapter: ChapterItem): ImageCandidate | undefined {
-  return chapter.preview?.items[0];
 }
 
 function resolveAutoUiSettings(windowWidth: number): AutoUiSettings {
@@ -164,10 +160,7 @@ export function App() {
                           thumbnailSize={chapterThumbnailSize}
                           onEnsurePreview={controller.ensureChapterPreview}
                           onDownload={(item) => void controller.downloadChapter(item)}
-                          onCompareFirst={() => {
-                            const candidate = pickPreviewCandidate(chapter);
-                            if (candidate) void controller.previewUpscale(candidate, chapter.url);
-                          }}
+                          onDownloadImage={(image, chapterItem) => void controller.downloadImage(image, { referrer: chapterItem.url })}
                           onOpenImage={(item, items, index) => {
                             setViewer({
                               title: item.label,
@@ -192,7 +185,7 @@ export function App() {
                     onToggle={controller.toggleGeneralItem}
                     onSelectAll={controller.selectAllGeneral}
                     onDownload={() => void controller.downloadGeneral()}
-                    onCompare={(candidate) => void controller.previewUpscale(candidate, source.url)}
+                    onDownloadImage={(candidate) => void controller.downloadImage(candidate, { referrer: source.url })}
                     onOpen={(candidate) => {
                       setViewer({
                         title: source.title || 'Images détectées',
@@ -221,6 +214,7 @@ export function App() {
           onClose={() => setViewer(null)}
           onNavigate={(nextIndex) => setViewer((current) => (current ? { ...current, index: nextIndex } : current))}
           onRequestCompare={handleViewerCompare}
+          onDownloadImage={(image) => controller.downloadImage(image, { referrer: viewer.referrer })}
         />
       )}
     </div>
