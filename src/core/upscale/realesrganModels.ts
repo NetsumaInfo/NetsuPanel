@@ -105,17 +105,11 @@ type WaifuModeMap = Partial<Record<Waifu2xMode, WaifuVariantMap>>;
 
 const WAIFU2X_MODELS: Record<'waifu2x-anime' | 'waifu2x-photo', WaifuModeMap> = {
   'waifu2x-anime': {
-    noise: {
-      '0': 'models/manga-scale2x.json',
-    },
     scale: {
       scale: 'models/manga-scale2x.json',
     },
   },
   'waifu2x-photo': {
-    noise: {
-      '0': 'models/general-scale2x.json',
-    },
     scale: {
       scale: 'models/general-scale2x.json',
     },
@@ -187,14 +181,6 @@ export function getWaifuNoiseOptions(
   if (modelId !== 'waifu2x-anime' && modelId !== 'waifu2x-photo') {
     return [];
   }
-  if (waifuMode === 'noise' || waifuMode === 'noise_scale') {
-    return [
-      { value: '0', label: '0' },
-      { value: '1', label: '1' },
-      { value: '2', label: '2' },
-      { value: '3', label: '3' },
-    ];
-  }
   const variants = WAIFU2X_MODELS[modelId][waifuMode];
   if (!variants) return [];
 
@@ -204,7 +190,7 @@ export function getWaifuNoiseOptions(
 }
 
 export function waifuModeSupportsNoise(modelId: UpscaleModelId, waifuMode: Waifu2xMode): boolean {
-  return waifuMode === 'noise' || waifuMode === 'noise_scale' || getWaifuNoiseOptions(modelId, waifuMode).length > 0;
+  return getWaifuNoiseOptions(modelId, waifuMode).length > 0;
 }
 
 export function resolveWaifuModelAsset(_mode: AppMode, settings: UpscaleSettings): string {
