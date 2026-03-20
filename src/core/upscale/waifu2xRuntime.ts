@@ -1,4 +1,7 @@
 import type { AppMode, UpscaleSettings } from '@shared/types';
+import { getUpscaleModelDefinition } from './realesrganModels';
+import { preferredBlockSizes } from './waifu2xFallback';
+import { getWaifuModelUrl } from './waifu2xModels';
 
 type ProgressCallback = (message: string, progress: number) => void;
 
@@ -28,6 +31,8 @@ const PROGRESS_MIN_DELTA = 0.02;
 export class Waifu2xRuntime {
   private worker: Worker | null = null;
 
+  private workerKind: 'realesrgan' | 'waifu2x' | null = null;
+
   private pending = new Map<string, PendingJob>();
 
   private queue = Promise.resolve();
@@ -48,16 +53,28 @@ export class Waifu2xRuntime {
     }
   }
 
-  private ensureWorker(): Worker {
+  private ensureWorker(settings?: UpscaleSettings): Worker {
     if (this.disabledReason) {
       throw new Error(this.disabledReason);
     }
 
-    if (this.worker) return this.worker;
+    const modelFamily = settings ? getUpscaleModelDefinition(settings.modelId).type : 'realcugan';
+    const nextWorkerKind = modelFamily === 'waifu2x' ? 'waifu2x' : 'realesrgan';
+    if (this.worker && this.workerKind === nextWorkerKind) return this.worker;
+    if (this.worker && this.workerKind !== nextWorkerKind) {
+      this.worker.terminate();
+      this.worker = null;
+      this.pending.clear();
+    }
 
-    this.worker = new Worker(new URL('./realesrgan.worker.ts', import.meta.url), {
-      type: 'module',
-    });
+    this.worker = nextWorkerKind === 'waifu2x'
+      ? new Worker(new URL('./waifu2x.worker.ts', import.meta.url), {
+          type: 'module',
+        })
+      : new Worker(new URL('./realesrgan.worker.ts', import.meta.url), {
+          type: 'module',
+        });
+    this.workerKind = nextWorkerKind;
     this.worker.onerror = (event) => {
       event.preventDefault();
       this.disabledReason = 'AI upscale unavailable in this browser context (CSP or worker error).';
@@ -151,7 +168,7 @@ export class Waifu2xRuntime {
           return;
         }
 
-        const worker = this.ensureWorker();
+        const worker = this.ensureWorker(options.settings);
         const jobId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const requestBytes = options.bytes.slice(0);
         this.pending.set(jobId, {
@@ -167,17 +184,35 @@ export class Waifu2xRuntime {
           lastProgressRatio: 0,
         });
 
-        worker.postMessage(
-          {
-            type: 'process',
-            jobId,
-            bytes: requestBytes,
-            mime: options.mime,
-            mode: options.mode,
-            settings: options.settings,
-          },
-          [requestBytes]
-        );
+        if (this.workerKind === 'waifu2x') {
+          worker.postMessage(
+            {
+              type: 'process',
+              jobId,
+              bytes: requestBytes,
+              mime: options.mime,
+              modelUrl: getWaifuModelUrl(options.mode),
+              blockSizes: preferredBlockSizes(options.bytes.byteLength),
+              preferredBackend:
+                options.settings?.preferredBackend && options.settings.preferredBackend !== 'auto'
+                  ? options.settings.preferredBackend
+                  : undefined,
+            },
+            [requestBytes]
+          );
+        } else {
+          worker.postMessage(
+            {
+              type: 'process',
+              jobId,
+              bytes: requestBytes,
+              mime: options.mime,
+              mode: options.mode,
+              settings: options.settings,
+            },
+            [requestBytes]
+          );
+        }
       };
 
       this.queue = this.queue.then(run, run);
@@ -190,6 +225,7 @@ export class Waifu2xRuntime {
       this.worker.terminate();
       this.worker = null;
     }
+    this.workerKind = null;
     this.pending.clear();
     this.cache.clear();
   }

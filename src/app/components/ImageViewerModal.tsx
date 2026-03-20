@@ -314,11 +314,16 @@ export function ImageViewerModal({
                   ref={compareRef}
                   className="relative shrink-0 overflow-hidden rounded-[20px] bg-white"
                   style={frameStyle}
-                  onContextMenu={(event) => {
-                    if (!compareReady) return;
+                  onPointerDown={(event) => {
+                    if (!compareReady || event.button !== 0) return;
+                    if ((event.target as HTMLElement).closest('button')) return;
                     event.preventDefault();
                     event.stopPropagation();
                     updateHandleFromPointer(event.clientX, event.clientY);
+                  }}
+                  onContextMenu={(event) => {
+                    if (!compareReady) return;
+                    return;
                   }}
                 >
                   {compareReady ? (
