@@ -63,7 +63,7 @@ export function UpscalePanel({
   const isWaifu = settings.modelId === 'waifu2x-anime' || settings.modelId === 'waifu2x-photo';
   const waifuModeOptions = getWaifuModeOptions(settings.modelId);
   const waifuNoiseOptions = getWaifuNoiseOptions(settings.modelId, settings.waifuMode);
-  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(settings.modelId, settings.waifuMode);
+  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(settings.modelId, settings.waifuMode) && waifuNoiseOptions.length > 1;
   const showWaifuControls = isWaifu && (waifuModeOptions.length > 1 || showWaifuNoise);
 
   return (
@@ -98,7 +98,7 @@ export function UpscalePanel({
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Réglages</span>
         </div>
 
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           <div className="grid gap-1">
             <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Modèle</span>
             <CompactSelect
@@ -122,7 +122,7 @@ export function UpscalePanel({
             />
           </div>
 
-          <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
+          <div className="grid gap-2 sm:grid-cols-2">
             {showDenoise && (
               <div className="grid gap-1">
                 <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Niveau</span>
@@ -142,24 +142,21 @@ export function UpscalePanel({
                 onChange={(value) => onSettingsChange({ preferredBackend: value })}
               />
             </div>
-          </div>
 
-          <div className="grid gap-1">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Tuiles</span>
-            <CompactSelect
-              value={String(settings.tileSize)}
-              options={tileOptions}
-              onChange={(value) => onSettingsChange({ tileSize: Number(value) })}
-            />
+            <div className="grid gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Tuiles</span>
+              <CompactSelect
+                value={String(settings.tileSize)}
+                options={tileOptions}
+                onChange={(value) => onSettingsChange({ tileSize: Number(value) })}
+              />
+            </div>
           </div>
 
           {showWaifuControls && (
-            <div className="rounded-xl border border-border/65 bg-white px-2.5 py-2 shadow-[0_1px_4px_rgba(15,17,23,0.04)]">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-                Waifu2x
-              </div>
-              <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : ''}`}>
-              <div className="grid gap-1">
+            <div className="grid gap-2 border-t border-border/70 pt-2">
+              <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
+                <div className="grid gap-1">
                 <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Mode</span>
                 <CompactSelect
                   value={settings.waifuMode}
@@ -172,18 +169,18 @@ export function UpscalePanel({
                     });
                   }}
                 />
-              </div>
-
-              {showWaifuNoise && (
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Noise</span>
-                  <CompactSelect
-                    value={settings.waifuNoiseLevel}
-                    options={waifuNoiseOptions}
-                    onChange={(value) => onSettingsChange({ waifuNoiseLevel: value })}
-                  />
                 </div>
-              )}
+
+                {showWaifuNoise && (
+                  <div className="grid gap-1">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Noise</span>
+                    <CompactSelect
+                      value={settings.waifuNoiseLevel}
+                      options={waifuNoiseOptions}
+                      onChange={(value) => onSettingsChange({ waifuNoiseLevel: value })}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
