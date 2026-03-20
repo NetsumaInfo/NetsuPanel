@@ -16,6 +16,7 @@ interface ProcessRequest {
   mime: string;
   modelUrl: string;
   blockSizes: number[];
+  preferredBackend?: UpscaleBackend;
 }
 
 interface ResetRequest {
@@ -49,7 +50,10 @@ async function activateBackend(backend: UpscaleBackend): Promise<UpscaleBackend>
   return backend;
 }
 
-async function getInitialBackend(): Promise<UpscaleBackend> {
+async function getInitialBackend(preferred?: UpscaleBackend): Promise<UpscaleBackend> {
+  if (preferred) {
+    return activateBackend(preferred);
+  }
   try {
     return await activateBackend('webgl');
   } catch {
@@ -168,7 +172,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   let lastError: string | undefined;
 
   try {
-    let backend = await getInitialBackend();
+    let backend = await getInitialBackend(data.preferredBackend);
     self.postMessage({
       type: 'backend',
       jobId: data.jobId,
