@@ -119,6 +119,15 @@ export function UpscalePanel({
                 });
               }}
             />
+            {isWaifu ? (
+              <p className="text-[10px] text-muted">
+                Réglages waifu2x affichés juste en dessous.
+              </p>
+            ) : (
+              <p className="text-[10px] text-muted">
+                Choisir `waifu2x x2` pour afficher `Mode` et `Noise`.
+              </p>
+            )}
           </div>
 
           <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
@@ -153,7 +162,11 @@ export function UpscalePanel({
           </div>
 
           {isWaifu && (
-            <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : ''}`}>
+            <div className="rounded-xl border border-border/65 bg-white px-2.5 py-2 shadow-[0_1px_4px_rgba(15,17,23,0.04)]">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                Waifu2x
+              </div>
+              <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : ''}`}>
               <div className="grid gap-1">
                 <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Mode</span>
                 <CompactSelect
@@ -179,6 +192,12 @@ export function UpscalePanel({
                   />
                 </div>
               )}
+              {!showWaifuNoise && (
+                <p className="text-[10px] text-muted">
+                  Les poids embarqués actuels exposent seulement `Scale`.
+                </p>
+              )}
+              </div>
             </div>
           )}
         </div>
