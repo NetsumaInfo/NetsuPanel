@@ -1,7 +1,7 @@
 {
   "name": "netsu-panel",
   "displayName": "Netsu Panel",
-  "version": "2.0.0",
+  "version": "1.9.0",
   "description": "Fast manga, webtoon and image downloader extension with chapter detection and upscale tools.",
   "author": "Saptarshi Mondal <mondalsaptarshi7@gmail.com>",
   "license": "MIT",
