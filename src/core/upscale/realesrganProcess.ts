@@ -1,4 +1,5 @@
 import type { GraphModel } from '@tensorflow/tfjs-converter';
+import { browser, cast, clipByValue, div, expandDims, mul, squeeze } from './tfjsCompat';
 import { RealesrganImage } from './realesrganImage';
 
 function resolveScaleFactor(model: GraphModel): number {
@@ -22,21 +23,37 @@ export async function upscaleWithGraphModel(
   model: GraphModel,
   _alpha = false
 ): Promise<RealesrganImage> {
-  const factor = resolveScaleFactor(model);
-  const output = new RealesrganImage(input.width * factor, input.height * factor);
+  const imageData = new ImageData(new Uint8ClampedArray(input.data), input.width, input.height);
+  const pixelTensor = browser.fromPixels(imageData, 3);
+  const normalized = div(cast(pixelTensor, 'float32'), 255);
+  const batched = expandDims(normalized, 0);
+  pixelTensor.dispose();
+  normalized.dispose();
 
-  for (let y = 0; y < output.height; y += 1) {
-    const sourceY = Math.min(input.height - 1, Math.floor(y / factor));
-    for (let x = 0; x < output.width; x += 1) {
-      const sourceX = Math.min(input.width - 1, Math.floor(x / factor));
-      const sourceOffset = (sourceY * input.width + sourceX) * 4;
-      const targetOffset = (y * output.width + x) * 4;
-      output.data[targetOffset] = input.data[sourceOffset] ?? 0;
-      output.data[targetOffset + 1] = input.data[sourceOffset + 1] ?? 0;
-      output.data[targetOffset + 2] = input.data[sourceOffset + 2] ?? 0;
-      output.data[targetOffset + 3] = input.data[sourceOffset + 3] ?? 255;
-    }
+  const result = typeof model.executeAsync === 'function'
+    ? await model.executeAsync(batched)
+    : model.execute(batched);
+  batched.dispose();
+
+  const outputTensor = Array.isArray(result) ? result[0] : result;
+  const squeezed = squeeze(outputTensor, [0]);
+  const clipped = clipByValue(squeezed, 0, 1);
+  const scaled = cast(mul(clipped, 255), 'int32');
+
+  const rgb = await scaled.data();
+  const [height, width] = scaled.shape;
+  outputTensor.dispose();
+  squeezed.dispose();
+  clipped.dispose();
+  scaled.dispose();
+
+  const rgba = new Uint8Array(width * height * 4);
+  for (let source = 0, target = 0; source < rgb.length; source += 3, target += 4) {
+    rgba[target] = rgb[source] ?? 0;
+    rgba[target + 1] = rgb[source + 1] ?? 0;
+    rgba[target + 2] = rgb[source + 2] ?? 0;
+    rgba[target + 3] = 255;
   }
 
-  return output;
+  return new RealesrganImage(width, height, rgba);
 }

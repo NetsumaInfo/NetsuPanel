@@ -1,6 +1,21 @@
 import '@tensorflow/tfjs-backend-webgl';
 import type { Tensor3D, Tensor4D } from '@tensorflow/tfjs-core';
-import { concat, getBackend, image, layers, mirrorPad, model, tensor, tidy } from './tfjsCompat';
+import {
+  clipByValue,
+  clone,
+  concat,
+  expandDims,
+  getBackend,
+  image,
+  layers,
+  mirrorPad,
+  model,
+  slice,
+  squeeze,
+  tensor,
+  tidy,
+  transpose,
+} from './tfjsCompat';
 import { WaifuImage } from './waifuImage';
 
 interface ParamsObject {
@@ -85,7 +100,7 @@ export class WaifuPredictor {
         kernelInitializer: 'zeros',
         padding: 'same',
         weights: [
-          tensor(param.weight).transpose([2, 3, 1, 0]),
+          transpose(tensor(param.weight), [2, 3, 1, 0]),
           tensor(param.bias),
         ],
         useBias: true,
@@ -123,16 +138,16 @@ export class WaifuPredictor {
     if (inputChannel === 1) {
       imageWrapper.mode = 'YCbCr';
       const nextTensor = imageWrapper.tensor;
-      const luminanceTensor = nextTensor.slice(
+      const luminanceTensor = slice(nextTensor,
         [0, 0, 0],
         [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]
       ) as Tensor3D;
-      workTensor = luminanceTensor.expandDims(0) as Tensor4D;
+      workTensor = expandDims(luminanceTensor, 0) as Tensor4D;
       luminanceTensor.dispose();
       nextTensor.dispose();
     } else {
       const nextTensor = imageWrapper.tensor;
-      workTensor = nextTensor.expandDims(0) as Tensor4D;
+      workTensor = expandDims(nextTensor, 0) as Tensor4D;
       nextTensor.dispose();
     }
 
@@ -177,7 +192,8 @@ export class WaifuPredictor {
       for (let columnIndex = 0; columnIndex < wNBlock; columnIndex += 1) {
         tileQueue.push({
           rowIndex,
-          tensor: workTensor.slice(
+          tensor: slice(
+            workTensor,
             [0, rowIndex * this.blockSize, columnIndex * this.blockSize, 0],
             [1, this.blockSizeEx, this.blockSizeEx, workTensor.shape[3]!]
           ) as Tensor4D,
@@ -197,7 +213,8 @@ export class WaifuPredictor {
 
       batchItems.forEach((item, localIndex) => {
         rowTileGroups[item.rowIndex]!.push(
-          batchPrediction.slice(
+          slice(
+            batchPrediction,
             [localIndex, exValue, exValue, 0],
             [1, this.blockSize, this.blockSize, batchPrediction.shape[3]!]
           ) as Tensor4D
@@ -218,12 +235,12 @@ export class WaifuPredictor {
     const mergedTensor = concat(rowTensors, 1) as Tensor4D;
     rowTensors.forEach((item) => item.dispose());
 
-    const resultTensor = mergedTensor.slice([0, 0, 0, 0], [1, height, width, mergedTensor.shape[3]!]) as Tensor4D;
+    const resultTensor = slice(mergedTensor, [0, 0, 0, 0], [1, height, width, mergedTensor.shape[3]!]) as Tensor4D;
     mergedTensor.dispose();
 
     imageWrapper.tensor = tidy(() => {
       let nextTensor: Tensor3D = imageWrapper.tensor;
-      const yTensor = resultTensor.clipByValue(0, 1).squeeze([0]) as Tensor3D;
+      const yTensor = squeeze(clipByValue(resultTensor, 0, 1), [0]) as Tensor3D;
 
       if (imageWrapper.mode === 'YCbCr') {
         if (!isNoise) {
@@ -232,14 +249,14 @@ export class WaifuPredictor {
             [nextTensor.shape[0]!, nextTensor.shape[1]!].map((value) => value * 2) as [number, number]
           ) as Tensor3D;
         }
-        const cb = nextTensor.slice([0, 0, 1], [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]);
-        const cr = nextTensor.slice([0, 0, 2], [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]);
+        const cb = slice(nextTensor, [0, 0, 1], [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]);
+        const cr = slice(nextTensor, [0, 0, 2], [nextTensor.shape[0]!, nextTensor.shape[1]!, 1]);
         nextTensor = concat([yTensor, cb, cr], -1) as Tensor3D;
       } else {
         nextTensor = yTensor;
       }
 
-      return nextTensor as Tensor3D;
+      return clone(nextTensor) as Tensor3D;
     }) as Tensor3D;
 
     resultTensor.dispose();

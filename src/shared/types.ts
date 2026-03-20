@@ -169,6 +169,7 @@ export interface UpscalePreviewState {
 export interface UpscaleSettings {
   modelId: UpscaleModelId;
   denoise: UpscaleDenoiseLevel;
+  tileSize: number;
   preferredBackend: UpscaleBackendPreference;
 }
 
