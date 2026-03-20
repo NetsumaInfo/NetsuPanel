@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject } from 'react';
-import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
+import type { AppMode, ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
 import {
   downloadAllChapters,
   downloadGeneralSelection,
@@ -27,6 +27,11 @@ export function useDownloadActions({
   waifuRuntimeRef,
   updateActivity,
 }: UseDownloadActionsOptions) {
+  const resolveSettingsForMode = useCallback(
+    (mode: AppMode) => state.upscaleSettings[mode],
+    [state.upscaleSettings]
+  );
+
   const handleDownloadGeneral = useCallback(async () => {
     if (!state.scan || !state.source || selectedGeneralImages.length === 0) return;
 
@@ -38,6 +43,7 @@ export function useDownloadActions({
         onProgress: (message, progress) => updateActivity(message, progress),
         upscaleEnabled: state.upscaleEnabled,
         mode: 'general',
+        settings: resolveSettingsForMode('general'),
         sourceReferrer: state.source.url,
       });
       dispatch({
@@ -61,6 +67,7 @@ export function useDownloadActions({
     state.upscaleEnabled,
     updateActivity,
     waifuRuntimeRef,
+    resolveSettingsForMode,
   ]);
 
   const handleDownloadChapter = useCallback(
@@ -76,6 +83,7 @@ export function useDownloadActions({
           onProgress: (message, progress) => updateActivity(message, progress),
           upscaleEnabled: state.upscaleEnabled,
           mode: 'manga',
+          settings: resolveSettingsForMode('manga'),
         });
         dispatch({
           type: 'set-activity',
@@ -98,6 +106,7 @@ export function useDownloadActions({
       state.upscaleEnabled,
       updateActivity,
       waifuRuntimeRef,
+      resolveSettingsForMode,
     ]
   );
 
@@ -118,6 +127,7 @@ export function useDownloadActions({
         onProgress: (message, progress) => updateActivity(message, progress),
         upscaleEnabled: state.upscaleEnabled,
         mode: 'manga',
+        settings: resolveSettingsForMode('manga'),
       });
       dispatch({
         type: 'set-activity',
@@ -140,6 +150,7 @@ export function useDownloadActions({
     state.upscaleEnabled,
     updateActivity,
     waifuRuntimeRef,
+    resolveSettingsForMode,
   ]);
 
   const handleDownloadImage = useCallback(
@@ -158,6 +169,7 @@ export function useDownloadActions({
             onProgress: (message, progress) => updateActivity(message, progress),
             upscaleEnabled: state.upscaleEnabled,
             mode: state.mode,
+            settings: resolveSettingsForMode(state.mode),
             sourceReferrer: options?.referrer,
           },
           {
@@ -186,6 +198,7 @@ export function useDownloadActions({
       state.upscaleEnabled,
       updateActivity,
       waifuRuntimeRef,
+      resolveSettingsForMode,
     ]
   );
 

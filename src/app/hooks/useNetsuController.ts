@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
-import type { ArchiveFormat, ChapterItem, ImageCandidate, UpscalePreviewState } from '@shared/types';
+import type { ArchiveFormat, ChapterItem, ImageCandidate, UpscalePreviewState, UpscaleSettings } from '@shared/types';
 import { discoverChapters, loadChapterPreview as fetchChapterPreview } from '@core/manga/chapterCrawler';
+import { serializeUpscaleSettings } from '@core/upscale/realesrganModels';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 import { appReducer, initialAppState } from '@app/state/appState';
 import { useDownloadActions } from '@app/hooks/useDownloadActions';
@@ -129,6 +130,7 @@ export function useNetsuController() {
   const previewUpscale = useCallback(
     async (candidate: ImageCandidate, referrer?: string) => {
       if (!state.source) return;
+      const currentSettings = state.upscaleSettings[state.mode];
       const previewState: UpscalePreviewState = {
         sourceImageId: candidate.id,
         originalUrl: candidate.previewUrl || candidate.url,
@@ -149,10 +151,11 @@ export function useNetsuController() {
           resource = await fetchBinary(candidate.url, { referrer, tabId: state.source.id });
         }
         const blob = await waifuRuntimeRef.current.upscale({
-          cacheKey: `preview-${candidate.id}-${state.mode}`,
+          cacheKey: `preview-${candidate.id}-${state.mode}-${serializeUpscaleSettings(currentSettings)}`,
           bytes: resource.bytes,
           mime: resource.mime,
           mode: state.mode,
+          settings: currentSettings,
           onProgress: (message) => {
             dispatch({ type: 'set-waifu-backend', label: message });
           },
@@ -176,7 +179,7 @@ export function useNetsuController() {
         });
       }
     },
-    [state.mode, state.source]
+    [state.mode, state.source, state.upscaleSettings]
   );
 
   const downloads = useDownloadActions({
@@ -207,6 +210,8 @@ export function useNetsuController() {
     toggleGeneralItem: (imageId: string) => dispatch({ type: 'toggle-general-item', imageId }),
     selectAllGeneral,
     setUpscaleEnabled: (enabled: boolean) => dispatch({ type: 'set-upscale-enabled', enabled }),
+    setUpscaleSettings: (mode: 'manga' | 'general', settings: Partial<UpscaleSettings>) =>
+      dispatch({ type: 'set-upscale-settings', mode, settings }),
     ensureChapterPreview,
     previewUpscale,
     downloadGeneral: downloads.downloadGeneral,

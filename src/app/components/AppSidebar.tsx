@@ -3,6 +3,7 @@ import type {
   ArchiveFormat,
   ChapterItem,
   DownloadJobState,
+  UpscaleSettings,
   UpscalePreviewState,
 } from '@shared/types';
 import {
@@ -24,10 +25,12 @@ interface AppSidebarProps {
   activity: DownloadJobState;
   mode: AppMode;
   upscaleEnabled: boolean;
+  settings: UpscaleSettings;
   backendLabel: string;
   preview: UpscalePreviewState | null;
   onArchiveFormatChange(format: ArchiveFormat): void;
   onUpscaleToggle(enabled: boolean): void;
+  onUpscaleSettingsChange(mode: AppMode, settings: Partial<UpscaleSettings>): void;
   onDownloadCurrent(): void;
   onDownloadAll(): void;
   onDownloadGeneral(): void;
@@ -41,10 +44,12 @@ export function AppSidebar({
   activity,
   mode,
   upscaleEnabled,
+  settings,
   backendLabel,
   preview,
   onArchiveFormatChange,
   onUpscaleToggle,
+  onUpscaleSettingsChange,
   onDownloadCurrent,
   onDownloadAll,
   onDownloadGeneral,
@@ -111,9 +116,11 @@ export function AppSidebar({
       <UpscalePanel
         mode={mode}
         enabled={upscaleEnabled}
+        settings={settings}
         backendLabel={backendLabel}
         preview={preview}
         onToggle={onUpscaleToggle}
+        onSettingsChange={(nextSettings) => onUpscaleSettingsChange(mode, nextSettings)}
       />
     </div>
   );

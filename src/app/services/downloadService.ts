@@ -1,5 +1,5 @@
 import FileSaver from 'file-saver';
-import type { AppMode, ArchiveFormat, ChapterItem, ImageCandidate } from '@shared/types';
+import type { AppMode, ArchiveFormat, ChapterItem, ImageCandidate, UpscaleSettings } from '@shared/types';
 import { dataUrlToBytes } from '@shared/utils/dataUrl';
 import { sanitizeFileName } from '@shared/utils/strings';
 import { buildChapterArchiveName, buildChapterFolderName, buildGlobalArchiveName, buildPageEntryName } from '@core/download/fileNaming';
@@ -58,6 +58,7 @@ export interface DownloadDependencies {
   onProgress(message: string, progress: number): void;
   upscaleEnabled: boolean;
   mode: AppMode;
+  settings: UpscaleSettings;
   sourceReferrer?: string;
 }
 
@@ -76,6 +77,7 @@ async function maybeUpscale(
     bytes,
     mime,
     mode: dependencies.mode,
+    settings: dependencies.settings,
     useCache: false,
     onProgress: (message, progress) => {
       dependencies.onProgress(message, progress);

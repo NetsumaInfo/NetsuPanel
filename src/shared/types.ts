@@ -1,4 +1,11 @@
 export type AppMode = 'manga' | 'general';
+export type UpscaleDenoiseLevel =
+  | 'conservative'
+  | 'no-denoise'
+  | 'denoise1x'
+  | 'denoise2x'
+  | 'denoise3x';
+export type UpscaleBackendPreference = 'auto' | 'webgpu' | 'webgl' | 'cpu';
 export type ArchiveFormat =
   | 'cbz'
   | 'cbz-jpg'
@@ -149,6 +156,12 @@ export interface UpscalePreviewState {
   upscaledUrl?: string;
   loading: boolean;
   error?: string;
+}
+
+export interface UpscaleSettings {
+  factor: 2 | 4;
+  denoise: UpscaleDenoiseLevel;
+  preferredBackend: UpscaleBackendPreference;
 }
 
 export interface FetchBinaryResult {
