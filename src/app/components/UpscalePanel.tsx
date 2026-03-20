@@ -63,7 +63,7 @@ export function UpscalePanel({
   const isWaifu = settings.modelId === 'waifu2x-anime' || settings.modelId === 'waifu2x-photo';
   const waifuModeOptions = getWaifuModeOptions(settings.modelId);
   const waifuNoiseOptions = getWaifuNoiseOptions(settings.modelId, settings.waifuMode);
-  const showWaifuNoise = isWaifu && settings.waifuMode !== 'scale';
+  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(settings.modelId, settings.waifuMode);
   const showWaifuControls = isWaifu && (waifuModeOptions.length > 1 || showWaifuNoise);
 
   return (
@@ -157,7 +157,7 @@ export function UpscalePanel({
             <div className="grid gap-2 border-t border-border/70 pt-2">
               <div className={`grid gap-2 ${showWaifuNoise ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
                 <div className="grid gap-1">
-                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Mode</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Échelle</span>
                 <CompactSelect
                   value={settings.waifuMode}
                   options={waifuModeOptions}
@@ -173,7 +173,7 @@ export function UpscalePanel({
 
                 {showWaifuNoise && (
                   <div className="grid gap-1">
-                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Noise</span>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Niveau</span>
                     <CompactSelect
                       value={settings.waifuNoiseLevel}
                       options={waifuNoiseOptions}
