@@ -63,7 +63,7 @@ export function UpscalePanel({
   const isWaifu = settings.modelId === 'waifu2x-anime' || settings.modelId === 'waifu2x-photo';
   const waifuModeOptions = getWaifuModeOptions(settings.modelId);
   const waifuNoiseOptions = getWaifuNoiseOptions(settings.modelId, settings.waifuMode);
-  const showWaifuNoise = isWaifu && waifuModeSupportsNoise(settings.modelId, settings.waifuMode) && waifuNoiseOptions.length > 1;
+  const showWaifuNoise = isWaifu && settings.waifuMode !== 'scale';
   const showWaifuControls = isWaifu && (waifuModeOptions.length > 1 || showWaifuNoise);
 
   return (
