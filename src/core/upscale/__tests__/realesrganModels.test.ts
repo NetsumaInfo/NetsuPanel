@@ -33,7 +33,8 @@ describe('realesrgan model presets', () => {
 
   it('exposes realesrgan and waifu2x models', () => {
     expect(getUpscaleModelDefinition('realesrgan-anime_plus').type).toBe('realesrgan');
-    expect(getUpscaleModelDefinition('waifu2x').type).toBe('waifu2x');
+    expect(getUpscaleModelDefinition('waifu2x-anime').type).toBe('waifu2x');
+    expect(getUpscaleModelDefinition('waifu2x-photo').type).toBe('waifu2x');
     expect(getSupportedDenoiseOptions('realcugan-4x')).toEqual(['conservative', 'no-denoise', 'denoise3x']);
   });
 
