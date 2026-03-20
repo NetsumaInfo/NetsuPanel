@@ -64,6 +64,7 @@ export function UpscalePanel({
   const waifuModeOptions = getWaifuModeOptions(mode);
   const waifuNoiseOptions = getWaifuNoiseOptions(mode, settings.waifuMode);
   const showWaifuNoise = isWaifu && waifuModeSupportsNoise(mode, settings.waifuMode);
+  const showWaifuControls = isWaifu && (waifuModeOptions.length > 1 || showWaifuNoise);
 
   return (
     <section className="surface space-y-2.5 p-3">
@@ -119,15 +120,6 @@ export function UpscalePanel({
                 });
               }}
             />
-            {isWaifu ? (
-              <p className="text-[10px] text-muted">
-                Réglages waifu2x affichés juste en dessous.
-              </p>
-            ) : (
-              <p className="text-[10px] text-muted">
-                Choisir `waifu2x x2` pour afficher `Mode` et `Noise`.
-              </p>
-            )}
           </div>
 
           <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
@@ -161,7 +153,7 @@ export function UpscalePanel({
             />
           </div>
 
-          {isWaifu && (
+          {showWaifuControls && (
             <div className="rounded-xl border border-border/65 bg-white px-2.5 py-2 shadow-[0_1px_4px_rgba(15,17,23,0.04)]">
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
                 Waifu2x
@@ -191,11 +183,6 @@ export function UpscalePanel({
                     onChange={(value) => onSettingsChange({ waifuNoiseLevel: value })}
                   />
                 </div>
-              )}
-              {!showWaifuNoise && (
-                <p className="text-[10px] text-muted">
-                  Les poids embarqués actuels exposent seulement `Scale`.
-                </p>
               )}
               </div>
             </div>
