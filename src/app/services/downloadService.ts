@@ -1,6 +1,7 @@
 import FileSaver from 'file-saver';
 import type { AppMode, ArchiveFormat, ChapterItem, ImageCandidate } from '@shared/types';
 import { dataUrlToBytes } from '@shared/utils/dataUrl';
+import { sanitizeFileName } from '@shared/utils/strings';
 import { buildChapterArchiveName, buildChapterFolderName, buildGlobalArchiveName, buildPageEntryName } from '@core/download/fileNaming';
 import { getArchiveFormatPreset } from '@core/download/archiveFormats';
 import { transcodeImageBytes } from '@core/download/imageTranscode';
@@ -18,6 +19,10 @@ function mimeToExtension(mime: string, fallback: string): string {
   if (lower.includes('gif')) return 'gif';
   if (lower.includes('jpeg') || lower.includes('jpg')) return 'jpg';
   return fallback;
+}
+
+function stripExtension(fileName: string): string {
+  return fileName.replace(/\.[a-z0-9]{2,5}$/i, '');
 }
 
 export async function resolveCandidateBytes(
@@ -71,6 +76,7 @@ async function maybeUpscale(
     bytes,
     mime,
     mode: dependencies.mode,
+    useCache: false,
     onProgress: (message, progress) => {
       dependencies.onProgress(message, progress);
     },
@@ -184,6 +190,31 @@ export async function downloadSingleChapter(
 
   const archive = await buildZipBlob(entries, preset.archiveMime);
   FileSaver.saveAs(archive, buildChapterArchiveName(seriesTitle, chapter.label, preset.extension));
+}
+
+export async function downloadSingleImage(
+  image: ImageCandidate,
+  format: ArchiveFormat,
+  dependencies: DownloadDependencies,
+  context?: {
+    referrer?: string;
+    fileName?: string;
+  }
+): Promise<void> {
+  const original = await resolveCandidateBytes(image, dependencies.tabId, context?.referrer);
+  const upscaled = await maybeUpscale(
+    original.bytes,
+    original.mime,
+    `${image.id}-${dependencies.mode}-single`,
+    dependencies
+  );
+  const processed = await maybeConvertForArchiveFormat(upscaled.bytes, upscaled.mime, format);
+  dependencies.onProgress('Préparation image 1/1', 1);
+
+  const extension = mimeToExtension(processed.mime, image.extensionHint);
+  const baseName = stripExtension(context?.fileName || image.filenameHint || image.id);
+  const fileName = sanitizeFileName(`${baseName}.${extension}`);
+  FileSaver.saveAs(new Blob([processed.bytes], { type: processed.mime }), fileName);
 }
 
 export async function downloadAllChapters(
