@@ -29,7 +29,8 @@ interface ParamsObject {
 
 if (self.OffscreenCanvas !== undefined) {
   const canvas = new OffscreenCanvas(320, 200);
-  canvas.getContext('webgl2') || canvas.getContext('webgl');
+  canvas.getContext('webgl2', { powerPreference: 'high-performance' })
+    || canvas.getContext('webgl', { powerPreference: 'high-performance' });
 }
 
 function predictionBatchSize(channelCount: number): number {

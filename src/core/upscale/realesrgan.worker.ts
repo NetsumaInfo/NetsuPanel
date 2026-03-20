@@ -77,12 +77,15 @@ function patchWebGpuRequestAdapter(): void {
 
   const originalRequestAdapter = gpu.requestAdapter.bind(gpu) as (options?: unknown) => Promise<any>;
   gpu.requestAdapter = async (options?: Record<string, unknown>) => {
-    if (options && typeof options === 'object' && 'powerPreference' in options) {
-      const nextOptions = { ...options };
-      delete (nextOptions as { powerPreference?: unknown }).powerPreference;
-      return originalRequestAdapter(Object.keys(nextOptions).length > 0 ? nextOptions : undefined);
+    const nextOptions = {
+      ...(typeof options === 'object' && options ? options : {}),
+      powerPreference: 'high-performance',
+    };
+    try {
+      return await originalRequestAdapter(nextOptions);
+    } catch {
+      return originalRequestAdapter(options);
     }
-    return originalRequestAdapter(options);
   };
   webGpuRequestAdapterPatched = true;
 }
@@ -245,7 +248,9 @@ async function probeWebGpu(): Promise<{ renderer: string | null; integrated: boo
   }
 
   try {
-    const adapter = await nav.gpu.requestAdapter();
+    const adapter =
+      await nav.gpu.requestAdapter({ powerPreference: 'high-performance' })
+      || await nav.gpu.requestAdapter();
     if (!adapter) {
       return { renderer: null, integrated: true };
     }
