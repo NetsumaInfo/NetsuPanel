@@ -1,5 +1,12 @@
-import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleSettings, UpscalePreviewState } from '@shared/types';
-import { getBackendPriority, getRealesrganPreset } from '@core/upscale/realesrganModels';
+import type { AppMode, UpscaleBackendPreference, UpscaleDenoiseLevel, UpscaleModelId, UpscaleSettings, UpscalePreviewState } from '@shared/types';
+import {
+  getRealesrganPreset,
+  getSupportedBackendPreferences,
+  getSupportedDenoiseOptions,
+  getUpscaleModelDefinition,
+  getUpscaleModelOptions,
+  modelSupportsDenoise,
+} from '@core/upscale/realesrganModels';
 import { CompactSelect } from './CompactSelect';
 import { SafeImage } from './SafeImage';
 import { LightningIcon } from './icons';
@@ -29,17 +36,6 @@ const BACKEND_OPTIONS: Array<{ value: UpscaleBackendPreference; label: string }>
   { value: 'cpu', label: 'CPU' },
 ];
 
-const FACTOR_OPTIONS: Array<{ value: '2' | '4'; label: string }> = [
-  { value: '2', label: 'Échelle x2' },
-  { value: '4', label: 'Échelle x4' },
-];
-
-function formatBackendList(): string {
-  return getBackendPriority()
-    .map((backend) => BACKEND_OPTIONS.find((option) => option.value === backend)?.label ?? backend)
-    .join(' / ');
-}
-
 export function UpscalePanel({
   mode,
   enabled,
@@ -50,7 +46,10 @@ export function UpscalePanel({
   onSettingsChange,
 }: UpscalePanelProps) {
   const preset = getRealesrganPreset(mode, settings);
-  const factorValue = String(settings.factor) as '2' | '4';
+  const modelDefinition = getUpscaleModelDefinition(settings.modelId);
+  const availableDenoise = getSupportedDenoiseOptions(settings.modelId);
+  const availableBackends = BACKEND_OPTIONS.filter((option) => getSupportedBackendPreferences(settings.modelId).includes(option.value));
+  const showDenoise = modelSupportsDenoise(settings.modelId);
 
   return (
     <section className="surface space-y-2.5 p-3">
@@ -82,47 +81,63 @@ export function UpscalePanel({
       <div className="rounded-[16px] border border-border/75 bg-[#f8f9fb] p-2.5">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Réglages</span>
-          <span className="text-[10px] text-muted">{mode === 'manga' ? 'Mode manga' : 'Mode général'}</span>
+          <span className="text-[10px] text-muted">{mode === 'manga' ? 'Manga' : 'Général'}</span>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2">
           <div className="grid gap-1">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Échelle</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Modèle</span>
             <CompactSelect
-              value={factorValue}
-              options={FACTOR_OPTIONS}
-              onChange={(value) => onSettingsChange({ factor: Number(value) as 2 | 4 })}
+              value={settings.modelId}
+              options={getUpscaleModelOptions()}
+              onChange={(value) => {
+                const nextDenoise = getSupportedDenoiseOptions(value)[0] ?? settings.denoise;
+                const nextBackend = getSupportedBackendPreferences(value).includes(settings.preferredBackend)
+                  ? settings.preferredBackend
+                  : 'auto';
+                onSettingsChange({
+                  modelId: value,
+                  denoise: nextDenoise,
+                  preferredBackend: nextBackend,
+                });
+              }}
             />
           </div>
 
-          <div className="grid gap-1">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Denoise</span>
-            <CompactSelect
-              value={settings.denoise}
-              options={DENOISE_OPTIONS}
-              onChange={(value) => onSettingsChange({ denoise: value })}
-            />
-          </div>
+          <div className={`grid gap-2 ${showDenoise ? 'sm:grid-cols-2' : 'sm:grid-cols-[minmax(0,1fr)_auto]'}`}>
+            {showDenoise && (
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Denoise</span>
+                <CompactSelect
+                  value={settings.denoise}
+                  options={DENOISE_OPTIONS.filter((option) => availableDenoise.includes(option.value))}
+                  onChange={(value) => onSettingsChange({ denoise: value })}
+                />
+              </div>
+            )}
 
-          <div className="grid gap-1">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Backend</span>
-            <CompactSelect
-              value={settings.preferredBackend}
-              options={BACKEND_OPTIONS}
-              onChange={(value) => onSettingsChange({ preferredBackend: value })}
-            />
-          </div>
-
-          <div className="rounded-xl bg-white px-3 py-2 shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
-            <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Modèle</span>
-            <span className="mt-1 block text-[11px] font-semibold text-ink">{preset.label}</span>
-            <span className="mt-1 block text-[10px] text-muted">Tuiles auto: {preset.tileSizes[0]} → {preset.tileSizes[preset.tileSizes.length - 1]}</span>
+            <div className="grid gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Backend</span>
+              <CompactSelect
+                value={settings.preferredBackend}
+                options={availableBackends}
+                onChange={(value) => onSettingsChange({ preferredBackend: value })}
+              />
+            </div>
           </div>
         </div>
 
-        <p className="mt-2 text-[10px] text-muted">
-          Fallback auto disponible: {formatBackendList()}
-        </p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
+            x{modelDefinition.factor}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
+            {preset.label}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-ink shadow-[0_1px_4px_rgba(15,17,23,0.05)]">
+            Tuiles {preset.tileSizes[0]} → {preset.tileSizes[preset.tileSizes.length - 1]}
+          </span>
+        </div>
       </div>
 
       {preview ? (

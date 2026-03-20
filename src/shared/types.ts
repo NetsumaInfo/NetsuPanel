@@ -6,6 +6,14 @@ export type UpscaleDenoiseLevel =
   | 'denoise2x'
   | 'denoise3x';
 export type UpscaleBackendPreference = 'auto' | 'webgpu' | 'webgl' | 'cpu';
+export type UpscaleModelId =
+  | 'realcugan-2x'
+  | 'realcugan-4x'
+  | 'realesrgan-anime_fast'
+  | 'realesrgan-anime_plus'
+  | 'realesrgan-general_fast'
+  | 'realesrgan-general_plus'
+  | 'waifu2x';
 export type ArchiveFormat =
   | 'cbz'
   | 'cbz-jpg'
@@ -159,7 +167,7 @@ export interface UpscalePreviewState {
 }
 
 export interface UpscaleSettings {
-  factor: 2 | 4;
+  modelId: UpscaleModelId;
   denoise: UpscaleDenoiseLevel;
   preferredBackend: UpscaleBackendPreference;
 }
