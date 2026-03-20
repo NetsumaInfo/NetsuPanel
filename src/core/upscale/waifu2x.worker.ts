@@ -16,6 +16,7 @@ interface ProcessRequest {
   mime: string;
   modelUrl: string;
   blockSizes: number[];
+  taskMode?: 'scale' | 'noise' | 'noise_scale';
   preferredBackend?: UpscaleBackend;
 }
 
@@ -114,7 +115,7 @@ async function runAttempt(
   for (const blockSize of data.blockSizes) {
     try {
       const predictor = getPredictor(data.modelUrl, blockSize, data.jobId, backend);
-      const output = await predictor.predict(sourceBitmap, false);
+      const output = await predictor.predict(sourceBitmap, data.taskMode === 'noise');
       const blob = await imageBitmapToBlob(output);
       const bytes = await blob.arrayBuffer();
       self.postMessage(

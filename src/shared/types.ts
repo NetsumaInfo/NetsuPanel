@@ -15,7 +15,8 @@ export type UpscaleModelId =
   | 'realesrgan-anime_plus'
   | 'realesrgan-general_fast'
   | 'realesrgan-general_plus'
-  | 'waifu2x';
+  | 'waifu2x-anime'
+  | 'waifu2x-photo';
 export type ArchiveFormat =
   | 'cbz'
   | 'cbz-jpg'
