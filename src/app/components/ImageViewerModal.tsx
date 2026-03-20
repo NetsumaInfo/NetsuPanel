@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { ImageCandidate, UpscalePreviewState } from '@shared/types';
 import { SafeImage } from './SafeImage';
-import { ChevronDownIcon, DownloadIcon, LightningIcon } from './icons';
+import { ChevronDownIcon, CompareIcon, DownloadIcon, LightningIcon, XIcon } from './icons';
 
 interface ImageViewerModalProps {
   title: string;
@@ -14,6 +14,7 @@ interface ImageViewerModalProps {
   onClose(): void;
   onNavigate(index: number): void;
   onRequestCompare(candidate: ImageCandidate): void;
+  onDownloadImage(candidate: ImageCandidate): void | Promise<void>;
 }
 
 function clampIndex(index: number, total: number) {
@@ -55,6 +56,7 @@ export function ImageViewerModal({
   onClose,
   onNavigate,
   onRequestCompare,
+  onDownloadImage,
 }: ImageViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [compareMode, setCompareMode] = useState(false);
@@ -65,6 +67,7 @@ export function ImageViewerModal({
   const currentIndex = clampIndex(index, items.length);
   const currentItem = items[currentIndex];
   const previewMatches = preview?.sourceImageId === currentItem?.id;
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!compareMode || !currentItem) return;
@@ -88,7 +91,7 @@ export function ImageViewerModal({
       if (event.key === 'Escape') onClose();
       if (event.key === 'ArrowLeft') onNavigate(clampIndex(currentIndex - 1, items.length));
       if (event.key === 'ArrowRight') onNavigate(clampIndex(currentIndex + 1, items.length));
-      if (event.key === '+' || event.key === '=') setZoom((value) => Math.min(8, Number((value + 0.5).toFixed(2))));
+      if (event.key === '+' || event.key === '=') setZoom((value) => Math.min(16, Number((value + 0.5).toFixed(2))));
       if (event.key === '-') setZoom((value) => Math.max(1, Number((value - 0.5).toFixed(2))));
       if (event.key === '0') setZoom(1);
     };
@@ -111,14 +114,14 @@ export function ImageViewerModal({
     referrer,
     captureTabId: currentItem.origin === 'live-dom' ? sourceTabId : undefined,
     captureCandidateId: currentItem.origin === 'live-dom' ? currentItem.id : undefined,
-    className: 'max-h-[76vh] w-auto max-w-none object-contain select-none',
+    className: 'max-h-[62vh] w-auto max-w-none object-contain select-none',
   };
 
   const compareAvailable = compareMode && previewMatches;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.72)] p-6 backdrop-blur-md">
-      <div className="relative flex h-auto max-h-[86vh] w-full max-w-[1240px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_24px_70px_rgba(15,17,23,0.12)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.54)] p-8 backdrop-blur-sm">
+      <div className="relative flex h-auto max-h-[74vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_22px_60px_rgba(15,17,23,0.10)]">
         <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-semibold text-ink">{title}</p>
@@ -130,23 +133,35 @@ export function ImageViewerModal({
           <div className="flex items-center gap-2">
             <ViewerButton iconOnly onClick={() => setZoom((value) => Math.max(1, Number((value - 0.5).toFixed(2))))}>-</ViewerButton>
             <span className="min-w-[44px] text-center text-[11px] font-medium text-muted">{Math.round(zoom * 100)}%</span>
-            <ViewerButton iconOnly onClick={() => setZoom((value) => Math.min(8, Number((value + 0.5).toFixed(2))))}>+</ViewerButton>
+            <ViewerButton iconOnly onClick={() => setZoom((value) => Math.min(16, Number((value + 0.5).toFixed(2))))}>+</ViewerButton>
             <ViewerButton
+              iconOnly
+              aria-label={compareMode ? 'Désactiver la comparaison' : 'Activer la comparaison'}
+              title={compareMode ? 'Normal' : 'Comparer'}
               onClick={() => setCompareMode((value) => !value)}
             >
-              <LightningIcon size={14} />
-              {compareMode ? 'Normal' : 'Comparer'}
+              <CompareIcon size={15} />
             </ViewerButton>
-            <a
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-white text-ink shadow-sm transition-colors hover:border-accent/40 hover:text-accent"
-              href={currentItem.url}
-              download={currentItem.filenameHint || `page-${currentIndex + 1}`}
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-white text-ink shadow-sm transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Télécharger l'image"
               title="Télécharger l'image"
+              disabled={downloading}
+              onClick={async () => {
+                setDownloading(true);
+                try {
+                  await onDownloadImage(currentItem);
+                } finally {
+                  setDownloading(false);
+                }
+              }}
             >
               <DownloadIcon size={15} />
-            </a>
-            <ViewerButton onClick={onClose}>Fermer</ViewerButton>
+            </button>
+            <ViewerButton iconOnly aria-label="Fermer" title="Fermer" onClick={onClose}>
+              <XIcon size={15} />
+            </ViewerButton>
           </div>
         </div>
 
@@ -179,9 +194,9 @@ export function ImageViewerModal({
             )}
           </div>
 
-          <div className="flex h-full items-center justify-center p-5">
+          <div className="flex h-full items-center justify-center p-4">
             {!compareMode || !previewMatches ? (
-              <div className="flex h-full min-h-[58vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-4 shadow-inner">
+              <div className="flex min-h-[48vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner">
                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
                   <SafeImage
                     src={currentItem.previewUrl || currentItem.url}
@@ -191,68 +206,67 @@ export function ImageViewerModal({
                 </div>
               </div>
             ) : preview?.error ? (
-              <div className="flex h-full min-h-[58vh] w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-4 text-center text-sm text-danger">
+              <div className="flex min-h-[48vh] w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-4 text-center text-sm text-danger">
                 {preview.error}
               </div>
             ) : preview?.loading || !preview?.upscaledUrl ? (
-              <div className="flex h-full min-h-[58vh] w-full items-center justify-center rounded-[24px] border border-border bg-white p-4 text-sm text-muted">
+              <div className="flex min-h-[48vh] w-full items-center justify-center rounded-[24px] border border-border bg-white p-4 text-sm text-muted">
                 Upscaling…
               </div>
             ) : (
               <div
-                ref={compareRef}
-                className="relative flex h-full min-h-[58vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-4 shadow-inner"
+                className="flex min-h-[48vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-3 shadow-inner"
               >
-                <div
-                  className="grid place-items-center"
-                  style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-                >
-                  <div className="col-start-1 row-start-1">
-                    <SafeImage
-                      src={preview.upscaledUrl}
-                      alt={`${currentItem.filenameHint} upscaled`}
-                      className="max-h-[76vh] w-auto max-w-none object-contain select-none"
-                    />
-                  </div>
-                  <div
-                    className="col-start-1 row-start-1 overflow-hidden"
-                    style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}
-                  >
-                    <SafeImage
-                      src={currentItem.previewUrl || currentItem.url}
-                      alt={currentItem.filenameHint}
-                      {...imageProps}
-                    />
-                  </div>
-                </div>
+                <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
+                  <div ref={compareRef} className="relative inline-grid place-items-center">
+                    <div className="col-start-1 row-start-1">
+                      <SafeImage
+                        src={preview.upscaledUrl}
+                        alt={`${currentItem.filenameHint} upscaled`}
+                        className="max-h-[62vh] w-auto max-w-none object-contain select-none"
+                      />
+                    </div>
+                    <div
+                      className="col-start-1 row-start-1 overflow-hidden"
+                      style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}
+                    >
+                      <SafeImage
+                        src={currentItem.previewUrl || currentItem.url}
+                        alt={currentItem.filenameHint}
+                        {...imageProps}
+                      />
+                    </div>
 
-                <div
-                  className="absolute inset-y-6 z-10"
-                  style={{ left: `${split}%` }}
-                >
-                  <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.08)]" />
-                  <button
-                    type="button"
-                    className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg"
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      draggingRef.current = true;
-                      const rect = compareRef.current?.getBoundingClientRect();
-                      if (!rect) return;
-                      const next = ((event.clientX - rect.left) / rect.width) * 100;
-                      setSplit(clampSplit(next));
-                    }}
-                    aria-label="Déplacer le comparateur"
-                  >
-                    <span className="text-[10px] font-semibold">↔</span>
-                  </button>
-                </div>
+                    <div
+                      className="absolute inset-y-0 z-10"
+                      style={{ left: `${split}%` }}
+                    >
+                      <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.08)]" />
+                      <button
+                        type="button"
+                        className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg"
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          draggingRef.current = true;
+                          const rect = compareRef.current?.getBoundingClientRect();
+                          if (!rect) return;
+                          const next = ((event.clientX - rect.left) / rect.width) * 100;
+                          setSplit(clampSplit(next));
+                        }}
+                        aria-label="Déplacer le comparateur"
+                      >
+                        <span className="text-[10px] font-semibold">↔</span>
+                      </button>
+                    </div>
 
-                <div className="pointer-events-none absolute left-8 top-8 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
-                  Avant
-                </div>
-                <div className="pointer-events-none absolute right-8 top-8 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
-                  Après
+                    <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
+                      Avant
+                    </div>
+                    <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
+                      Après
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

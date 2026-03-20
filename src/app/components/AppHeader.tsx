@@ -38,7 +38,7 @@ export function AppHeader({
 
   return (
     <header className="rounded-[18px] border border-border bg-white/95 px-3 py-2 shadow-sm">
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-center">
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)] lg:items-center">
         <div className="flex min-w-0 items-center gap-2.5">
           <SiteAvatar title={source.title || hostname} url={source.url} favIconUrl={source.favIconUrl} size={30} />
           <div className="min-w-0">

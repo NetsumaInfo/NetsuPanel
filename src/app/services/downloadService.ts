@@ -1,6 +1,7 @@
 import FileSaver from 'file-saver';
 import type { AppMode, ArchiveFormat, ChapterItem, ImageCandidate } from '@shared/types';
 import { dataUrlToBytes } from '@shared/utils/dataUrl';
+import { sanitizeFileName } from '@shared/utils/strings';
 import { buildChapterArchiveName, buildChapterFolderName, buildGlobalArchiveName, buildPageEntryName } from '@core/download/fileNaming';
 import { getArchiveFormatPreset } from '@core/download/archiveFormats';
 import { transcodeImageBytes } from '@core/download/imageTranscode';
@@ -54,6 +55,17 @@ export interface DownloadDependencies {
   upscaleEnabled: boolean;
   mode: AppMode;
   sourceReferrer?: string;
+}
+
+export async function downloadImageCandidate(
+  candidate: ImageCandidate,
+  dependencies: Pick<DownloadDependencies, 'tabId' | 'sourceReferrer'>
+): Promise<void> {
+  const resource = await resolveCandidateBytes(candidate, dependencies.tabId, dependencies.sourceReferrer);
+  const extension = mimeToExtension(resource.mime, candidate.extensionHint || 'png');
+  const baseName = candidate.filenameHint.replace(/\.[a-z0-9]{2,5}$/i, '');
+  const filename = sanitizeFileName(`${baseName || candidate.id}.${extension}`);
+  FileSaver.saveAs(new Blob([resource.bytes], { type: resource.mime }), filename);
 }
 
 async function maybeUpscale(

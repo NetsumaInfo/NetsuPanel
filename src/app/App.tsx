@@ -6,6 +6,7 @@ import { ChapterAccordion } from '@app/components/ChapterAccordion';
 import { GeneralGrid } from '@app/components/GeneralGrid';
 import { ImageViewerModal } from '@app/components/ImageViewerModal';
 import { useNetsuController } from '@app/hooks/useNetsuController';
+import { downloadImageCandidate } from '@app/services/downloadService';
 import { useWindowWidth } from '@app/hooks/useWindowWidth';
 
 interface AutoUiSettings {
@@ -80,6 +81,16 @@ export function App() {
       void controller.previewUpscale(candidate, viewer.referrer);
     },
     [controller.previewUpscale, viewer?.referrer]
+  );
+  const handleViewerDownload = useCallback(
+    async (candidate: ImageCandidate) => {
+      if (!viewer?.sourceTabId) return;
+      await downloadImageCandidate(candidate, {
+        tabId: viewer.sourceTabId,
+        sourceReferrer: viewer.referrer,
+      });
+    },
+    [viewer?.referrer, viewer?.sourceTabId]
   );
 
   if (state.loading) {
@@ -221,6 +232,7 @@ export function App() {
           onClose={() => setViewer(null)}
           onNavigate={(nextIndex) => setViewer((current) => (current ? { ...current, index: nextIndex } : current))}
           onRequestCompare={handleViewerCompare}
+          onDownloadImage={handleViewerDownload}
         />
       )}
     </div>

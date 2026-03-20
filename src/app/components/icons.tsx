@@ -138,3 +138,22 @@ export function GlobeIcon(props: IconProps) {
     </IconBase>
   );
 }
+
+export function XIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </IconBase>
+  );
+}
+
+export function CompareIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 4v16" />
+      <path d="M12 4c-3.5 0-6 1.8-8 4.5 2 2.7 4.5 4.5 8 4.5" />
+      <path d="M12 20c3.5 0 6-1.8 8-4.5-2-2.7-4.5-4.5-8-4.5" />
+    </IconBase>
+  );
+}
