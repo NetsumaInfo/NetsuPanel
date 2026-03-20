@@ -30,9 +30,14 @@ export async function upscaleWithGraphModel(
   pixelTensor.dispose();
   normalized.dispose();
 
-  const result = typeof model.executeAsync === 'function'
-    ? await model.executeAsync(batched)
-    : model.execute(batched);
+  let result;
+  try {
+    result = model.execute(batched);
+  } catch {
+    result = typeof model.executeAsync === 'function'
+      ? await model.executeAsync(batched)
+      : model.execute(batched);
+  }
   batched.dispose();
 
   const outputTensor = Array.isArray(result) ? result[0] : result;
