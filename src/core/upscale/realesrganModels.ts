@@ -97,15 +97,18 @@ export function getBackendPriority(): UpscaleBackend[] {
 }
 
 export function createDefaultUpscaleSettings(mode: AppMode): UpscaleSettings {
+  const defaultModelId: UpscaleModelId = 'realcugan-2x';
+  const defaultTileSize = getUpscaleModelDefinition(defaultModelId).tileSizes[0] ?? 64;
   return {
-    modelId: 'realcugan-2x',
+    modelId: defaultModelId,
     denoise: mode === 'manga' ? 'conservative' : 'no-denoise',
+    tileSize: defaultTileSize,
     preferredBackend: 'auto',
   };
 }
 
 export function serializeUpscaleSettings(settings: UpscaleSettings): string {
-  return `${settings.modelId}-${settings.denoise}-${settings.preferredBackend}`;
+  return `${settings.modelId}-${settings.denoise}-${settings.tileSize}-${settings.preferredBackend}`;
 }
 
 export function getUpscaleModelDefinition(modelId: UpscaleModelId): RealesrganModelPreset {

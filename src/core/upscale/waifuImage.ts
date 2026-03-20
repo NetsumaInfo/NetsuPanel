@@ -1,5 +1,5 @@
 import type { Tensor3D } from '@tensorflow/tfjs-core';
-import { concat, dispose, tensor3d, tidy } from './tfjsCompat';
+import { add, cast, clipByValue, clone, concat, dispose, mul, slice, sub, tensor3d, tidy } from './tfjsCompat';
 
 type ColorMode = 'RGB' | 'YCbCr';
 
@@ -24,7 +24,7 @@ function imageBitmapToTensor(image: ImageBitmap): Tensor3D {
 }
 
 async function tensorToImageBitmap(imageTensor: Tensor3D): Promise<ImageBitmap> {
-  const clipped = tidy(() => imageTensor.clipByValue(0, 1).mul(255).asType('int32')) as Tensor3D;
+  const clipped = tidy(() => cast(mul(clipByValue(imageTensor, 0, 1), 255), 'int32')) as Tensor3D;
   const [height, width] = clipped.shape;
   const rgb = await clipped.data();
   clipped.dispose();
@@ -83,7 +83,7 @@ export class WaifuImage {
   }
 
   get tensor() {
-    return this.imageTensor.clone() as Tensor3D;
+    return clone(this.imageTensor) as Tensor3D;
   }
 
   set tensor(nextTensor: Tensor3D) {
@@ -95,7 +95,7 @@ export class WaifuImage {
     const exportTensor = tidy(() => {
       const tensor = this.currentMode === 'YCbCr'
         ? WaifuImage.ycbcrToRgb(this.imageTensor)
-        : (this.imageTensor.clone() as Tensor3D);
+        : (clone(this.imageTensor) as Tensor3D);
       return tensor as Tensor3D;
     }) as Tensor3D;
 
@@ -104,28 +104,28 @@ export class WaifuImage {
 
   static rgbToYcbcr(imageTensor: Tensor3D): Tensor3D {
     return tidy(() => {
-      const r = imageTensor.slice([0, 0, 0], [imageTensor.shape[0], imageTensor.shape[1], 1]);
-      const g = imageTensor.slice([0, 0, 1], [imageTensor.shape[0], imageTensor.shape[1], 1]);
-      const b = imageTensor.slice([0, 0, 2], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const r = slice(imageTensor, [0, 0, 0], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const g = slice(imageTensor, [0, 0, 1], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const b = slice(imageTensor, [0, 0, 2], [imageTensor.shape[0], imageTensor.shape[1], 1]);
       const delta = 0.5;
-      const y = r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114));
-      const cb = b.sub(y).mul(0.564).add(delta);
-      const cr = r.sub(y).mul(0.713).add(delta);
+      const y = add(add(mul(r, 0.299), mul(g, 0.587)), mul(b, 0.114));
+      const cb = add(mul(sub(b, y), 0.564), delta);
+      const cr = add(mul(sub(r, y), 0.713), delta);
       return concat([y, cb, cr], -1) as Tensor3D;
     }) as Tensor3D;
   }
 
   static ycbcrToRgb(imageTensor: Tensor3D): Tensor3D {
     return tidy(() => {
-      const y = imageTensor.slice([0, 0, 0], [imageTensor.shape[0], imageTensor.shape[1], 1]);
-      const cb = imageTensor.slice([0, 0, 1], [imageTensor.shape[0], imageTensor.shape[1], 1]);
-      const cr = imageTensor.slice([0, 0, 2], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const y = slice(imageTensor, [0, 0, 0], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const cb = slice(imageTensor, [0, 0, 1], [imageTensor.shape[0], imageTensor.shape[1], 1]);
+      const cr = slice(imageTensor, [0, 0, 2], [imageTensor.shape[0], imageTensor.shape[1], 1]);
       const delta = 0.5;
-      const cbShifted = cb.sub(delta);
-      const crShifted = cr.sub(delta);
-      const r = y.add(crShifted.mul(1.403));
-      const g = y.sub(crShifted.mul(0.714)).sub(cbShifted.mul(0.344));
-      const b = y.add(cbShifted.mul(1.773));
+      const cbShifted = sub(cb, delta);
+      const crShifted = sub(cr, delta);
+      const r = add(y, mul(crShifted, 1.403));
+      const g = sub(sub(y, mul(crShifted, 0.714)), mul(cbShifted, 0.344));
+      const b = add(y, mul(cbShifted, 1.773));
       return concat([r, g, b], -1) as Tensor3D;
     }) as Tensor3D;
   }
