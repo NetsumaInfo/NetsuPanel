@@ -5,6 +5,8 @@ export type UpscaleDenoiseLevel =
   | 'denoise1x'
   | 'denoise2x'
   | 'denoise3x';
+export type Waifu2xMode = 'scale' | 'noise' | 'noise_scale';
+export type Waifu2xNoiseLevel = '-1' | '0' | '1' | '2' | '3';
 export type UpscaleBackendPreference = 'auto' | 'webgpu' | 'webgl' | 'cpu';
 export type UpscaleModelId =
   | 'realcugan-2x'
@@ -171,6 +173,8 @@ export interface UpscaleSettings {
   denoise: UpscaleDenoiseLevel;
   tileSize: number;
   preferredBackend: UpscaleBackendPreference;
+  waifuMode: Waifu2xMode;
+  waifuNoiseLevel: Waifu2xNoiseLevel;
 }
 
 export interface FetchBinaryResult {
