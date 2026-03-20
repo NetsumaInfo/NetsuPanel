@@ -1,4 +1,5 @@
 import type {
+  AppMode,
   ArchiveFormat,
   ChapterItem,
   DownloadJobState,
@@ -21,6 +22,7 @@ interface AppSidebarProps {
   chapterCount: number;
   selectedGeneralCount: number;
   activity: DownloadJobState;
+  mode: AppMode;
   upscaleEnabled: boolean;
   backendLabel: string;
   preview: UpscalePreviewState | null;
@@ -37,6 +39,7 @@ export function AppSidebar({
   chapterCount,
   selectedGeneralCount,
   activity,
+  mode,
   upscaleEnabled,
   backendLabel,
   preview,
@@ -106,6 +109,7 @@ export function AppSidebar({
       {showStatus && <StatusStrip message={activity.message} progress={activity.progress} error={activity.error} />}
 
       <UpscalePanel
+        mode={mode}
         enabled={upscaleEnabled}
         backendLabel={backendLabel}
         preview={preview}

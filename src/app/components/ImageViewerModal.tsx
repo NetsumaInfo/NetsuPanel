@@ -22,6 +22,11 @@ interface ViewportBounds {
   height: number;
 }
 
+interface HandlePosition {
+  x: number;
+  y: number;
+}
+
 function clampIndex(index: number, total: number) {
   if (total === 0) return 0;
   if (index < 0) return 0;
@@ -31,6 +36,10 @@ function clampIndex(index: number, total: number) {
 
 function clampSplit(value: number) {
   return Math.max(0, Math.min(100, value));
+}
+
+function clampHandleY(value: number) {
+  return Math.max(8, Math.min(92, value));
 }
 
 function ViewerButton({
@@ -66,6 +75,7 @@ export function ImageViewerModal({
   const [zoom, setZoom] = useState(1);
   const [compareMode, setCompareMode] = useState(false);
   const [split, setSplit] = useState(50);
+  const [handleY, setHandleY] = useState(50);
   const [downloading, setDownloading] = useState(false);
   const [viewportBounds, setViewportBounds] = useState<ViewportBounds>({ width: 0, height: 0 });
   const compareRef = useRef<HTMLDivElement | null>(null);
@@ -76,12 +86,21 @@ export function ImageViewerModal({
   const currentItem = items[currentIndex];
   const previewMatches = preview?.sourceImageId === currentItem?.id;
 
-  const updateSplitFromClientX = useCallback((clientX: number) => {
+  const resolveHandlePosition = useCallback((clientX: number, clientY: number): HandlePosition | null => {
     const rect = compareRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const next = ((clientX - rect.left) / rect.width) * 100;
-    setSplit(clampSplit(next));
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: clampSplit(((clientX - rect.left) / rect.width) * 100),
+      y: clampHandleY(((clientY - rect.top) / rect.height) * 100),
+    };
   }, []);
+
+  const updateHandleFromPointer = useCallback((clientX: number, clientY: number) => {
+    const next = resolveHandlePosition(clientX, clientY);
+    if (!next) return;
+    setSplit(next.x);
+    setHandleY(next.y);
+  }, [resolveHandlePosition]);
 
   useEffect(() => {
     if (!compareMode || !currentItem) return;
@@ -91,12 +110,13 @@ export function ImageViewerModal({
 
   useEffect(() => {
     draggingRef.current = false;
+    setHandleY(50);
   }, [currentItem?.id]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
       if (!draggingRef.current) return;
-      updateSplitFromClientX(event.clientX);
+      updateHandleFromPointer(event.clientX, event.clientY);
     };
 
     const stopDragging = () => {
@@ -122,7 +142,7 @@ export function ImageViewerModal({
       window.removeEventListener('pointercancel', stopDragging);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [currentIndex, items.length, onClose, onNavigate, updateSplitFromClientX]);
+  }, [currentIndex, items.length, onClose, onNavigate, updateHandleFromPointer]);
 
   useEffect(() => {
     const element = viewportRef.current;
@@ -202,7 +222,7 @@ export function ImageViewerModal({
   const navigationButtonClass =
     'flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-30 sm:h-12 sm:w-12';
   const overlayLabelClass =
-    'pointer-events-none absolute top-4 z-10 rounded-full bg-white/72 px-3 py-1 text-[11px] font-semibold text-ink shadow-sm backdrop-blur-sm';
+    'pointer-events-none absolute top-4 z-10 rounded-full bg-white/62 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/78 shadow-sm backdrop-blur-md';
   const viewerHeightStyle = {
     height: 'min(80vh, calc(100vh - 220px))',
   };
@@ -299,22 +319,25 @@ export function ImageViewerModal({
                         />
                       </div>
                       <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${split}%` }}>
-                        <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.10)]" />
+                        <div className="absolute inset-y-0 -ml-px w-px bg-white/92 shadow-[0_0_18px_rgba(255,255,255,0.72)]" />
                       </div>
                       <button
                         type="button"
-                        className="absolute top-1/2 z-20 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-border bg-white/92 text-ink shadow-lg backdrop-blur-sm"
-                        style={{ left: `${split}%` }}
+                        className="absolute z-20 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-white/70 bg-white/80 text-ink shadow-[0_14px_34px_rgba(15,17,23,0.18)] backdrop-blur-md transition-transform duration-150 hover:scale-[1.04]"
+                        style={{ left: `${split}%`, top: `${handleY}%` }}
                         onPointerDown={(event) => {
                           if (event.button !== 0) return;
                           event.stopPropagation();
                           event.preventDefault();
                           draggingRef.current = true;
-                          updateSplitFromClientX(event.clientX);
+                          updateHandleFromPointer(event.clientX, event.clientY);
                         }}
                         aria-label="Déplacer le comparateur"
                       >
-                        <span className="text-[10px] font-semibold">↔</span>
+                        <span className="flex items-center gap-0.5">
+                          <span className="h-3 w-[2px] rounded-full bg-ink/55" />
+                          <span className="h-3 w-[2px] rounded-full bg-ink/55" />
+                        </span>
                       </button>
                     </>
                   ) : (

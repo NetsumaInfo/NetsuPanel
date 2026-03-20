@@ -1,15 +1,56 @@
-import type { UpscalePreviewState } from '@shared/types';
+import type { AppMode, UpscalePreviewState } from '@shared/types';
+import { getBackendPriority, getRealesrganPreset } from '@core/upscale/realesrganModels';
 import { SafeImage } from './SafeImage';
 import { LightningIcon } from './icons';
 
 interface UpscalePanelProps {
+  mode: AppMode;
   enabled: boolean;
   backendLabel: string;
   preview: UpscalePreviewState | null;
   onToggle(enabled: boolean): void;
 }
 
-export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: UpscalePanelProps) {
+function formatDenoiseLabel(value?: string): string {
+  switch (value) {
+    case 'conservative':
+      return 'Denoise doux';
+    case 'no-denoise':
+      return 'Sans denoise';
+    case 'denoise1x':
+      return 'Denoise 1x';
+    case 'denoise2x':
+      return 'Denoise 2x';
+    case 'denoise3x':
+      return 'Denoise 3x';
+    default:
+      return 'Auto';
+  }
+}
+
+function formatBackendLabel(value: string): string {
+  switch (value) {
+    case 'webgpu':
+      return 'WebGPU';
+    case 'webgl':
+      return 'WebGL';
+    case 'cpu':
+      return 'CPU';
+    default:
+      return value;
+  }
+}
+
+export function UpscalePanel({ mode, enabled, backendLabel, preview, onToggle }: UpscalePanelProps) {
+  const preset = getRealesrganPreset(mode);
+  const supportedBackends = getBackendPriority().map(formatBackendLabel).join(' / ');
+  const parameterPills = [
+    preset.label,
+    `Échelle x${preset.factor}`,
+    formatDenoiseLabel(preset.denoise),
+    `Tuiles ${preset.tileSizes[0]} → ${preset.tileSizes[preset.tileSizes.length - 1]}`,
+  ];
+
   return (
     <section className="surface space-y-2 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -37,6 +78,26 @@ export function UpscalePanel({ enabled, backendLabel, preview, onToggle }: Upsca
           />
           {enabled ? 'On' : 'Off'}
         </label>
+      </div>
+
+      <div className="rounded-[14px] border border-border/70 bg-[#f8f9fb] px-2.5 py-2">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Paramètres</span>
+          <span className="text-[10px] text-muted">{mode === 'manga' ? 'Mode manga' : 'Mode général'}</span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {parameterPills.map((item) => (
+            <span
+              key={item}
+              className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-ink shadow-[0_1px_3px_rgba(15,17,23,0.05)]"
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[10px] text-muted">
+          Backends auto: {supportedBackends}
+        </p>
       </div>
 
       {preview ? (

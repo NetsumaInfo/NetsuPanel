@@ -105,6 +105,7 @@ export function App() {
       chapterCount={chapterCount}
       selectedGeneralCount={generalSelectedCount}
       activity={state.activity}
+      mode={state.mode}
       upscaleEnabled={state.upscaleEnabled}
       backendLabel={state.waifuBackendLabel}
       preview={state.upscalePreview}
