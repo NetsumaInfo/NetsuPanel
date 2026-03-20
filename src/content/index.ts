@@ -97,6 +97,34 @@ async function fetchBinaryFromPage(url: string, referrer?: string): Promise<Fetc
   throw lastError || new Error('Binary payload is not a valid image.');
 }
 
+async function fetchDocumentFromPage(url: string, referrer?: string): Promise<string> {
+  const normalizedReferrer = normalizeReferrer(url, referrer);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < FETCH_RETRY_DELAYS.length + 1; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        credentials: 'include',
+        referrer: normalizedReferrer,
+        referrerPolicy: 'no-referrer-when-downgrade',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Document fetch failed');
+      if (attempt < FETCH_RETRY_DELAYS.length) {
+        await sleep(FETCH_RETRY_DELAYS[attempt]);
+      }
+    }
+  }
+
+  throw lastError || new Error('Document fetch failed');
+}
+
 async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
   if (node instanceof HTMLCanvasElement) {
     const blob = await new Promise<Blob>((resolve, reject) => {
@@ -165,6 +193,11 @@ if (!window.__netsuPanelInitialized__) {
 
       case ContentMessageType.FetchBinary:
         return fetchBinaryFromPage(message.url, message.referrer);
+
+      case ContentMessageType.FetchDocument:
+        return {
+          html: await fetchDocumentFromPage(message.url, message.referrer),
+        };
 
       default:
         return undefined;

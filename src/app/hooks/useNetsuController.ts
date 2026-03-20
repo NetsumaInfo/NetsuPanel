@@ -27,7 +27,11 @@ export function useNetsuController() {
         dispatch({ type: 'set-loading-message', message: 'Analyse de la page en cours…' });
         const scan = await scanSourceTab(tabId);
         dispatch({ type: 'set-loading-message', message: 'Découverte des chapitres…' });
-        const chapters = await discoverChapters(scan, { fetchDocument });
+        const chapters = await discoverChapters(
+          scan,
+          { fetchDocument },
+          { referrer: source.url, tabId }
+        );
         if (!cancelled) {
           dispatch({ type: 'bootstrap-success', source, scan, chapters });
         }
@@ -87,7 +91,11 @@ export function useNetsuController() {
         const preview =
           isSameChapterUrl(chapter.canonicalUrl, state.source.url)
             ? state.scan.manga.currentPages
-            : await fetchChapterPreview(chapter.url, { fetchDocument });
+            : await fetchChapterPreview(
+                chapter.url,
+                { fetchDocument },
+                { referrer: state.source.url, tabId: state.source.id }
+              );
         dispatch({
           type: 'set-chapter-preview',
           chapterUrl: chapter.canonicalUrl,

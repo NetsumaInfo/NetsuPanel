@@ -23,6 +23,15 @@ async function fetchBinaryViaContentScript(tabId: number, url: string, referrer?
   });
 }
 
+async function fetchDocumentViaContentScript(tabId: number, url: string, referrer?: string) {
+  await ensureContentScript(tabId);
+  return browser.tabs.sendMessage(tabId, {
+    type: ContentMessageType.FetchDocument,
+    url,
+    referrer,
+  });
+}
+
 async function fetchBinaryViaPageWorld(tabId: number, url: string, referrer?: string) {
   const results = await browser.scripting.executeScript({
     target: { tabId },
@@ -58,6 +67,47 @@ async function fetchBinaryViaPageWorld(tabId: number, url: string, referrer?: st
         bytes: await response.arrayBuffer(),
         mime: response.headers.get('content-type') || 'image/jpeg',
         finalUrl: response.url || fetchUrl,
+      };
+    },
+    args: [url, referrer],
+  });
+
+  return results[0]?.result;
+}
+
+async function fetchDocumentViaPageWorld(tabId: number, url: string, referrer?: string) {
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (fetchUrl: string, fetchReferrer?: string) => {
+      function normalizeReferrer(targetUrl: string, candidate?: string): string | undefined {
+        if (!candidate) return undefined;
+
+        try {
+          const requestUrl = new URL(targetUrl);
+          const referrerUrl = new URL(candidate);
+          if (requestUrl.origin === referrerUrl.origin) {
+            return referrerUrl.href;
+          }
+          return `${referrerUrl.origin}/`;
+        } catch {
+          return undefined;
+        }
+      }
+
+      const normalizedReferrer = normalizeReferrer(fetchUrl, fetchReferrer);
+      const response = await fetch(fetchUrl, {
+        credentials: 'include',
+        referrer: normalizedReferrer,
+        referrerPolicy: 'no-referrer-when-downgrade',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return {
+        html: await response.text(),
       };
     },
     args: [url, referrer],
@@ -122,8 +172,26 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.FetchDocument:
+      if (message.tabId) {
+        try {
+          const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
+          if (!pageWorldDocument?.html) {
+            throw new Error('Page-world document fetch returned no result.');
+          }
+          return { html: pageWorldDocument.html };
+        } catch {
+          try {
+            const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
+            return {
+              html: (contentDocument as { html: string }).html,
+            };
+          } catch {
+            // Fall back to extension-context fetch for public pages.
+          }
+        }
+      }
       return {
-        html: await fetchDocumentHtml(message.url),
+        html: await fetchDocumentHtml(message.url, { referrer: message.referrer }),
       };
 
     case RuntimeMessageType.FetchBinary:

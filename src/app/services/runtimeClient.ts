@@ -15,6 +15,11 @@ export interface FetchBinaryOptions {
   tabId?: number;
 }
 
+export interface FetchDocumentOptions {
+  referrer?: string;
+  tabId?: number;
+}
+
 export async function getSourceContext(tabId: number): Promise<SourceTabContext> {
   const response = await browser.runtime.sendMessage({
     type: RuntimeMessageType.GetSourceContext,
@@ -31,10 +36,12 @@ export async function scanSourceTab(tabId: number): Promise<PageScanResult> {
   return response.scan as PageScanResult;
 }
 
-export async function fetchDocument(url: string): Promise<string> {
+export async function fetchDocument(url: string, options: FetchDocumentOptions = {}): Promise<string> {
   const response = await browser.runtime.sendMessage({
     type: RuntimeMessageType.FetchDocument,
     url,
+    referrer: options.referrer,
+    tabId: options.tabId,
   } satisfies FetchDocumentRequest);
   return response.html as string;
 }

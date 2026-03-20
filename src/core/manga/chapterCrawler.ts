@@ -3,8 +3,10 @@ import { collectStaticDocumentImages } from '@core/detection/collectors/staticDo
 import { scanPageDocument } from '@core/detection/scanPage';
 
 export interface ChapterCrawlerDependencies {
-  fetchDocument(url: string): Promise<string>;
+  fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
 }
+
+const LINEAR_CHAPTER_LIMIT = 300;
 
 function parseRemoteDocument(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
@@ -53,8 +55,12 @@ function sortChapterItems(items: ChapterItem[]): ChapterItem[] {
   });
 }
 
-async function scanRemotePage(url: string, dependencies: ChapterCrawlerDependencies): Promise<PageScanResult> {
-  const html = await dependencies.fetchDocument(url);
+async function scanRemotePage(
+  url: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number } = {}
+): Promise<PageScanResult> {
+  const html = await dependencies.fetchDocument(url, options);
   const document = parseRemoteDocument(html);
   return scanPageDocument({
     document,
@@ -68,16 +74,16 @@ async function walkLinearDirection(
   startUrl: string | undefined,
   direction: 'previous' | 'next',
   dependencies: ChapterCrawlerDependencies,
-  limit: number,
-  accumulator: Map<string, ChapterItem>
+  accumulator: Map<string, ChapterItem>,
+  options: { referrer?: string; tabId?: number }
 ): Promise<void> {
   const visited = new Set<string>();
   let currentUrl = startUrl;
-  let remaining = limit;
+  let remaining = LINEAR_CHAPTER_LIMIT;
 
   while (currentUrl && !visited.has(currentUrl) && remaining > 0) {
     visited.add(currentUrl);
-    const scan = await scanRemotePage(currentUrl, dependencies);
+    const scan = await scanRemotePage(currentUrl, dependencies, options);
     const item = toChapterItem(scan, currentUrl);
     accumulator.set(item.canonicalUrl, mergeChapterItems(accumulator.get(item.canonicalUrl), item));
     currentUrl =
@@ -90,7 +96,8 @@ async function walkLinearDirection(
 
 export async function discoverChapters(
   initialScan: PageScanResult,
-  dependencies: ChapterCrawlerDependencies
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number } = {}
 ): Promise<ChapterItem[]> {
   const accumulator = new Map<string, ChapterItem>();
 
@@ -111,7 +118,7 @@ export async function discoverChapters(
 
   const listingUrl = initialScan.manga.navigation.listing?.url;
   if (listingUrl) {
-    const listingScan = await scanRemotePage(listingUrl, dependencies);
+    const listingScan = await scanRemotePage(listingUrl, dependencies, options);
     listingScan.manga.chapters.forEach((chapter) => {
       accumulator.set(chapter.canonicalUrl, mergeChapterItems(accumulator.get(chapter.canonicalUrl), {
         id: chapter.id,
@@ -128,16 +135,17 @@ export async function discoverChapters(
     });
   }
 
-  await walkLinearDirection(initialScan.manga.navigation.previous?.url, 'previous', dependencies, 8, accumulator);
-  await walkLinearDirection(initialScan.manga.navigation.next?.url, 'next', dependencies, 8, accumulator);
+  await walkLinearDirection(initialScan.manga.navigation.previous?.url, 'previous', dependencies, accumulator, options);
+  await walkLinearDirection(initialScan.manga.navigation.next?.url, 'next', dependencies, accumulator, options);
 
   return sortChapterItems([...accumulator.values()]);
 }
 
 export async function loadChapterPreview(
   chapterUrl: string,
-  dependencies: ChapterCrawlerDependencies
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
-  const scan = await scanRemotePage(chapterUrl, dependencies);
+  const scan = await scanRemotePage(chapterUrl, dependencies, options);
   return scan.manga.currentPages;
 }

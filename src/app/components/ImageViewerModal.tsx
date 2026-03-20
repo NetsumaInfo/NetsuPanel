@@ -117,8 +117,8 @@ export function ImageViewerModal({
   const compareAvailable = compareMode && previewMatches;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.82)] p-3 backdrop-blur-md">
-      <div className="relative flex h-full max-h-[94vh] w-full max-w-[1520px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_30px_90px_rgba(15,17,23,0.14)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(244,245,247,0.72)] p-6 backdrop-blur-md">
+      <div className="relative flex h-auto max-h-[86vh] w-full max-w-[1240px] flex-col overflow-hidden rounded-[28px] border border-border bg-white shadow-[0_24px_70px_rgba(15,17,23,0.12)]">
         <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[15px] font-semibold text-ink">{title}</p>
@@ -179,9 +179,9 @@ export function ImageViewerModal({
             )}
           </div>
 
-          <div className="flex h-full items-center justify-center p-8">
+          <div className="flex h-full items-center justify-center p-5">
             {!compareMode || !previewMatches ? (
-              <div className="flex h-full w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-6 shadow-inner">
+              <div className="flex h-full min-h-[58vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-4 shadow-inner">
                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
                   <SafeImage
                     src={currentItem.previewUrl || currentItem.url}
@@ -191,23 +191,17 @@ export function ImageViewerModal({
                 </div>
               </div>
             ) : preview?.error ? (
-              <div className="flex h-full w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-6 text-center text-sm text-danger">
+              <div className="flex h-full min-h-[58vh] w-full items-center justify-center rounded-[24px] border border-danger/20 bg-white p-4 text-center text-sm text-danger">
                 {preview.error}
               </div>
             ) : preview?.loading || !preview?.upscaledUrl ? (
-              <div className="flex h-full w-full items-center justify-center rounded-[24px] border border-border bg-white p-6 text-sm text-muted">
+              <div className="flex h-full min-h-[58vh] w-full items-center justify-center rounded-[24px] border border-border bg-white p-4 text-sm text-muted">
                 Upscaling…
               </div>
             ) : (
               <div
                 ref={compareRef}
-                className="relative flex h-full w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-6 shadow-inner"
-                onPointerDown={(event) => {
-                  draggingRef.current = true;
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  const next = ((event.clientX - rect.left) / rect.width) * 100;
-                  setSplit(clampSplit(next));
-                }}
+                className="relative flex h-full min-h-[58vh] w-full items-center justify-center overflow-auto rounded-[24px] border border-border bg-white p-4 shadow-inner"
               >
                 <div
                   className="grid place-items-center"
@@ -233,13 +227,25 @@ export function ImageViewerModal({
                 </div>
 
                 <div
-                  className="pointer-events-none absolute inset-y-8 z-10"
+                  className="absolute inset-y-6 z-10"
                   style={{ left: `${split}%` }}
                 >
                   <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,17,23,0.08)]" />
-                  <div className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg">
+                  <button
+                    type="button"
+                    className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-ink shadow-lg"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      draggingRef.current = true;
+                      const rect = compareRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      const next = ((event.clientX - rect.left) / rect.width) * 100;
+                      setSplit(clampSplit(next));
+                    }}
+                    aria-label="Déplacer le comparateur"
+                  >
                     <span className="text-[10px] font-semibold">↔</span>
-                  </div>
+                  </button>
                 </div>
 
                 <div className="pointer-events-none absolute left-8 top-8 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-medium text-ink shadow-sm">
