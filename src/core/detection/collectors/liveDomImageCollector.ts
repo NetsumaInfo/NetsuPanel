@@ -3,7 +3,6 @@ import { resolveUrl } from '@shared/utils/url';
 import { readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
 import { collectJsonEmbeddedImages } from './jsonEmbeddedCollector';
 import { collectInlineScriptImages } from './inlineScriptCollector';
-import { collectRuntimeMangaGlobals } from './runtimeMangaGlobalsCollector';
 
 export type CapturableNode = HTMLImageElement | HTMLCanvasElement;
 
@@ -188,32 +187,6 @@ export async function collectLiveDomImages(baseUrl: string): Promise<LiveDomImag
 
   const backgroundOffset = canvasOffset + canvasCandidates.length;
   const backgroundCandidates = collectBackgroundCandidates(baseUrl, backgroundOffset);
-  const runtimeGlobals = collectRuntimeMangaGlobals(document);
-  const runtimeGlobalCandidates = [
-    ...runtimeGlobals.tsReaderImages,
-    ...runtimeGlobals.chapterPages,
-    ...runtimeGlobals.mangagoImages,
-    ...runtimeGlobals.nextDataImages,
-  ].map((url, index) => ({
-    id: `runtime-global-${index}`,
-    url,
-    previewUrl: url,
-    referrer: baseUrl,
-    captureStrategy: 'network' as const,
-    sourceKind: 'runtime-global',
-    origin: 'live-dom' as const,
-    width: 0,
-    height: 0,
-    domIndex: backgroundOffset + backgroundCandidates.length + index,
-    top: index * 100,
-    left: 0,
-    altText: '',
-    titleText: '',
-    containerSignature: 'runtime-global',
-    visible: true,
-    diagnostics: [],
-  }));
-
   // Multi-strategy: JSON embedded + inline scripts
   const jsonCandidates = collectJsonEmbeddedImages(document, baseUrl);
   const scriptCandidates = collectInlineScriptImages(document, baseUrl);
@@ -222,7 +195,6 @@ export async function collectLiveDomImages(baseUrl: string): Promise<LiveDomImag
     candidates: imageCandidates.concat(
       canvasCandidates,
       backgroundCandidates,
-      runtimeGlobalCandidates,
       jsonCandidates,
       scriptCandidates
     ),
