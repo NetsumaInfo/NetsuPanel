@@ -31,6 +31,7 @@ export type CaptureStrategy = 'network' | 'content';
 export type DetectionOrigin = 'live-dom' | 'static-html';
 export type ChapterRelation = 'current' | 'previous' | 'next' | 'listing' | 'candidate';
 export type PreviewStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type DownloadTransform = 'strip-wordpress-cdn' | 'unwrap-src-proxy' | 'descramble-speedbinb';
 
 export interface DetectionDiagnostic {
   code: string;
@@ -57,6 +58,9 @@ export interface RawImageCandidate {
   id: string;
   url: string;
   previewUrl: string;
+  referrer?: string;
+  headers?: Record<string, string>;
+  transform?: DownloadTransform;
   captureStrategy: CaptureStrategy;
   sourceKind: string;
   origin: DetectionOrigin;
@@ -76,6 +80,9 @@ export interface ImageCandidate {
   id: string;
   url: string;
   previewUrl: string;
+  referrer?: string;
+  headers?: Record<string, string>;
+  transform?: DownloadTransform;
   canonicalUrl: string;
   querylessUrl: string;
   captureStrategy: CaptureStrategy;

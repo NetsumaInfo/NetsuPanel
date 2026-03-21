@@ -22,11 +22,11 @@ function sleep(ms: number): Promise<void> {
 async function stabilizePage(): Promise<void> {
   let lastCount = -1;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     const currentCount = document.images.length;
     if (currentCount === lastCount) return;
     lastCount = currentCount;
-    await sleep(350);
+    await sleep(450);
   }
 }
 
@@ -58,7 +58,19 @@ function normalizeReferrer(url: string, referrer?: string): string | undefined {
   }
 }
 
-async function fetchBinaryFromPage(url: string, referrer?: string): Promise<FetchBinaryResult> {
+function getAcceptLanguageHeader(): string {
+  const languages = navigator.languages?.filter(Boolean) || [];
+  if (languages.length > 0) {
+    return `${languages.slice(0, 2).join(',')},en;q=0.8`;
+  }
+  return navigator.language ? `${navigator.language},en;q=0.8` : 'en-US,en;q=0.8';
+}
+
+async function fetchBinaryFromPage(
+  url: string,
+  referrer?: string,
+  headers?: Record<string, string>
+): Promise<FetchBinaryResult> {
   const normalizedReferrer = normalizeReferrer(url, referrer);
   let lastError: Error | null = null;
 
@@ -68,6 +80,11 @@ async function fetchBinaryFromPage(url: string, referrer?: string): Promise<Fetc
         credentials: 'include',
         referrer: normalizedReferrer,
         referrerPolicy: 'no-referrer-when-downgrade',
+        headers: {
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          'Accept-Language': getAcceptLanguageHeader(),
+          ...(headers || {}),
+        },
       });
 
       if (!response.ok) {
@@ -95,6 +112,38 @@ async function fetchBinaryFromPage(url: string, referrer?: string): Promise<Fetc
   }
 
   throw lastError || new Error('Binary payload is not a valid image.');
+}
+
+async function fetchDocumentFromPage(url: string, referrer?: string): Promise<string> {
+  const normalizedReferrer = normalizeReferrer(url, referrer);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < FETCH_RETRY_DELAYS.length + 1; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        credentials: 'include',
+        referrer: normalizedReferrer,
+        referrerPolicy: 'no-referrer-when-downgrade',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': getAcceptLanguageHeader(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.text();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Document fetch failed');
+      if (attempt < FETCH_RETRY_DELAYS.length) {
+        await sleep(FETCH_RETRY_DELAYS[attempt]);
+      }
+    }
+  }
+
+  throw lastError || new Error('Document fetch failed');
 }
 
 async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
@@ -136,14 +185,26 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
 async function scanCurrentPage() {
   await stabilizePage();
   const page = getPageIdentity();
-  const collection = await collectLiveDomImages(page.url);
+  let bestCollection = await collectLiveDomImages(page.url);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await sleep(400);
+    const nextCollection = await collectLiveDomImages(page.url);
+    if (nextCollection.candidates.length > bestCollection.candidates.length) {
+      bestCollection = nextCollection;
+    }
+    if (bestCollection.candidates.length >= 12) {
+      break;
+    }
+  }
+
   capturableRegistry.clear();
-  collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
+  bestCollection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
   return scanPageDocument({
     document,
     page,
     origin: 'live-dom',
-    imageCandidates: collection.candidates,
+    imageCandidates: bestCollection.candidates,
   });
 }
 
@@ -164,7 +225,12 @@ if (!window.__netsuPanelInitialized__) {
       }
 
       case ContentMessageType.FetchBinary:
-        return fetchBinaryFromPage(message.url, message.referrer);
+        return fetchBinaryFromPage(message.url, message.referrer, message.headers);
+
+      case ContentMessageType.FetchDocument:
+        return {
+          html: await fetchDocumentFromPage(message.url, message.referrer),
+        };
 
       default:
         return undefined;

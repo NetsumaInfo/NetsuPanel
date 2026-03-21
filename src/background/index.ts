@@ -7,6 +7,20 @@ import { fetchBinaryResource, fetchDocumentHtml } from './fetch';
 
 const LAST_SOURCE_TAB_ID_KEY = 'lastSourceTabId';
 
+interface PageWorldBinaryResult {
+  ok: boolean;
+  bytes?: ArrayBuffer;
+  mime?: string;
+  finalUrl?: string;
+  error?: string;
+}
+
+interface PageWorldDocumentResult {
+  ok: boolean;
+  html?: string;
+  error?: string;
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
   await browser.scripting.executeScript({
     target: { tabId },
@@ -14,16 +28,95 @@ async function ensureContentScript(tabId: number): Promise<void> {
   });
 }
 
-async function fetchBinaryViaContentScript(tabId: number, url: string, referrer?: string) {
+async function fetchBinaryViaContentScript(
+  tabId: number,
+  url: string,
+  referrer?: string,
+  headers?: Record<string, string>
+) {
   await ensureContentScript(tabId);
   return browser.tabs.sendMessage(tabId, {
     type: ContentMessageType.FetchBinary,
     url,
     referrer,
+    headers,
   });
 }
 
-async function fetchBinaryViaPageWorld(tabId: number, url: string, referrer?: string) {
+async function fetchDocumentViaContentScript(tabId: number, url: string, referrer?: string) {
+  await ensureContentScript(tabId);
+  return browser.tabs.sendMessage(tabId, {
+    type: ContentMessageType.FetchDocument,
+    url,
+    referrer,
+  });
+}
+
+async function fetchBinaryViaPageWorld(
+  tabId: number,
+  url: string,
+  referrer?: string,
+  headers?: Record<string, string>
+) {
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: async (fetchUrl: string, fetchReferrer?: string, requestHeaders?: Record<string, string>) => {
+      function normalizeReferrer(targetUrl: string, candidate?: string): string | undefined {
+        if (!candidate) return undefined;
+
+        try {
+          const requestUrl = new URL(targetUrl);
+          const referrerUrl = new URL(candidate);
+          if (requestUrl.origin === referrerUrl.origin) {
+            return referrerUrl.href;
+          }
+          return `${referrerUrl.origin}/`;
+        } catch {
+          return undefined;
+        }
+      }
+
+      const normalizedReferrer = normalizeReferrer(fetchUrl, fetchReferrer);
+      const response = await fetch(fetchUrl, {
+        credentials: 'include',
+        referrer: normalizedReferrer,
+        referrerPolicy: 'no-referrer-when-downgrade',
+        headers: {
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          'Accept-Language': `${navigator.language || 'en-US'},en;q=0.8`,
+          ...(requestHeaders || {}),
+        },
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: `HTTP ${response.status}`,
+        };
+      }
+
+      return {
+        ok: true,
+        bytes: await response.arrayBuffer(),
+        mime: response.headers.get('content-type') || 'image/jpeg',
+        finalUrl: response.url || fetchUrl,
+      };
+    },
+    args: [url, referrer, headers],
+  });
+  const result = results[0]?.result as PageWorldBinaryResult | undefined;
+  if (!result?.ok || !result.bytes || !result.mime || !result.finalUrl) {
+    throw new Error(result?.error || 'Page-world fetch returned no result.');
+  }
+  return {
+    bytes: result.bytes,
+    mime: result.mime,
+    finalUrl: result.finalUrl,
+  };
+}
+
+async function fetchDocumentViaPageWorld(tabId: number, url: string, referrer?: string) {
   const results = await browser.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
@@ -48,22 +141,33 @@ async function fetchBinaryViaPageWorld(tabId: number, url: string, referrer?: st
         credentials: 'include',
         referrer: normalizedReferrer,
         referrerPolicy: 'no-referrer-when-downgrade',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': `${navigator.language || 'en-US'},en;q=0.8`,
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        return {
+          ok: false,
+          error: `HTTP ${response.status}`,
+        };
       }
 
       return {
-        bytes: await response.arrayBuffer(),
-        mime: response.headers.get('content-type') || 'image/jpeg',
-        finalUrl: response.url || fetchUrl,
+        ok: true,
+        html: await response.text(),
       };
     },
     args: [url, referrer],
   });
-
-  return results[0]?.result;
+  const result = results[0]?.result as PageWorldDocumentResult | undefined;
+  if (!result?.ok || !result.html) {
+    throw new Error(result?.error || 'Page-world document fetch returned no result.');
+  }
+  return {
+    html: result.html,
+  };
 }
 
 async function validateFetchedResource(resource: { bytes: unknown; mime: string; finalUrl: string }) {
@@ -122,23 +226,45 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.FetchDocument:
+      if (message.tabId) {
+        try {
+          const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
+          return { html: pageWorldDocument.html };
+        } catch {
+          try {
+            const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
+            return {
+              html: (contentDocument as { html: string }).html,
+            };
+          } catch {
+            // Fall back to extension-context fetch for public pages.
+          }
+        }
+      }
       return {
-        html: await fetchDocumentHtml(message.url),
+        html: await fetchDocumentHtml(message.url, { referrer: message.referrer }),
       };
 
     case RuntimeMessageType.FetchBinary:
       if (message.tabId) {
         try {
-          const pageWorldResource = await fetchBinaryViaPageWorld(message.tabId, message.url, message.referrer);
-          if (!pageWorldResource) {
-            throw new Error('Page-world fetch returned no result.');
-          }
+          const pageWorldResource = await fetchBinaryViaPageWorld(
+            message.tabId,
+            message.url,
+            message.referrer,
+            message.headers
+          );
           return {
             resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
           };
         } catch {
           try {
-            const contentResource = await fetchBinaryViaContentScript(message.tabId, message.url, message.referrer);
+            const contentResource = await fetchBinaryViaContentScript(
+              message.tabId,
+              message.url,
+              message.referrer,
+              message.headers
+            );
             return {
               resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
             };
@@ -148,7 +274,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
         }
       }
       return {
-        resource: serializeBinaryResource(await fetchBinaryResource(message.url, { referrer: message.referrer })),
+        resource: serializeBinaryResource(
+          await fetchBinaryResource(message.url, {
+            referrer: message.referrer,
+            headers: message.headers,
+          })
+        ),
       };
 
     case RuntimeMessageType.CaptureImage: {

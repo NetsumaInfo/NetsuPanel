@@ -11,6 +11,16 @@ function sleep(ms: number): Promise<void> {
 
 interface FetchOptions {
   referrer?: string;
+  headers?: Record<string, string>;
+}
+
+function getAcceptLanguageHeader(): string {
+  const languages = (globalThis.navigator?.languages || []).filter(Boolean);
+  if (languages.length > 0) {
+    return languages.slice(0, 2).join(',') + ',en;q=0.8';
+  }
+  const language = globalThis.navigator?.language;
+  return language ? `${language},en;q=0.8` : 'en-US,en;q=0.8';
 }
 
 function normalizeReferrer(url: string, referrer?: string): string | undefined {
@@ -85,10 +95,11 @@ async function addReferrerRule(
   });
 }
 
-async function fetchUsingInjectedReferer(url: string, referrer: string): Promise<Response> {
+async function fetchUsingInjectedReferer(url: string, referrer: string, requestInit: RequestInit): Promise<Response> {
   const chromeApi = getChromeDnrApi();
   if (!chromeApi) {
     return fetch(url, {
+      ...requestInit,
       credentials: 'include',
       referrer,
       referrerPolicy: 'no-referrer-when-downgrade',
@@ -106,7 +117,10 @@ async function fetchUsingInjectedReferer(url: string, referrer: string): Promise
   }
 
   try {
-    return fetch(url, { credentials: 'include' });
+    return fetch(url, {
+      ...requestInit,
+      credentials: 'include',
+    });
   } finally {
     try {
       await chromeApi.declarativeNetRequest.updateSessionRules({
@@ -123,7 +137,7 @@ async function fetchWithReferrerWorkaround(url: string, requestInit: RequestInit
   if (!referrer) {
     return fetch(url, requestInit);
   }
-  return fetchUsingInjectedReferer(url, referrer);
+  return fetchUsingInjectedReferer(url, referrer, requestInit);
 }
 
 async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<Response> {
@@ -134,6 +148,11 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
     try {
       const requestInit: RequestInit = {
         credentials: 'include',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': getAcceptLanguageHeader(),
+          ...(options.headers || {}),
+        },
       };
       if (normalizedReferrer && !getChromeDnrApi()) {
         requestInit.referrer = normalizedReferrer;

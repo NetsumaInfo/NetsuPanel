@@ -12,6 +12,7 @@ import { coerceArrayBuffer } from '@shared/utils/binaryTransfer';
 
 export interface FetchBinaryOptions {
   referrer?: string;
+  headers?: Record<string, string>;
   tabId?: number;
 }
 
@@ -31,10 +32,17 @@ export async function scanSourceTab(tabId: number): Promise<PageScanResult> {
   return response.scan as PageScanResult;
 }
 
-export async function fetchDocument(url: string): Promise<string> {
+export interface FetchDocumentOptions {
+  referrer?: string;
+  tabId?: number;
+}
+
+export async function fetchDocument(url: string, options: FetchDocumentOptions = {}): Promise<string> {
   const response = await browser.runtime.sendMessage({
     type: RuntimeMessageType.FetchDocument,
     url,
+    referrer: options.referrer,
+    tabId: options.tabId,
   } satisfies FetchDocumentRequest);
   return response.html as string;
 }
@@ -44,6 +52,7 @@ export async function fetchBinary(url: string, options: FetchBinaryOptions = {})
     type: RuntimeMessageType.FetchBinary,
     url,
     referrer: options.referrer,
+    headers: options.headers,
     tabId: options.tabId,
   } satisfies FetchBinaryRequest);
   const resource = response.resource as FetchBinaryResult;

@@ -18,9 +18,11 @@
  */
 
 import type { MangaScanResult } from '@shared/types';
+import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { collectRuntimeMangaGlobals } from '@core/detection/collectors/runtimeMangaGlobalsCollector';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
-import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 const WP_MANGA_DOMAINS = [
@@ -40,32 +42,6 @@ function matchesWpManga(url: string): boolean {
   }
 }
 
-/**
- * Extract page image URLs from ts_reader.params.sources (WP-Manga / Madara theme)
- */
-function parseTsReaderSources(document: ParentNode): string[] {
-  const scripts = Array.from(
-    (document as Document).querySelectorAll<HTMLScriptElement>('script:not([src])')
-  );
-  for (const script of scripts) {
-    const text = script.textContent ?? '';
-    // Match: ts_reader.run({"sources":[{"images":["url1","url2",...]}]})
-    const m = text.match(/ts_reader\.run\s*\(\s*(\{[\s\S]*?\})\s*\)/);
-    if (!m) continue;
-    try {
-      const parsed = JSON.parse(m[1]) as {
-        sources?: Array<{ images?: string[] }>;
-      };
-      const images = parsed.sources?.[0]?.images ?? [];
-      if (images.length > 0) return images.filter((u) => typeof u === 'string');
-    } catch { /* ignore */ }
-  }
-  return [];
-}
-
-/**
- * Collect from DOM: .page-break img, .wp-manga-chapter-img, .reading-content img
- */
 function collectReaderDomImages(document: ParentNode): string[] {
   const selectors = [
     '.page-break img',
@@ -86,42 +62,18 @@ function collectReaderDomImages(document: ParentNode): string[] {
 }
 
 function scanWpManga(input: ScanAdapterInput): MangaScanResult {
-  // 1. Try ts_reader JSON first (most reliable)
-  const tsReaderUrls = parseTsReaderSources(input.document);
-
-  // 2. DOM collect
+  const runtime = collectRuntimeMangaGlobals(input.document);
+  const tsReaderUrls = runtime.tsReaderImages;
   const domUrls = collectReaderDomImages(input.document);
-
-  // Merge ts_reader + DOM (ts_reader wins on ordering if available)
   const priorityUrls = tsReaderUrls.length > 0 ? tsReaderUrls : domUrls;
-
-  // Build extra raw candidates from WP-specific URLs
-  const extraCandidates = priorityUrls.map((url, i) => ({
-    id: `wp-manga-${i}`,
-    url,
-    previewUrl: url,
-    captureStrategy: 'network' as const,
-    sourceKind: 'wp-manga',
+  const extraCandidates = createOrderedNetworkCandidates(priorityUrls, {
+    prefix: 'wp-manga',
+    sourceKind: tsReaderUrls.length > 0 ? 'wp-manga-runtime' : 'wp-manga-dom',
     origin: input.origin,
-    width: 0,
-    height: 0,
-    domIndex: i,
-    top: i * 100, // preserve order
-    left: 0,
-    altText: '',
-    titleText: '',
     containerSignature: 'wp-reader',
-    visible: true,
-    diagnostics: [],
-  }));
-
-  // Merge with original candidates
-  const allCandidates =
-    extraCandidates.length > 0
-      ? [...extraCandidates, ...input.imageCandidates]
-      : input.imageCandidates;
-
-  const currentPages = buildImageCollection(allCandidates, 'manga');
+    referrer: input.page.url,
+  });
+  const currentPages = buildImageCollection(prependCandidates(extraCandidates, input.imageCandidates), 'manga');
 
   // Chapter links
   const chapterCandidates = collectChapterLinks(input.document, input.page.url, input.page.url);
@@ -135,8 +87,10 @@ function scanWpManga(input: ScanAdapterInput): MangaScanResult {
     diagnostics: [
       ...links.diagnostics,
       ...(extraCandidates.length === 0
-        ? [{ code: 'wp-no-ts-reader', message: 'ts_reader.run() non trouvé, fallback DOM utilisé.', level: 'info' as const }]
-        : []),
+        ? [{ code: 'wp-no-reader-pages', message: 'Aucune page WP-Manga resolue via runtime ou DOM.', level: 'info' as const }]
+        : tsReaderUrls.length === 0
+          ? [{ code: 'wp-dom-fallback', message: 'Fallback DOM utilise faute de runtime manga exploitable.', level: 'info' as const }]
+          : []),
     ],
   };
 }
