@@ -9,6 +9,7 @@ import type { MangaScanResult } from '@shared/types';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 const NEXT_DATA_DOMAINS = [
@@ -57,34 +58,38 @@ function extractNextDataImages(document: ParentNode): string[] {
   }
 }
 
+function extractDomReaderImages(document: ParentNode, baseUrl: string): string[] {
+  const images = Array.from(
+    (document as Document).querySelectorAll<HTMLImageElement>(
+      '#scansPlacement img, main img, .entry-content img, .reader-area img, .chapter-content img'
+    )
+  );
+
+  return images
+    .map((image) => image.dataset.src || image.currentSrc || image.getAttribute('src') || '')
+    .map((url) => {
+      if (!url) return '';
+      try {
+        return new URL(url, baseUrl).href;
+      } catch {
+        return '';
+      }
+    })
+    .filter(Boolean);
+}
+
 function scanNextDataReader(input: ScanAdapterInput): MangaScanResult {
   const nextUrls = extractNextDataImages(input.document);
-
-  const extraCandidates = nextUrls.map((url, i) => ({
-    id: `next-data-${i}`,
-    url,
-    previewUrl: url,
-    captureStrategy: 'network' as const,
-    sourceKind: 'next-data',
+  const domUrls = extractDomReaderImages(input.document, input.page.url);
+  const extraCandidates = createOrderedNetworkCandidates(nextUrls.length > 0 ? nextUrls : domUrls, {
+    prefix: 'next-data',
+    sourceKind: nextUrls.length > 0 ? 'next-data' : 'next-data-dom',
     origin: input.origin,
-    width: 0,
-    height: 0,
-    domIndex: i,
-    top: i * 100,
-    left: 0,
-    altText: '',
-    titleText: '',
     containerSignature: 'next-reader',
-    visible: true,
-    diagnostics: [],
-  }));
+    referrer: input.page.url,
+  });
 
-  const allCandidates =
-    extraCandidates.length > 0
-      ? [...extraCandidates, ...input.imageCandidates]
-      : input.imageCandidates;
-
-  const currentPages = buildImageCollection(allCandidates, 'manga');
+  const currentPages = buildImageCollection(prependCandidates(extraCandidates, input.imageCandidates), 'manga');
   const chapterCandidates = collectChapterLinks(input.document, input.page.url, input.page.url);
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 

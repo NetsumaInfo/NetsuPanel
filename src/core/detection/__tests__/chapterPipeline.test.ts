@@ -81,4 +81,27 @@ describe('buildMangaLinkMap', () => {
     expect(current).toBeDefined();
     expect(current?.url).toBe(page.url);
   });
+
+  it('falls back to multiple candidate groups when the best cluster is too small', () => {
+    const result = buildMangaLinkMap(page, [
+      {
+        ...createChapterCandidate('a', 'Chapter 8', 8),
+        containerSignature: 'div.nav-a',
+      },
+      {
+        ...createChapterCandidate('b', 'Chapter 9', 9),
+        containerSignature: 'div.nav-b',
+      },
+      {
+        ...createChapterCandidate('c', 'Chapter 11', 11),
+        containerSignature: 'div.nav-c',
+      },
+      {
+        ...createChapterCandidate('d', 'Chapter 12', 12),
+        containerSignature: 'div.nav-d',
+      },
+    ]);
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([8, 9, 10, 11, 12]);
+  });
 });

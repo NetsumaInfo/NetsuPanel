@@ -76,6 +76,20 @@ function pickBestChapterCluster(candidates: ChapterLinkCandidate[]): ChapterLink
   return ranked[0] || [];
 }
 
+function pickBestChapterSet(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
+  const cluster = pickBestChapterCluster(candidates);
+  if (cluster.length >= 4) {
+    return cluster;
+  }
+
+  const numbered = candidates.filter((candidate) => candidate.chapterNumber !== null && candidate.score >= 18);
+  if (numbered.length >= 4) {
+    return numbered;
+  }
+
+  return candidates.filter((candidate) => candidate.score >= 22);
+}
+
 export function buildMangaLinkMap(
   page: PageIdentity,
   chapterCandidates: ChapterLinkCandidate[]
@@ -84,7 +98,7 @@ export function buildMangaLinkMap(
   const deduped = dedupeChapterCandidates(chapterCandidates);
   const current = buildCurrentCandidate(page);
 
-  const cluster = pickBestChapterCluster(
+  const cluster = pickBestChapterSet(
     deduped.filter((candidate) => candidate.relation === 'candidate')
   );
 

@@ -78,6 +78,27 @@ describe('buildImageCollection — mode manga', () => {
     expect(result.items.some((item) => /thumb|thumbnail/i.test(item.url))).toBe(false);
   });
 
+  test('does not reject normal upload URLs as ads', () => {
+    const candidates = [
+      makeMangaCandidate({
+        id: 'upload-1',
+        url: 'https://site.com/wp-content/uploads/manga/chapter/01_clean.webp',
+        width: 0,
+        height: 0,
+        visible: true,
+      }),
+      makeMangaCandidate({
+        id: 'upload-2',
+        url: 'https://site.com/wp-content/uploads/manga/chapter/02_clean.webp',
+        width: 0,
+        height: 0,
+        visible: true,
+      }),
+    ];
+    const result = buildImageCollection(candidates, 'manga');
+    expect(result.items).toHaveLength(2);
+  });
+
   test('handles candidates without dimensions gracefully', () => {
     const candidates = Array.from({ length: 10 }, (_, i) =>
       makeMangaCandidate({

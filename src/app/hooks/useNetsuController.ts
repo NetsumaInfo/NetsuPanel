@@ -26,10 +26,15 @@ export function useNetsuController() {
         dispatch({ type: 'bootstrap-start', tabId });
         dispatch({ type: 'set-loading-message', message: 'Lecture du contexte de la page…' });
         const source = await getSourceContext(tabId);
+        const fetchDocumentForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) =>
+          fetchDocument(url, {
+            referrer: options.referrer || source.url,
+            tabId,
+          });
         dispatch({ type: 'set-loading-message', message: 'Analyse de la page en cours…' });
         const scan = await scanSourceTab(tabId);
         dispatch({ type: 'set-loading-message', message: 'Découverte des chapitres…' });
-        const chapters = await discoverChapters(scan, { fetchDocument });
+        const chapters = await discoverChapters(scan, { fetchDocument: fetchDocumentForSource }, { referrer: source.url, tabId });
         if (!cancelled) {
           dispatch({ type: 'bootstrap-success', source, scan, chapters });
         }
@@ -92,6 +97,7 @@ export function useNetsuController() {
       if (!state.scan || !state.source) {
         throw new Error('Analyse source indisponible');
       }
+      const source = state.source;
 
       if (chapter.previewStatus === 'ready' && chapter.preview) {
         return chapter.preview;
@@ -105,9 +111,19 @@ export function useNetsuController() {
 
       try {
         const preview =
-          isSameChapterUrl(chapter.canonicalUrl, state.source.url)
+          isSameChapterUrl(chapter.canonicalUrl, source.url)
             ? state.scan.manga.currentPages
-            : await fetchChapterPreview(chapter.url, { fetchDocument });
+            : await fetchChapterPreview(
+                chapter.url,
+                {
+                  fetchDocument: (url, options = {}) =>
+                    fetchDocument(url, {
+                      referrer: options.referrer || chapter.url || source.url,
+                      tabId: source.id,
+                    }),
+                },
+                { referrer: chapter.url || source.url, tabId: source.id }
+              );
         dispatch({
           type: 'set-chapter-preview',
           chapterUrl: chapter.canonicalUrl,
@@ -145,10 +161,18 @@ export function useNetsuController() {
           try {
             resource = await captureImage(state.source.id, candidate.id);
           } catch {
-            resource = await fetchBinary(candidate.url, { referrer, tabId: state.source.id });
+            resource = await fetchBinary(candidate.url, {
+              referrer: candidate.referrer || referrer,
+              headers: candidate.headers,
+              tabId: state.source.id,
+            });
           }
         } else {
-          resource = await fetchBinary(candidate.url, { referrer, tabId: state.source.id });
+          resource = await fetchBinary(candidate.url, {
+            referrer: candidate.referrer || referrer,
+            headers: candidate.headers,
+            tabId: state.source.id,
+          });
         }
         const blob = await waifuRuntimeRef.current.upscale({
           cacheKey: `preview-${candidate.id}-${state.mode}-${serializeUpscaleSettings(currentSettings)}`,

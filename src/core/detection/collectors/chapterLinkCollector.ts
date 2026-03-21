@@ -9,6 +9,7 @@ const LISTING_HINT_RE =
 const PREVIOUS_HINT_RE = /(prev|previous|older|back|<<|‹|←)/i;
 const NEXT_HINT_RE = /(next|newer|forward|>>|›|→)/i;
 const BAD_LINK_RE = /(login|signup|discord|facebook|twitter|instagram|privacy|terms)/i;
+const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {
   const rel = anchor.getAttribute('rel') || '';
@@ -60,6 +61,7 @@ export function collectChapterLinks(
   currentUrl: string
 ): ChapterLinkCandidate[] {
   const anchors = [...root.querySelectorAll<HTMLAnchorElement>('a[href]')];
+  const dataHrefElements = [...root.querySelectorAll<HTMLElement>('[data-href], [data-url], [data-next], [data-prev]')];
   const results: ChapterLinkCandidate[] = [];
 
   anchors.forEach((anchor, index) => {
@@ -88,6 +90,49 @@ export function collectChapterLinks(
       chapterNumber: identity.chapterNumber,
       volumeNumber: identity.volumeNumber,
       containerSignature: buildContainerSignature(anchor),
+      diagnostics: [],
+    });
+  });
+
+  dataHrefElements.forEach((element, index) => {
+    const rawHref =
+      element.getAttribute('data-href') ||
+      element.getAttribute('data-url') ||
+      element.getAttribute('data-next') ||
+      element.getAttribute('data-prev') ||
+      '';
+    const resolvedUrl = resolveUrl(rawHref, baseUrl);
+    if (!resolvedUrl) return;
+
+    const label = compactWhitespace(
+      element.textContent || element.getAttribute('title') || element.getAttribute('aria-label') || ''
+    );
+    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl)) {
+      return;
+    }
+
+    const relation =
+      element.hasAttribute('data-next')
+        ? 'next'
+        : element.hasAttribute('data-prev')
+          ? 'previous'
+          : CHAPTER_HINT_RE.test(label) || CHAPTER_PATH_RE.test(resolvedUrl)
+            ? 'candidate'
+            : 'listing';
+    const identity = parseChapterIdentity(label, resolvedUrl);
+    const score = computeScore(identity.label, currentUrl, resolvedUrl, relation) + 8;
+    if (score < 8) return;
+
+    results.push({
+      id: `chapter-data-link-${index}`,
+      url: resolvedUrl,
+      canonicalUrl: resolvedUrl.split('#')[0],
+      label: identity.label,
+      relation,
+      score,
+      chapterNumber: identity.chapterNumber,
+      volumeNumber: identity.volumeNumber,
+      containerSignature: buildContainerSignature(element),
       diagnostics: [],
     });
   });

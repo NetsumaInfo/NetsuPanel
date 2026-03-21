@@ -1,6 +1,7 @@
 import { clamp } from '@shared/utils/number';
 
-const JUNK_RE = /(avatar|icon|logo|sprite|ads?|banner|emoji|favicon|tracker|comment|profile|share|social|thumbnail|thumb[_/-])/i;
+const JUNK_RE =
+  /(?:^|[/_\-?=])(avatar|icon|logo|sprite|ad|ads|banner|emoji|favicon|tracker|comment|profile|share|social|thumbnail|thumb)(?:$|[/_\-?=.])/i;
 const PAGE_HINT_RE = /(page|chapter|chap|webtoon|manga|manhwa|manhua)/i;
 
 interface ScoreInput {
@@ -57,7 +58,19 @@ export function scoreImageCandidate(input: ScoreInput): number {
   if (input.sourceKind.includes('srcset') || input.sourceKind.includes('current')) score += 8;
   if (input.sourceKind === 'background-image') score += 4;
   if (input.sourceKind === 'json-embedded' || input.sourceKind === 'inline-script') score += 10;
-  if (input.sourceKind === 'wp-manga' || input.sourceKind === 'mangadex-api' || input.sourceKind === 'webtoon') score += 14;
+  if (
+    input.sourceKind === 'wp-manga' ||
+    input.sourceKind === 'mangadex-api' ||
+    input.sourceKind === 'webtoon' ||
+    input.sourceKind.startsWith('madara') ||
+    input.sourceKind.startsWith('mangastream') ||
+    input.sourceKind === 'weebcentral' ||
+    input.sourceKind === 'next-data' ||
+    input.sourceKind === 'next-data-dom' ||
+    input.sourceKind === 'mangago'
+  ) {
+    score += 14;
+  }
 
   if (isLikelyDecorative(input.url)) score -= 36;
 

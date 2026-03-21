@@ -36,7 +36,19 @@ function matchesMadara(url: string): boolean {
 function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[] {
   const images = Array.from(
     (document as Document).querySelectorAll<HTMLImageElement>(
-      '.page-break img, .page-break source, .wp-manga-chapter-img, .reading-content img, .chapter-content img'
+      [
+        '.page-break img',
+        '.page-break source',
+        '.wp-manga-chapter-img',
+        '.reading-content img',
+        '.chapter-content img',
+        '.entry-content img',
+        '.text-left img',
+        '#readerarea img',
+        '.ts-main-image',
+        '.ts-main-image.curdown',
+        'main img[alt*="Page"]',
+      ].join(', ')
     )
   );
 
