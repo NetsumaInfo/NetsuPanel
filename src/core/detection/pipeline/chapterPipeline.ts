@@ -68,8 +68,12 @@ function pickBestChapterCluster(candidates: ChapterLinkCandidate[]): ChapterLink
   }
 
   const ranked = [...groups.values()].sort((left, right) => {
-    const leftScore = left.reduce((sum, candidate) => sum + candidate.score, 0);
-    const rightScore = right.reduce((sum, candidate) => sum + candidate.score, 0);
+    const leftScore =
+      left.reduce((sum, candidate) => sum + candidate.score, 0) +
+      left.filter((candidate) => candidate.chapterNumber !== null).length * 18;
+    const rightScore =
+      right.reduce((sum, candidate) => sum + candidate.score, 0) +
+      right.filter((candidate) => candidate.chapterNumber !== null).length * 18;
     return rightScore - leftScore;
   });
 

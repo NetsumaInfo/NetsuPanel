@@ -1,9 +1,10 @@
-import type { CapturedImageResult, FetchBinaryResult, PageIdentity } from '@shared/types';
+import type { CapturedImageResult, FetchBinaryResult, PageIdentity, RawImageCandidate } from '@shared/types';
 import type { ContentRequest } from '@shared/messages';
 import { ContentMessageType } from '@shared/messages';
 import { browser } from '@shared/browser';
 import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBinary';
 import { collectLiveDomImages, type CapturableNode } from '@core/detection/collectors/liveDomImageCollector';
+import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
 
 declare global {
@@ -23,11 +24,62 @@ async function stabilizePage(): Promise<void> {
   let lastCount = -1;
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const currentCount = document.images.length;
-    if (currentCount === lastCount) return;
+    const images = document.querySelectorAll('img');
+    const currentCount = images.length;
+    // Also check if images are completing load
+    const loadedCount = Array.from(images).filter(
+      (img) => img.complete && img.naturalWidth > 0
+    ).length;
+    if (currentCount === lastCount && loadedCount >= currentCount * 0.8) return;
     lastCount = currentCount;
-    await sleep(450);
+    await sleep(400);
   }
+}
+
+// Scroll through the page to trigger lazy-loading, then scroll back
+async function triggerLazyLoading(): Promise<void> {
+  const originalScrollY = window.scrollY;
+  const step = Math.max(window.innerHeight * 0.8, 400);
+  const maxScroll = Math.min(document.body.scrollHeight, 30000);
+  let position = 0;
+
+  while (position < maxScroll) {
+    position = Math.min(position + step, maxScroll);
+    window.scrollTo({ top: position, behavior: 'instant' as ScrollBehavior });
+    await sleep(80);
+  }
+  // Scroll back
+  window.scrollTo({ top: originalScrollY, behavior: 'instant' as ScrollBehavior });
+  await sleep(150);
+}
+
+function mergeCandidates(
+  existing: RawImageCandidate[],
+  incoming: RawImageCandidate[]
+): RawImageCandidate[] {
+  const seenUrls = new Set(existing.map((c) => c.url));
+  const merged = [...existing];
+  for (const candidate of incoming) {
+    if (!seenUrls.has(candidate.url)) {
+      seenUrls.add(candidate.url);
+      merged.push(candidate);
+    }
+  }
+  return merged;
+}
+
+function shouldUseStaticFallback(candidates: RawImageCandidate[]): boolean {
+  const dimensioned = candidates.filter((candidate) => candidate.width >= 160 && candidate.height >= 160);
+  const liveDomLoaded = candidates.filter(
+    (candidate) =>
+      candidate.origin === 'live-dom' &&
+      candidate.sourceKind !== 'inline-script' &&
+      candidate.sourceKind !== 'json-embedded' &&
+      candidate.width > 0 &&
+      candidate.height > 0
+  );
+
+  return candidates.length < 8 || dimensioned.length < 4 || liveDomLoaded.length < 3;
 }
 
 function getPageIdentity(): PageIdentity {
@@ -184,27 +236,41 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
 
 async function scanCurrentPage() {
   await stabilizePage();
-  const page = getPageIdentity();
-  let bestCollection = await collectLiveDomImages(page.url);
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const page = getPageIdentity();
+  let collection = await collectLiveDomImages(page.url);
+  let allCandidates = collection.candidates;
+
+  // If few images found, trigger lazy loading and scan again
+  if (allCandidates.length < 5) {
+    await triggerLazyLoading();
     await sleep(400);
+    const afterLazy = await collectLiveDomImages(page.url);
+    allCandidates = mergeCandidates(allCandidates, afterLazy.candidates);
+    afterLazy.capturables.forEach((value, key) => collection.capturables.set(key, value));
+  }
+
+  // Retry collection a few times to catch late-loading images
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await sleep(500);
     const nextCollection = await collectLiveDomImages(page.url);
-    if (nextCollection.candidates.length > bestCollection.candidates.length) {
-      bestCollection = nextCollection;
-    }
-    if (bestCollection.candidates.length >= 12) {
-      break;
-    }
+    allCandidates = mergeCandidates(allCandidates, nextCollection.candidates);
+    nextCollection.capturables.forEach((value, key) => collection.capturables.set(key, value));
+    if (allCandidates.length >= 12) break;
+  }
+
+  if (shouldUseStaticFallback(allCandidates)) {
+    allCandidates = mergeCandidates(allCandidates, collectStaticDocumentImages(document, page.url));
   }
 
   capturableRegistry.clear();
-  bestCollection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
+  collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
+
   return scanPageDocument({
     document,
     page,
     origin: 'live-dom',
-    imageCandidates: bestCollection.candidates,
+    imageCandidates: allCandidates,
   });
 }
 

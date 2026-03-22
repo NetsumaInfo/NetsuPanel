@@ -4,11 +4,13 @@ import { compactWhitespace, extractExtension } from '@shared/utils/strings';
 import { buildFamilyKey, toQuerylessUrl } from '@shared/utils/url';
 import { isLikelyDecorative, scoreImageCandidate } from './scoreImageCandidate';
 
-const PAGE_NUMBER_RE = /(?:page|p|img|image|chapter|chap|ch)?[_\-\s]?([0-9]{1,4})(?:\.[a-z]{2,4})?(?:$|[_\-\s?#])/i;
+const PAGE_NUMBER_RE =
+  /(?:^|[/_\-\s(])(?:page|pg|p|img|image)[._\-\s#]*(\d{1,4})(?=$|[/)_\-\s.#?])|(?:^|[/_\-\s(])0*(\d{1,4})(?=\.(?:jpe?g|png|webp|avif|gif)(?:$|[?#]))/i;
 
 function extractPageNumber(input: string): number | null {
   const match = input.match(PAGE_NUMBER_RE);
-  return match ? Number(match[1]) : null;
+  if (!match) return null;
+  return Number(match[1] || match[2]);
 }
 
 function normalizeCandidate(raw: RawImageCandidate): ImageCandidate {
@@ -85,17 +87,32 @@ function selectNarrativeCluster(items: ImageCandidate[]): { items: ImageCandidat
 
   const ranked = [...groups.entries()]
     .map(([key, group]) => {
-      const medianArea = median(group.map((item) => item.area));
-      const consistentAreaCount = group.filter((item) => Math.abs(item.area - medianArea) <= medianArea * 0.55).length;
+      const areas = group.map((item) => item.area).filter((a) => a > 0);
+      const medianArea = areas.length > 0 ? median(areas) : 0;
+      const consistentAreaCount = medianArea > 0
+        ? group.filter((item) => Math.abs(item.area - medianArea) <= medianArea * 0.55).length
+        : 0;
       const averageScore = group.reduce((sum, item) => sum + item.score, 0) / group.length;
       const pageNumberCount = group.filter((item) => item.pageNumber !== null).length;
-      const score = group.length * 12 + averageScore + consistentAreaCount * 2 + pageNumberCount * 5;
+      const dimensionedCount = group.filter((item) => item.width >= 240 && item.height >= 240).length;
+      const visibleCount = group.filter((item) => item.visible).length;
+      const validImagesCount = group.filter((item) => item.score >= 12).length;
+      const unknownDimensionCount = group.length - group.filter((item) => item.width > 0 && item.height > 0).length;
+      const scriptOnlyPenalty = unknownDimensionCount > 0 && dimensionedCount === 0 ? 10 : 0;
+      const score =
+        validImagesCount * 6 +
+        averageScore * 2 +
+        consistentAreaCount * 8 +
+        pageNumberCount * 12 +
+        dimensionedCount * 10 +
+        visibleCount * 4 -
+        scriptOnlyPenalty;
       return { key, group, score };
     })
     .sort((left, right) => right.score - left.score);
 
   const winner = ranked[0];
-  if (!winner || winner.group.length < 2) {
+  if (!winner || winner.group.length < 2 || winner.score < 20) {
     return {
       items: items.filter((item) => item.score >= 28),
       diagnostics: [

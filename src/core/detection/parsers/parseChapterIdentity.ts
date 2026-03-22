@@ -3,6 +3,10 @@ import { compactWhitespace } from '@shared/utils/strings';
 const CHAPTER_RE = /(chapter|chapitre|chap|ch\.?|episode|ep\.?|capitulo|cap\.?|raw)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const VOLUME_RE = /(volume|vol\.?)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const NUMERIC_RE = /(^|[^a-z0-9])([0-9]{1,4}(?:\.[0-9]+)?)(?=[^a-z0-9]|$)/i;
+const CHAPTER_PATH_PATTERNS = [
+  /(?:^|\/)(?:chapter|chapitre|chap|ch|episode|ep|capitulo|capitolo|cap|raw)[-_/ ]*([0-9]+(?:\.[0-9]+)?)(?=$|[/?#._-])/i,
+  /(?:^|\/)([0-9]+(?:\.[0-9]+)?)(?=$|\/(?:all-pages?|read|viewer|page-\d+)|[?#])/i,
+] as const;
 
 export interface ParsedChapterIdentity {
   label: string;
@@ -11,10 +15,22 @@ export interface ParsedChapterIdentity {
 }
 
 function parseFromPath(url: string): number | null {
-  const decoded = decodeURIComponent(url).replace(/[-_]+/g, ' ');
-  const chapterMatch = decoded.match(CHAPTER_RE);
+  const decoded = decodeURIComponent(url);
+  for (const pattern of CHAPTER_PATH_PATTERNS) {
+    const match = decoded.match(pattern);
+    if (match?.[1]) return Number(match[1]);
+  }
+
+  const slug = decoded
+    .split(/[?#]/)[0]
+    .split('/')
+    .filter(Boolean)
+    .slice(-2)
+    .join(' ')
+    .replace(/[-_]+/g, ' ');
+  const chapterMatch = slug.match(CHAPTER_RE);
   if (chapterMatch) return Number(chapterMatch[2]);
-  const numberMatch = decoded.match(NUMERIC_RE);
+  const numberMatch = slug.match(NUMERIC_RE);
   return numberMatch ? Number(numberMatch[2]) : null;
 }
 

@@ -74,9 +74,9 @@ export function collectInlineScriptImages(
     (document as Document).querySelectorAll<HTMLScriptElement>('script:not([src])')
   );
 
-  const allUrls: string[] = [];
+  const allUrls: Array<{ url: string; scriptIndex: number }> = [];
 
-  for (const script of scripts) {
+  for (const [scriptIndex, script] of scripts.entries()) {
     const text = script.textContent?.trim() ?? '';
     if (!text || !IMAGE_EXT_RE.test(text)) continue;
 
@@ -87,7 +87,7 @@ export function collectInlineScriptImages(
       if (match?.[1]) {
         const extracted = extractUrlsFromJsonString(match[1]);
         if (extracted.length > 0) {
-          allUrls.push(...extracted);
+          allUrls.push(...extracted.map((url) => ({ url, scriptIndex })));
           foundFromPattern = true;
         }
       }
@@ -96,7 +96,7 @@ export function collectInlineScriptImages(
     if (!foundFromPattern) {
       // General fallback : collect all image URLs in the script
       const fallback = extractUrlsFromText(text);
-      allUrls.push(...fallback);
+      allUrls.push(...fallback.map((url) => ({ url, scriptIndex })));
     }
   }
 
@@ -105,7 +105,7 @@ export function collectInlineScriptImages(
   const candidates: RawImageCandidate[] = [];
 
   for (let i = 0; i < allUrls.length; i++) {
-    const raw = allUrls[i];
+    const { url: raw, scriptIndex } = allUrls[i];
     let url = raw;
     try { url = new URL(raw, baseUrl).href; } catch { /* keep */ }
 
@@ -126,7 +126,7 @@ export function collectInlineScriptImages(
       left: 0,
       altText: '',
       titleText: '',
-      containerSignature: 'script',
+      containerSignature: `script:inline-${scriptIndex}`,
       visible: false,
       diagnostics: [],
     });

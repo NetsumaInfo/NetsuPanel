@@ -89,9 +89,9 @@ export function collectJsonEmbeddedImages(
     )
   );
 
-  const allFound: Array<{ url: string; order: number }> = [];
+  const allFound: Array<{ url: string; order: number; scriptIndex: number }> = [];
 
-  for (const script of scripts) {
+  for (const [scriptIndex, script] of scripts.entries()) {
     const text = script.textContent?.trim() ?? '';
     if (!text || text.length < 20) continue;
 
@@ -100,13 +100,22 @@ export function collectJsonEmbeddedImages(
 
     const parsed = parseJsonSafe(text);
     if (parsed !== null) {
-      walkJson(parsed, allFound);
+      const before = allFound.length;
+      const localFound: Array<{ url: string; order: number }> = [];
+      walkJson(parsed, localFound);
+      localFound.forEach((item, index) => {
+        allFound.push({
+          url: item.url,
+          order: before + index,
+          scriptIndex,
+        });
+      });
     } else {
       // Fallback: regex on raw text for non-JSON scripts (JS variable assignments)
       IMAGE_URL_RE.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = IMAGE_URL_RE.exec(text)) !== null) {
-        allFound.push({ url: m[0], order: allFound.length });
+        allFound.push({ url: m[0], order: allFound.length, scriptIndex });
       }
     }
   }
@@ -115,7 +124,7 @@ export function collectJsonEmbeddedImages(
   const seen = new Set<string>();
   const candidates: RawImageCandidate[] = [];
 
-  for (const { url, order } of allFound) {
+  for (const { url, order, scriptIndex } of allFound) {
     let resolvedUrl = url;
     try {
       resolvedUrl = new URL(url, baseUrl).href;
@@ -138,7 +147,7 @@ export function collectJsonEmbeddedImages(
       left: 0,
       altText: '',
       titleText: '',
-      containerSignature: 'script',
+      containerSignature: `script:json-${scriptIndex}`,
       visible: false,
       diagnostics: [],
     });

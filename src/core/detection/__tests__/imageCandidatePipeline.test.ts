@@ -69,4 +69,48 @@ describe('buildImageCollection', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0].querylessUrl).toContain('page-001.jpg');
   });
+
+  it('does not treat chapter numbers in path segments as page numbers', () => {
+    const result = buildImageCollection(
+      [
+        createCandidate(0, {
+          url: 'https://cdn.example.com/series/chapter-12/cover.jpg',
+          previewUrl: 'https://cdn.example.com/series/chapter-12/cover.jpg',
+          altText: 'cover art',
+          titleText: '',
+        }),
+      ],
+      'manga'
+    );
+
+    expect(result.items[0]?.pageNumber).toBeNull();
+  });
+
+  it('keeps a dimensioned DOM cluster over a script-only cluster of the same family', () => {
+    const liveDomPages = Array.from({ length: 4 }, (_, index) =>
+      createCandidate(index, {
+        id: `live-${index}`,
+        containerSignature: 'main.reader',
+        width: 1200,
+        height: 1800,
+        visible: true,
+      })
+    );
+    const scriptPages = Array.from({ length: 4 }, (_, index) =>
+      createCandidate(index + 20, {
+        id: `script-${index}`,
+        containerSignature: 'script:inline-2',
+        sourceKind: 'inline-script',
+        width: 0,
+        height: 0,
+        visible: false,
+        top: 0,
+      })
+    );
+
+    const result = buildImageCollection([...scriptPages, ...liveDomPages], 'manga');
+
+    expect(result.items).toHaveLength(4);
+    expect(result.items.every((item) => item.containerSignature === 'main.reader')).toBe(true);
+  });
 });

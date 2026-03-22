@@ -3,20 +3,31 @@ import { compactWhitespace } from '@shared/utils/strings';
 import { resolveUrl, sameHost } from '@shared/utils/url';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 
-const CHAPTER_HINT_RE = /(chapter|chapitre|chap|ch\.?|episode|ep\.?|read|part|vol\.?)/i;
+const CHAPTER_HINT_RE = /(?:^|\b)(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|part|vol\.?)\b/i;
 const LISTING_HINT_RE =
   /(all chapters|chapter list|chapters|volumes|table of contents|toc|manga info|series)/i;
+const LISTING_PATH_RE =
+  /(?:all-chapters|chapter-list|chapters|volumes|manga-info|table-of-contents|toc)(?:$|[/?#_-])/i;
 const PREVIOUS_HINT_RE = /(prev|previous|older|back|<<|‹|←)/i;
 const NEXT_HINT_RE = /(next|newer|forward|>>|›|→)/i;
-const BAD_LINK_RE = /(login|signup|discord|facebook|twitter|instagram|privacy|terms)/i;
+const BAD_LINK_RE = /(?:login|signup|register|discord|facebook|twitter|instagram|privacy|terms|about|contact|dmca)/i;
 const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan)/i;
+const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment|sidebar)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {
   const rel = anchor.getAttribute('rel') || '';
-  const composite = `${label} ${anchor.href}`;
-  if (LISTING_HINT_RE.test(composite)) return 'listing';
-  if (rel.includes('prev') || PREVIOUS_HINT_RE.test(composite)) return 'previous';
-  if (rel.includes('next') || NEXT_HINT_RE.test(composite)) return 'next';
+  const href = anchor.href || '';
+  const listingByPath = (() => {
+    try {
+      return LISTING_PATH_RE.test(new URL(href).pathname);
+    } catch {
+      return LISTING_PATH_RE.test(href);
+    }
+  })();
+
+  if (LISTING_HINT_RE.test(label) || listingByPath) return 'listing';
+  if (rel.includes('prev') || PREVIOUS_HINT_RE.test(`${label} ${href}`)) return 'previous';
+  if (rel.includes('next') || NEXT_HINT_RE.test(`${label} ${href}`)) return 'next';
   return 'candidate';
 }
 
@@ -24,15 +35,44 @@ function computeScore(
   label: string,
   currentUrl: string,
   href: string,
-  relation: ChapterRelation
+  relation: ChapterRelation,
+  chapterNumber: number | null,
+  containerSignature: string
 ): number {
   let score = 0;
   if (sameHost(currentUrl, href)) score += 20;
+  
+  if (BAD_LINK_RE.test(label) || BAD_LINK_RE.test(href)) {
+    return -100;
+  }
+
   if (CHAPTER_HINT_RE.test(label) || CHAPTER_HINT_RE.test(href)) score += 30;
+  if (CHAPTER_PATH_RE.test(href)) score += 18;
   if (relation === 'listing') score += 18;
   if (relation === 'next' || relation === 'previous') score += 14;
-  if (label.length >= 4 && label.length <= 60) score += 6;
-  if (BAD_LINK_RE.test(label) || BAD_LINK_RE.test(href)) score -= 40;
+  if (label.length >= 2 && label.length <= 60) score += 6;
+  if (chapterNumber !== null) score += 15;
+  if (NAV_SECTION_RE.test(containerSignature) && relation === 'candidate') score -= 18;
+  if (NAV_SECTION_RE.test(containerSignature) && !CHAPTER_HINT_RE.test(label) && relation === 'candidate') score -= 42;
+  if (NAV_SECTION_RE.test(label) && chapterNumber === null) score -= 12;
+
+  try {
+    const currentPath = new URL(currentUrl).pathname.split('/').filter(Boolean);
+    const hrefPath = new URL(href).pathname.split('/').filter(Boolean);
+    const sharedPrefix = currentPath.findIndex((segment, index) => hrefPath[index] !== segment);
+    const prefixLength = sharedPrefix === -1 ? Math.min(currentPath.length, hrefPath.length) : sharedPrefix;
+    if (prefixLength >= 1) score += 8;
+    if (prefixLength >= 2) score += 8;
+
+    const currentHasChapterPath = currentPath.some((segment) => CHAPTER_PATH_RE.test(segment));
+    const hrefHasChapterPath = hrefPath.some((segment) => CHAPTER_PATH_RE.test(segment));
+    if (currentHasChapterPath && hrefHasChapterPath) {
+      score += 12;
+    }
+  } catch {
+    // Ignore URL parse errors
+  }
+
   return score;
 }
 
@@ -77,8 +117,19 @@ export function collectChapterLinks(
 
     const relation = relationFromAnchor(anchor, label);
     const identity = parseChapterIdentity(label, resolvedUrl);
-    const score = computeScore(identity.label, currentUrl, resolvedUrl, relation);
-    if (score < 8) return;
+    const containerSignature = buildContainerSignature(anchor);
+    if (relation === 'candidate' && NAV_SECTION_RE.test(containerSignature) && !CHAPTER_HINT_RE.test(label)) {
+      return;
+    }
+    const score = computeScore(
+      identity.label,
+      currentUrl,
+      resolvedUrl,
+      relation,
+      identity.chapterNumber,
+      containerSignature
+    );
+    if (score < 12) return;
 
     results.push({
       id: `chapter-link-${index}`,
@@ -89,7 +140,7 @@ export function collectChapterLinks(
       score,
       chapterNumber: identity.chapterNumber,
       volumeNumber: identity.volumeNumber,
-      containerSignature: buildContainerSignature(anchor),
+      containerSignature,
       diagnostics: [],
     });
   });
@@ -120,8 +171,20 @@ export function collectChapterLinks(
             ? 'candidate'
             : 'listing';
     const identity = parseChapterIdentity(label, resolvedUrl);
-    const score = computeScore(identity.label, currentUrl, resolvedUrl, relation) + 8;
-    if (score < 8) return;
+    const containerSignature = buildContainerSignature(element);
+    if (relation === 'candidate' && NAV_SECTION_RE.test(containerSignature) && !CHAPTER_HINT_RE.test(label)) {
+      return;
+    }
+    const score =
+      computeScore(
+        identity.label,
+        currentUrl,
+        resolvedUrl,
+        relation,
+        identity.chapterNumber,
+        containerSignature
+      ) + 8;
+    if (score < 12) return;
 
     results.push({
       id: `chapter-data-link-${index}`,
@@ -132,7 +195,7 @@ export function collectChapterLinks(
       score,
       chapterNumber: identity.chapterNumber,
       volumeNumber: identity.volumeNumber,
-      containerSignature: buildContainerSignature(element),
+      containerSignature,
       diagnostics: [],
     });
   });

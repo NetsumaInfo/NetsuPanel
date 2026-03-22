@@ -1,4 +1,6 @@
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
+import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import type { ChapterLinkCandidate, PageIdentity } from '@shared/types';
 
 const page: PageIdentity = {
@@ -103,5 +105,35 @@ describe('buildMangaLinkMap', () => {
     ]);
 
     expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([8, 9, 10, 11, 12]);
+  });
+});
+
+describe('chapter detection helpers', () => {
+  it('parses chapter numbers from common reader URL patterns', () => {
+    expect(parseChapterIdentity('', 'https://reader.example.com/title/chapter-12.5').chapterNumber).toBe(12.5);
+    expect(parseChapterIdentity('', 'https://reader.example.com/title/12/all-pages').chapterNumber).toBe(12);
+    expect(parseChapterIdentity('', 'https://reader.example.com/title/ep-87').chapterNumber).toBe(87);
+  });
+
+  it('rejects common navigation and footer links from chapter collection', () => {
+    document.body.innerHTML = `
+      <header class="main-menu">
+        <a href="/contact">Contact</a>
+        <a href="/series/chapter-11">Latest Release</a>
+      </header>
+      <main class="reader">
+        <a href="/series/chapter-9">Chapter 9</a>
+        <a href="/series/chapter-11">Chapter 11</a>
+      </main>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/chapter-10',
+      'https://reader.example.com/series/chapter-10'
+    );
+    expect(candidates.some((candidate) => candidate.label === 'Contact')).toBe(false);
+    expect(candidates.some((candidate) => candidate.label === 'Latest Release')).toBe(false);
+    expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(2);
   });
 });

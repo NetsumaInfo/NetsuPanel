@@ -36,26 +36,49 @@ function isVisible(element: HTMLElement, rect: DOMRect, style: CSSStyleDeclarati
   return rect.width > 0 && rect.height > 0;
 }
 
+const THUMB_MAX = 200;
+
+function thumbnailDimensions(srcW: number, srcH: number): [number, number] {
+  if (srcW <= THUMB_MAX && srcH <= THUMB_MAX) return [srcW, srcH];
+  const scale = Math.min(THUMB_MAX / srcW, THUMB_MAX / srcH);
+  return [Math.round(srcW * scale) || 1, Math.round(srcH * scale) || 1];
+}
+
 function previewFromCanvas(canvas: HTMLCanvasElement): string {
   try {
-    return canvas.toDataURL('image/png');
+    const [tw, th] = thumbnailDimensions(canvas.width, canvas.height);
+    const thumb = document.createElement('canvas');
+    thumb.width = tw;
+    thumb.height = th;
+    const ctx = thumb.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(canvas, 0, 0, tw, th);
+    return thumb.toDataURL('image/jpeg', 0.6);
   } catch {
     return '';
   }
 }
 
 function previewFromImage(image: HTMLImageElement): string {
+  // For network-fetchable images, just use the URL — no data URI needed
+  const networkUrl = image.currentSrc || image.src || '';
+  if (networkUrl && !networkUrl.startsWith('blob:') && !networkUrl.startsWith('data:')) {
+    return networkUrl;
+  }
+
+  // For blob:/data: images, generate a small thumbnail
   try {
+    const srcW = Math.max(image.naturalWidth || image.width || 1, 1);
+    const srcH = Math.max(image.naturalHeight || image.height || 1, 1);
+    const [tw, th] = thumbnailDimensions(srcW, srcH);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(image.naturalWidth || image.width || 1, 1);
-    canvas.height = Math.max(image.naturalHeight || image.height || 1, 1);
+    canvas.width = tw;
+    canvas.height = th;
     const context = canvas.getContext('2d');
     if (!context) return '';
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/png');
+    context.drawImage(image, 0, 0, tw, th);
+    return canvas.toDataURL('image/jpeg', 0.6);
   } catch {
-    if (image.currentSrc && !image.currentSrc.startsWith('blob:')) return image.currentSrc;
-    if (image.src && !image.src.startsWith('blob:')) return image.src;
     return '';
   }
 }
@@ -67,20 +90,29 @@ function buildImageCandidate(
   capturables: Map<string, CapturableNode>
 ): RawImageCandidate | null {
   const descriptors = readImageSourceDescriptors(image);
-  const selected = descriptors
+  // Pick the best resolved URL: prefer data-src family (lazy-load source) over loaded src
+  const resolved = descriptors
     .map((descriptor) => ({
       ...descriptor,
       resolved: resolveUrl(descriptor.value, baseUrl),
     }))
-    .find((descriptor) => descriptor.resolved);
+    .filter((descriptor) => descriptor.resolved);
+  // Prefer the first data-attribute source (actual high-res), fall back to current/src
+  const selected = resolved.find((d) => d.sourceKind.startsWith('data-')) || resolved[0];
   if (!selected?.resolved) return null;
 
   const rect = image.getBoundingClientRect();
   const style = window.getComputedStyle(image);
   const id = `image-${domIndex}`;
-  const captureStrategy =
-    selected.resolved.startsWith('blob:') || selected.resolved.startsWith('data:') ? 'content' : 'network';
+  const isBlobOrData = selected.resolved.startsWith('blob:') || selected.resolved.startsWith('data:');
+  const captureStrategy = isBlobOrData ? 'content' : 'network';
   capturables.set(id, image);
+
+  // For images not yet loaded (lazy), use data-width/data-height attributes as hints
+  const naturalW = image.naturalWidth || Math.round(rect.width);
+  const naturalH = image.naturalHeight || Math.round(rect.height);
+  const width = naturalW || Number(image.getAttribute('data-width')) || Number(image.getAttribute('width')) || 0;
+  const height = naturalH || Number(image.getAttribute('data-height')) || Number(image.getAttribute('height')) || 0;
 
   return {
     id,
@@ -89,15 +121,15 @@ function buildImageCandidate(
     captureStrategy,
     sourceKind: selected.sourceKind,
     origin: 'live-dom',
-    width: image.naturalWidth || Math.round(rect.width),
-    height: image.naturalHeight || Math.round(rect.height),
+    width,
+    height,
     domIndex,
     top: rect.top + window.scrollY,
     left: rect.left + window.scrollX,
     altText: image.alt || '',
     titleText: image.title || '',
     containerSignature: buildContainerSignature(image),
-    visible: isVisible(image, rect, style),
+    visible: isVisible(image, rect, style) || (width > 0 && height > 0),
     diagnostics: [],
   };
 }
