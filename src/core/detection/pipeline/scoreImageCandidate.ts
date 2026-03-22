@@ -1,7 +1,7 @@
 import { clamp } from '@shared/utils/number';
 
 const JUNK_RE =
-  /(?:^|[/_\-?=])(avatar|icon|logo|sprite|ad|ads|banner|emoji|favicon|tracker|comment|profile|share|social|thumbnail|thumb)(?:$|[/_\-?=.])/i;
+  /(?:^|[/_\-?=])(avatar|icon|logo|sprite|ad|ads|banner|emoji|favicon|tracker|comment|profile|share|social)(?:$|[/_\-?=.])/i;
 const PAGE_HINT_RE = /(page|chapter|chap|webtoon|manga|manhwa|manhua)/i;
 
 interface ScoreInput {
@@ -40,13 +40,14 @@ export function scoreImageCandidate(input: ScoreInput): number {
     else if (input.area >= 400_000) score += 16;
     else if (input.area >= 90_000) score += 8;
 
-    if (minDim < 160) score -= 28;
-    else if (minDim < 220) score -= 14;
+    if (minDim < 120) score -= 12;
+    else if (minDim < 160) score -= 6;
 
     const aspectRatio = input.height / input.width;
     if (aspectRatio >= 1.1 && aspectRatio <= 2.4) score += 10;
     else if (aspectRatio > 2.4) score += 12;
-    else if (aspectRatio >= 0.6) score += 6;
+    else if (aspectRatio >= 0.4 && aspectRatio < 1.1) score += 8;
+    else if (aspectRatio >= 0.25) score += 4;
   } else {
     // Unknown dimensions: give a neutral base so URL/content hints can carry them
     score += 14;

@@ -139,4 +139,33 @@ describe('buildImageCollection — mode general', () => {
     const result = buildImageCollection(candidates, 'general');
     expect(result.items.length).toBeGreaterThanOrEqual(1);
   });
+
+  test('keeps landscape images that would be penalized in manga mode', () => {
+    const candidates = [
+      makeMangaCandidate({ id: 'landscape1', url: 'https://gallery.com/photo1.jpg', width: 1920, height: 1080 }),
+      makeMangaCandidate({ id: 'landscape2', url: 'https://gallery.com/photo2.jpg', width: 800, height: 400 }),
+      makeMangaCandidate({ id: 'landscape3', url: 'https://gallery.com/photo3.jpg', width: 1280, height: 720 }),
+    ];
+    const result = buildImageCollection(candidates, 'general');
+    expect(result.items).toHaveLength(3);
+  });
+
+  test('keeps medium-size images in general mode', () => {
+    const candidates = [
+      makeMangaCandidate({ id: 'med1', url: 'https://site.com/item1.jpg', width: 250, height: 250 }),
+      makeMangaCandidate({ id: 'med2', url: 'https://site.com/item2.jpg', width: 300, height: 200 }),
+      makeMangaCandidate({ id: 'med3', url: 'https://site.com/item3.jpg', width: 200, height: 300 }),
+    ];
+    const result = buildImageCollection(candidates, 'general');
+    expect(result.items.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('does not reject URLs containing thumbnail when dimensions are valid', () => {
+    const candidates = [
+      makeMangaCandidate({ id: 'thumb-valid', url: 'https://cdn.site.com/thumbnail_001.jpg', width: 600, height: 900 }),
+      makeMangaCandidate({ id: 'regular', url: 'https://cdn.site.com/gallery/photo.jpg', width: 800, height: 600 }),
+    ];
+    const result = buildImageCollection(candidates, 'general');
+    expect(result.items.some((item) => item.url.includes('thumbnail'))).toBe(true);
+  });
 });

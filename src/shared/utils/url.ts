@@ -1,4 +1,4 @@
-export const ABSOLUTE_URL_RE = /^[a-zA-Z][a-zA-Z\\d+.-]*:/;
+export const ABSOLUTE_URL_RE = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
 
 export function safeUrl(input: string, baseUrl?: string): URL | null {
   try {

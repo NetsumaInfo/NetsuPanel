@@ -80,33 +80,39 @@ export function AppSidebar({
           </div>
 
           <div className="mt-1 grid gap-1.5">
-            <button
-              type="button"
-              className="btn btn-primary w-full justify-center"
-              disabled={!currentChapter}
-              onClick={onDownloadCurrent}
-            >
-              <DownloadIcon size={16} />
-              Chapitre
-            </button>
-            <button
-              type="button"
-              className="btn w-full justify-center"
-              disabled={chapterCount === 0}
-              onClick={onDownloadAll}
-            >
-              <ArchiveIcon size={16} />
-              Série
-            </button>
-            <button
-              type="button"
-              className="btn w-full justify-center"
-              disabled={selectedGeneralCount === 0}
-              onClick={onDownloadGeneral}
-            >
-              <ImageIcon size={16} />
-              Général
-            </button>
+            {mode === 'manga' && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary w-full justify-center"
+                  disabled={!currentChapter}
+                  onClick={onDownloadCurrent}
+                >
+                  <DownloadIcon size={16} />
+                  Chapitre
+                </button>
+                <button
+                  type="button"
+                  className="btn w-full justify-center"
+                  disabled={chapterCount === 0}
+                  onClick={onDownloadAll}
+                >
+                  <ArchiveIcon size={16} />
+                  Série
+                </button>
+              </>
+            )}
+            {mode === 'general' && (
+              <button
+                type="button"
+                className="btn btn-primary w-full justify-center"
+                disabled={selectedGeneralCount === 0}
+                onClick={onDownloadGeneral}
+              >
+                <ImageIcon size={16} />
+                Général ({selectedGeneralCount})
+              </button>
+            )}
           </div>
         </div>
       </div>

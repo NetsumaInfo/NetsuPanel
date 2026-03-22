@@ -133,9 +133,11 @@ export function buildImageCollection(
     }
 
     const hasDimensions = normalized.width > 0 && normalized.height > 0;
-    const isTooSmall = hasDimensions && maxDim < 150;
+    const minSizeThreshold = mode === 'general' ? 100 : 150;
+    const minScoreThreshold = mode === 'general' ? 8 : 12;
+    const isTooSmall = hasDimensions && maxDim < minSizeThreshold;
 
-    if (isTooSmall || isLikelyDecorative(normalized.url) || normalized.score < 12) {
+    if (isTooSmall || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
       diagnostics.push({
         code: 'image-rejected-low-signal',
         message: `Rejected low-signal candidate ${normalized.filenameHint}.`,
