@@ -8,6 +8,17 @@ export function coerceArrayBuffer(value: unknown): ArrayBuffer {
     return new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice().buffer;
   }
 
+  // Base64 string (new primary format)
+  if (typeof value === 'string') {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  // Legacy number[] format (backward compat)
   if (Array.isArray(value)) {
     return Uint8Array.from(value as number[]).buffer;
   }
@@ -31,6 +42,16 @@ export function coerceArrayBuffer(value: unknown): ArrayBuffer {
   throw new Error('Unable to coerce binary payload to ArrayBuffer.');
 }
 
-export function serializeArrayBuffer(value: ArrayBuffer): number[] {
-  return Array.from(new Uint8Array(value));
+/**
+ * Serialize ArrayBuffer to base64 string for runtime messaging.
+ * Base64 has ~33% overhead vs ~500% for JSON number arrays.
+ */
+export function serializeArrayBuffer(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value);
+  const CHUNK = 32768;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
+  }
+  return btoa(binary);
 }

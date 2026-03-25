@@ -1,7 +1,7 @@
 import type { FetchBinaryResult } from '@shared/types';
 import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBinary';
 
-const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS = [200, 500, 1200];
 const dnrRuleIds = new Set<number>();
 
@@ -184,30 +184,23 @@ export async function fetchDocumentHtml(url: string, options: FetchOptions = {})
 }
 
 export async function fetchBinaryResource(url: string, options: FetchOptions = {}): Promise<FetchBinaryResult> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < RETRY_DELAYS.length + 1; attempt += 1) {
-    try {
-      const response = await fetchWithRetry(url, options);
-      const bytes = await response.arrayBuffer();
-      const validation = validateBinaryImage(bytes, response.headers.get('content-type') || undefined);
-      if (!validation.valid) {
-        throw new Error(validation.reason || 'Binary payload is not a valid image.');
-      }
-
-      await assertDecodableImage(bytes, validation.mime);
-      return {
-        bytes,
-        mime: validation.mime,
-        finalUrl: response.url || url,
-      };
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Binary fetch failed');
-      if (attempt < RETRY_DELAYS.length) {
-        await sleep(RETRY_DELAYS[attempt]);
-      }
-    }
+  const response = await fetchWithRetry(url, {
+    ...options,
+    headers: {
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      ...(options.headers || {}),
+    },
+  });
+  const bytes = await response.arrayBuffer();
+  const validation = validateBinaryImage(bytes, response.headers.get('content-type') || undefined);
+  if (!validation.valid) {
+    throw new Error(validation.reason || 'Binary payload is not a valid image.');
   }
 
-  throw lastError || new Error('Binary payload is not a valid image.');
+  await assertDecodableImage(bytes, validation.mime);
+  return {
+    bytes,
+    mime: validation.mime,
+    finalUrl: response.url || url,
+  };
 }

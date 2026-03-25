@@ -91,7 +91,7 @@ function pickBestChapterSet(candidates: ChapterLinkCandidate[]): ChapterLinkCand
     return numbered;
   }
 
-  return candidates.filter((candidate) => candidate.score >= 22);
+  return candidates.filter((candidate) => candidate.score >= 14);
 }
 
 export function buildMangaLinkMap(
@@ -110,7 +110,7 @@ export function buildMangaLinkMap(
     dedupeChapterCandidates(
       [current, ...cluster, ...deduped.filter((candidate) => candidate.relation !== 'candidate' && candidate.relation !== 'listing')]
         .filter(Boolean)
-        .filter((candidate) => candidate.score >= 12)
+        .filter((candidate) => candidate.score >= 8)
     )
   );
 

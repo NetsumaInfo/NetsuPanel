@@ -17,8 +17,18 @@ describe('coerceArrayBuffer', () => {
     expect(Array.from(new Uint8Array(output))).toEqual([137, 80, 78, 71]);
   });
 
-  test('serializes ArrayBuffer into numeric array', () => {
+  test('serializes ArrayBuffer into base64 string', () => {
     const input = new Uint8Array([10, 20, 30]).buffer;
-    expect(serializeArrayBuffer(input)).toEqual([10, 20, 30]);
+    const result = serializeArrayBuffer(input);
+    expect(typeof result).toBe('string');
+    // Roundtrip: coerce the serialized value back
+    const roundtripped = coerceArrayBuffer(result);
+    expect(Array.from(new Uint8Array(roundtripped))).toEqual([10, 20, 30]);
+  });
+
+  test('coerces base64 string to ArrayBuffer', () => {
+    // btoa(String.fromCharCode(255, 216, 255)) === '/9j/'
+    const output = coerceArrayBuffer('/9j/');
+    expect(Array.from(new Uint8Array(output))).toEqual([255, 216, 255]);
   });
 });

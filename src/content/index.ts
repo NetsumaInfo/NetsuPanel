@@ -259,9 +259,8 @@ async function scanCurrentPage() {
     if (allCandidates.length >= 12) break;
   }
 
-  if (shouldUseStaticFallback(allCandidates)) {
-    allCandidates = mergeCandidates(allCandidates, collectStaticDocumentImages(document, page.url));
-  }
+  // Always merge static document images to maximize coverage for general mode
+  allCandidates = mergeCandidates(allCandidates, collectStaticDocumentImages(document, page.url));
 
   capturableRegistry.clear();
   collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));

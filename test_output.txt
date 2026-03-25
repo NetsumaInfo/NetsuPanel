@@ -1,0 +1,31 @@
+
+> netsu-panel@2.0.0 test
+> jest --runInBand
+
+PASS src/app/components/__tests__/ImageViewerModal.test.tsx
+PASS src/core/download/__tests__/zipBuilder.test.ts
+PASS src/core/detection/__tests__/imagePipeline.test.ts
+PASS src/app/components/__tests__/ModeSwitch.test.tsx
+PASS src/core/detection/__tests__/imageCandidatePipeline.performance.test.ts
+PASS src/core/detection/__tests__/simpleReadersAdapterCoverage.test.ts
+PASS src/core/manga/__tests__/chapterCrawler.test.ts
+PASS src/core/detection/__tests__/chapterPipeline.test.ts
+PASS src/core/detection/__tests__/jsonEmbeddedCollector.test.ts
+PASS src/core/download/__tests__/fileNaming.test.ts
+PASS src/core/detection/__tests__/webtoonAdapter.test.ts
+PASS src/shared/utils/__tests__/dataUrl.test.ts
+PASS src/core/detection/__tests__/madaraAdapter.test.ts
+PASS src/core/upscale/__tests__/realesrganModels.test.ts
+PASS src/core/detection/__tests__/imageCandidatePipeline.test.ts
+PASS src/shared/utils/__tests__/imageBinary.test.ts
+PASS src/core/detection/__tests__/runtimeMangaGlobalsCollector.test.ts
+PASS src/core/upscale/__tests__/waifu2xFallback.test.ts
+PASS src/shared/utils/__tests__/binaryTransfer.test.ts
+PASS src/core/detection/__tests__/siteSupport.test.ts
+PASS src/core/download/__tests__/archiveFormats.test.ts
+
+Test Suites: 21 passed, 21 total
+Tests:       70 passed, 70 total
+Snapshots:   0 total
+Time:        7.287 s
+Ran all test suites.

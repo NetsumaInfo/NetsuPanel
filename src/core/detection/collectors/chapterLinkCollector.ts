@@ -129,7 +129,7 @@ export function collectChapterLinks(
       identity.chapterNumber,
       containerSignature
     );
-    if (score < 12) return;
+    if (score < 8) return;
 
     results.push({
       id: `chapter-link-${index}`,
@@ -184,7 +184,7 @@ export function collectChapterLinks(
         identity.chapterNumber,
         containerSignature
       ) + 8;
-    if (score < 12) return;
+    if (score < 8) return;
 
     results.push({
       id: `chapter-data-link-${index}`,

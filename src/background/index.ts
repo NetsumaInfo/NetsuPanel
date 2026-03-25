@@ -230,14 +230,15 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
         try {
           const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
           return { html: pageWorldDocument.html };
-        } catch {
+        } catch (pageWorldErr) {
+          console.debug('[NetsuPanel] Page-world document fetch failed:', (pageWorldErr as Error).message);
           try {
             const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
             return {
               html: (contentDocument as { html: string }).html,
             };
-          } catch {
-            // Fall back to extension-context fetch for public pages.
+          } catch (contentErr) {
+            console.debug('[NetsuPanel] Content-script document fetch failed:', (contentErr as Error).message);
           }
         }
       }
@@ -257,7 +258,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
           return {
             resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
           };
-        } catch {
+        } catch (pageWorldErr) {
+          console.debug('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
           try {
             const contentResource = await fetchBinaryViaContentScript(
               message.tabId,
@@ -268,8 +270,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
             return {
               resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
             };
-          } catch {
-            // Fall back to extension-context fetch for cross-origin/CDN cases.
+          } catch (contentErr) {
+            console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
           }
         }
       }
