@@ -76,6 +76,18 @@ function buildGeneralSelection(scan: PageScanResult): Record<string, boolean> {
   return Object.fromEntries(scan.general.items.map((item) => [item.id, true]));
 }
 
+function resolvePreferredMode(scan: PageScanResult): AppMode {
+  const hasReaderPages = scan.manga.currentPages.items.length >= 2;
+  const hasChapterList = scan.manga.chapters.length >= 2;
+  const hasChapterNavigation = Boolean(
+    scan.manga.navigation.previous ||
+    scan.manga.navigation.next ||
+    scan.manga.navigation.listing
+  );
+
+  return hasReaderPages || hasChapterList || hasChapterNavigation ? 'manga' : 'general';
+}
+
 export function appReducer(state: NetsuAppState, action: AppAction): NetsuAppState {
   switch (action.type) {
     case 'bootstrap-start':
@@ -94,6 +106,7 @@ export function appReducer(state: NetsuAppState, action: AppAction): NetsuAppSta
         source: action.source,
         scan: action.scan,
         chapters: action.chapters,
+        mode: resolvePreferredMode(action.scan),
         generalSelection: buildGeneralSelection(action.scan),
         error: null,
       };

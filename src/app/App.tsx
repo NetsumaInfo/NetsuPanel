@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
@@ -85,6 +85,8 @@ export function App() {
   const [generalTypeFilter, setGeneralTypeFilter] = useState<GeneralImageTypeFilter>('all');
   const [generalSortMode, setGeneralSortMode] = useState<GeneralImageSortMode>('page-order');
   const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const modeScrollPositionsRef = useRef<Record<'manga' | 'general', number>>({ manga: 0, general: 0 });
   const handleViewerCompare = useCallback(
     (candidate: ImageCandidate) => {
       if (!viewer?.referrer) return;
@@ -113,6 +115,13 @@ export function App() {
     setGeneralTypeFilter('all');
   }, [generalTypeFilter, generalTypeOptions]);
 
+  useEffect(() => {
+    const container = mainScrollRef.current;
+    if (!container) return;
+    const nextScrollTop = modeScrollPositionsRef.current[state.mode] || 0;
+    container.scrollTo({ top: nextScrollTop, behavior: 'auto' });
+  }, [state.mode]);
+
   if (state.loading) {
     return <LoadingScreen message={state.loadingMessage || 'Initialisation…'} />;
   }
@@ -132,6 +141,16 @@ export function App() {
   const showDesktopSidebar = windowWidth >= 1024;
   const chapterThumbnailSize = Math.max(88, autoUi.thumbnailSize - 18);
   const mainSpacingClass = autoUi.compactMode ? 'space-y-2' : 'space-y-2.5';
+  const handleModeChange = useCallback(
+    (nextMode: 'manga' | 'general') => {
+      const container = mainScrollRef.current;
+      if (container) {
+        modeScrollPositionsRef.current[state.mode] = container.scrollTop;
+      }
+      controller.setMode(nextMode);
+    },
+    [controller, state.mode]
+  );
 
   const sidebar = (
     <AppSidebar
@@ -183,7 +202,7 @@ export function App() {
               chapterCount={chapterCount}
               generalCount={generalCount}
               mangaPageCount={scan.manga.currentPages.items.length}
-              onModeChange={controller.setMode}
+              onModeChange={handleModeChange}
             />
 
             {!showDesktopSidebar && (
@@ -193,7 +212,7 @@ export function App() {
             )}
 
             <div className="min-h-0 flex-1 overflow-hidden">
-              <div className={`h-full overflow-y-auto pr-1 ${mainSpacingClass}`}>
+              <div ref={mainScrollRef} className={`h-full overflow-y-auto pr-1 ${mainSpacingClass}`}>
                 {isManga ? (
                   <>
                     {state.chapters.length === 0 ? (

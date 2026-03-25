@@ -80,13 +80,15 @@ function extensionToType(extension: string): Exclude<GeneralImageTypeFilter, 'al
 
 export function resolveGeneralImageType(item: ImageCandidate): Exclude<GeneralImageTypeFilter, 'all'> {
   const sourceKind = item.sourceKind.toLowerCase();
+  const extensionType = extensionToType(item.extensionHint || '');
 
-  if (sourceKind.includes('background')) return 'background';
-  if (sourceKind.includes('video-poster')) return 'poster';
+  if (extensionType === 'svg' || sourceKind.includes('svg')) return 'svg';
+  if (extensionType === 'gif') return 'gif';
   if (sourceKind.includes('canvas')) return 'canvas';
-  if (sourceKind.includes('svg')) return 'svg';
+  if (sourceKind.includes('video-poster')) return 'poster';
+  if (sourceKind.includes('background')) return 'background';
 
-  return extensionToType(item.extensionHint || '');
+  return extensionType;
 }
 
 export function buildGeneralTypeOptions(items: ImageCandidate[]): GeneralSelectOption<GeneralImageTypeFilter>[] {
