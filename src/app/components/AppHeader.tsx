@@ -1,14 +1,11 @@
-import type { AppMode, SourceTabContext } from '@shared/types';
-import { ModeSwitch } from './ModeSwitch';
+import type { SourceTabContext } from '@shared/types';
 import { SiteAvatar } from './SiteAvatar';
 
 interface AppHeaderProps {
   source: SourceTabContext;
-  mode: AppMode;
   chapterCount: number;
   generalCount: number;
   mangaPageCount: number;
-  onModeChange(mode: AppMode): void;
 }
 
 function getHostname(url: string): string {
@@ -21,24 +18,20 @@ function getHostname(url: string): string {
 
 export function AppHeader({
   source,
-  mode,
   chapterCount,
   generalCount,
   mangaPageCount,
-  onModeChange,
 }: AppHeaderProps) {
   const hostname = getHostname(source.url);
-  const countItems =
-    mode === 'manga'
-      ? [
-          { value: `${chapterCount} ch` },
-          { value: `${mangaPageCount} pages détectées` },
-        ]
-      : [{ value: `${generalCount} images` }];
+  const countItems = [
+    { value: `${chapterCount} ch` },
+    { value: `${mangaPageCount} pages détectées` },
+    { value: `${generalCount} images` },
+  ];
 
   return (
     <header className="rounded-[18px] border border-border bg-white/95 px-3 py-2 shadow-sm">
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-center">
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="flex min-w-0 items-center gap-2.5">
           <SiteAvatar title={source.title || hostname} url={source.url} favIconUrl={source.favIconUrl} size={30} />
           <div className="min-w-0">
@@ -47,10 +40,6 @@ export function AppHeader({
             </h1>
             <p className="truncate text-[11px] text-muted">{hostname}</p>
           </div>
-        </div>
-
-        <div className="justify-self-center">
-          <ModeSwitch value={mode} onChange={onModeChange} />
         </div>
 
         <div className="flex flex-wrap items-center justify-start gap-1.5 text-[11px] text-muted lg:justify-end">

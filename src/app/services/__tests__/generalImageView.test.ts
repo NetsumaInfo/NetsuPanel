@@ -42,7 +42,7 @@ function createItem(overrides: Partial<ImageCandidate>): ImageCandidate {
 describe('generalImageView helpers', () => {
   it('resolves image type from extension and source kind', () => {
     expect(resolveGeneralImageType(createItem({ extensionHint: 'jpeg' }))).toBe('jpeg');
-    expect(resolveGeneralImageType(createItem({ sourceKind: 'background-image', extensionHint: 'png' }))).toBe('background');
+    expect(resolveGeneralImageType(createItem({ sourceKind: 'background-image', extensionHint: 'png' }))).toBe('png');
     expect(resolveGeneralImageType(createItem({ sourceKind: 'canvas', extensionHint: '' }))).toBe('canvas');
   });
 

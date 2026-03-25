@@ -9,7 +9,6 @@ export type GeneralImageTypeFilter =
   | 'gif'
   | 'svg'
   | 'canvas'
-  | 'background'
   | 'poster'
   | 'unknown';
 
@@ -35,7 +34,6 @@ const TYPE_LABELS: Record<Exclude<GeneralImageTypeFilter, 'all'>, string> = {
   gif: 'GIF',
   svg: 'SVG',
   canvas: 'Canvas',
-  background: 'Background',
   poster: 'Poster vidéo',
   unknown: 'Autre',
 };
@@ -48,7 +46,6 @@ const TYPE_ORDER: Exclude<GeneralImageTypeFilter, 'all'>[] = [
   'gif',
   'svg',
   'canvas',
-  'background',
   'poster',
   'unknown',
 ];
@@ -108,7 +105,6 @@ export function resolveGeneralImageType(item: ImageCandidate): Exclude<GeneralIm
   if (sourceKind.includes('gif') || extensionType === 'gif' || mimeType === 'gif' || textType === 'gif') return 'gif';
   if (sourceKind.includes('canvas')) return 'canvas';
   if (sourceKind.includes('video-poster')) return 'poster';
-  if (sourceKind.includes('background')) return 'background';
 
   return extensionType;
 }

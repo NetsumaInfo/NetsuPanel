@@ -334,7 +334,7 @@ async function scanCurrentPage() {
     await triggerLazyLoading();
     await sleep(RECHECK_DELAY_MS);
     const afterLazy = await collectLiveDomImages(page.url, {
-      includeBackgroundCandidates: true,
+      includeBackgroundCandidates: false,
       includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
@@ -347,7 +347,7 @@ async function scanCurrentPage() {
   if (isLowCoverage(allCandidates)) {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
-      includeBackgroundCandidates: true,
+      includeBackgroundCandidates: false,
       includeSvgCandidates: false,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
@@ -355,18 +355,6 @@ async function scanCurrentPage() {
     });
     allCandidates = mergeCandidates(allCandidates, nextCollection.candidates);
     mergeCollectionCapturables(collection.capturables, nextCollection.capturables);
-  }
-
-  if (isLowCoverage(allCandidates)) {
-    const cssCollection = await collectLiveDomImages(page.url, {
-      includeBackgroundCandidates: false,
-      includeSvgCandidates: false,
-      includeMediaCandidates: false,
-      includeCssRuleCandidates: true,
-      includeScriptCandidates: false,
-    });
-    allCandidates = mergeCandidates(allCandidates, cssCollection.candidates);
-    mergeCollectionCapturables(collection.capturables, cssCollection.capturables);
   }
 
   // Always merge static document images to maximize coverage for general mode

@@ -21,7 +21,8 @@ import type {
 import { CompactSelect } from './CompactSelect';
 import { StatusStrip } from './StatusStrip';
 import { UpscalePanel } from './UpscalePanel';
-import { ArchiveIcon, DownloadIcon, ImageIcon } from './icons';
+import { ArchiveIcon, BookIcon, DownloadIcon, ImageIcon } from './icons';
+import { ModeSwitch } from './ModeSwitch';
 
 interface AppSidebarProps {
   archiveFormat: ArchiveFormat;
@@ -46,6 +47,7 @@ interface AppSidebarProps {
   onGeneralSortModeChange(sortMode: GeneralImageSortMode): void;
   onUpscaleToggle(enabled: boolean): void;
   onUpscaleSettingsChange(mode: AppMode, settings: Partial<UpscaleSettings>): void;
+  onModeChange(mode: AppMode): void;
   onLoadAllChapters(): void;
   onDownloadCurrent(): void;
   onDownloadAll(): void;
@@ -75,6 +77,7 @@ export function AppSidebar({
   onGeneralSortModeChange,
   onUpscaleToggle,
   onUpscaleSettingsChange,
+  onModeChange,
   onLoadAllChapters,
   onDownloadCurrent,
   onDownloadAll,
@@ -87,6 +90,13 @@ export function AppSidebar({
     <div className="flex h-full flex-col gap-2">
       <div className="rounded-[18px] border border-border bg-white p-3 shadow-sm">
         <div className="grid gap-2">
+          <div className="grid gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Mode</span>
+            <ModeSwitch value={mode} onChange={onModeChange} />
+          </div>
+
+          <div className="h-px bg-border/70" />
+
           <div className="grid gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Export</span>
             <CompactSelect
@@ -110,15 +120,6 @@ export function AppSidebar({
               <>
                 <button
                   type="button"
-                  className="btn w-full justify-center"
-                  disabled={chapterCount === 0}
-                  onClick={onLoadAllChapters}
-                >
-                  <DownloadIcon size={16} />
-                  Charger tous les ch
-                </button>
-                <button
-                  type="button"
                   className="btn btn-primary w-full justify-center"
                   disabled={!currentChapter}
                   onClick={onDownloadCurrent}
@@ -134,6 +135,15 @@ export function AppSidebar({
                 >
                   <ArchiveIcon size={16} />
                   Série
+                </button>
+                <button
+                  type="button"
+                  className="btn w-full justify-center"
+                  disabled={chapterCount === 0}
+                  onClick={onLoadAllChapters}
+                >
+                  <BookIcon size={16} />
+                  Charger tous les ch
                 </button>
               </>
             )}

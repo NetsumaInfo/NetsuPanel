@@ -1,6 +1,6 @@
 import type { RawImageCandidate } from '@shared/types';
 import { resolveUrl } from '@shared/utils/url';
-import { readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
+import { readImageSourceDescriptors } from './imageAttributeSources';
 
 function buildContainerSignature(element: Element): string {
   const segments: string[] = [];
@@ -41,6 +41,7 @@ export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): 
       id: `static-image-${index}`,
       url: selected.resolved,
       previewUrl: selected.resolved,
+      referrer: baseUrl,
       captureStrategy: 'network',
       sourceKind: selected.sourceKind,
       origin: 'static-html',
@@ -57,36 +58,5 @@ export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): 
     });
   });
 
-  const backgroundOffset = imageCandidates.length;
-  const backgroundCandidates: RawImageCandidate[] = [];
-  [...root.querySelectorAll<HTMLElement>('[style*="background-image"]')].forEach((element, index) => {
-    const selected = readBackgroundImageUrls(element.getAttribute('style') || '')
-      .map((descriptor) => ({
-        ...descriptor,
-        resolved: resolveUrl(descriptor.value, baseUrl),
-      }))
-      .find((descriptor) => descriptor.resolved);
-    if (!selected?.resolved) return;
-
-    backgroundCandidates.push({
-      id: `static-background-${backgroundOffset + index}`,
-      url: selected.resolved,
-      previewUrl: selected.resolved,
-      captureStrategy: 'network',
-      sourceKind: 'background-image',
-      origin: 'static-html',
-      width: Number(element.getAttribute('width')) || 960,
-      height: Number(element.getAttribute('height')) || 1440,
-      domIndex: backgroundOffset + index,
-      top: backgroundOffset + index,
-      left: 0,
-      altText: '',
-      titleText: element.getAttribute('title') || '',
-      containerSignature: buildContainerSignature(element),
-      visible: true,
-      diagnostics: [],
-    });
-  });
-
-  return imageCandidates.concat(backgroundCandidates);
+  return imageCandidates;
 }

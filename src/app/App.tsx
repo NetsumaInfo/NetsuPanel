@@ -164,6 +164,7 @@ export function App() {
       onGeneralSortModeChange={setGeneralSortMode}
       onUpscaleToggle={controller.setUpscaleEnabled}
       onUpscaleSettingsChange={controller.setUpscaleSettings}
+      onModeChange={handleModeChange}
       onLoadAllChapters={() => void controller.loadAllChapterPreviews()}
       onDownloadCurrent={() => currentChapter && void controller.downloadChapter(currentChapter)}
       onDownloadAll={() => void controller.downloadAllChapters()}
@@ -186,11 +187,9 @@ export function App() {
           <div className="flex h-full flex-col gap-2.5">
             <AppHeader
               source={state.source}
-              mode={state.mode}
               chapterCount={chapterCount}
               generalCount={generalCount}
               mangaPageCount={scan.manga.currentPages.items.length}
-              onModeChange={handleModeChange}
             />
 
             {!showDesktopSidebar && (
