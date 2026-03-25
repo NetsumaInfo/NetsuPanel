@@ -5,10 +5,11 @@
  * avec les images embarquées dans des structures script spécifiques.
  */
 
-import type { MangaScanResult } from '@shared/types';
+import type { ChapterLinkCandidate, MangaScanResult } from '@shared/types';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 const MANGAGO_DOMAINS = ['mangago.me', 'utoon.net'];
@@ -48,6 +49,48 @@ function extractMangagoImages(document: ParentNode): string[] {
   return readerImgs.map((img) => img.getAttribute('src') ?? '').filter((u) => u.startsWith('http'));
 }
 
+function collectMangagoChapterCandidates(document: ParentNode, currentUrl: string): ChapterLinkCandidate[] {
+  const anchors = Array.from(
+    (document as Document).querySelectorAll<HTMLAnchorElement>(
+      [
+        '#chapter_table a[href]',
+        '.chapter_table a[href]',
+        '.chapter_list a[href]',
+        '.list-chapter a[href]',
+        'a[href*="/read-manga/"]',
+        'a[href*="/chapter/"]',
+      ].join(', ')
+    )
+  );
+
+  const results: ChapterLinkCandidate[] = [];
+  anchors.forEach((anchor, index) => {
+    const url = anchor.href;
+    if (!url) return;
+    const label = (
+      anchor.textContent ||
+      anchor.getAttribute('title') ||
+      anchor.getAttribute('aria-label') ||
+      ''
+    ).trim();
+    const identity = parseChapterIdentity(label, url);
+    results.push({
+      id: `mangago-chapter-${index}`,
+      url,
+      canonicalUrl: url.split('#')[0],
+      label: identity.label || label || `Chapter ${identity.chapterNumber ?? '?'}`,
+      relation: url.split('#')[0] === currentUrl.split('#')[0] ? 'current' : 'candidate',
+      score: 88,
+      chapterNumber: identity.chapterNumber,
+      volumeNumber: identity.volumeNumber,
+      containerSignature: 'mangago:chapter-list',
+      diagnostics: [],
+    });
+  });
+
+  return results;
+}
+
 function scanMangago(input: ScanAdapterInput): MangaScanResult {
   const urls = extractMangagoImages(input.document);
 
@@ -76,7 +119,10 @@ function scanMangago(input: ScanAdapterInput): MangaScanResult {
       : input.imageCandidates;
 
   const currentPages = buildImageCollection(allCandidates, 'manga');
-  const chapterCandidates = collectChapterLinks(input.document, input.page.url, input.page.url);
+  const chapterCandidates = [
+    ...collectMangagoChapterCandidates(input.document, input.page.url),
+    ...collectChapterLinks(input.document, input.page.url, input.page.url),
+  ];
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 
   return {

@@ -46,6 +46,7 @@ const SITE_SUPPORT_RULES: SiteSupportRule[] = [
     family: 'Next.js Reader',
     domains: [
       'asuracomic.net',
+      'asurascans.com',
       'mangabuddy.com',
       'galaxymanga.io',
       'everythingmoe.com',

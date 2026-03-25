@@ -72,6 +72,19 @@ function inferNavigationByChapterNumber(
   return numbered.find((candidate) => (candidate.chapterNumber ?? Number.NEGATIVE_INFINITY) > current.chapterNumber!);
 }
 
+function pageLooksLikeReader(page: PageIdentity): boolean {
+  try {
+    const parsed = new URL(page.url);
+    if (parsed.searchParams.has('episode_no')) return true;
+    if (parsed.searchParams.has('chapter') || parsed.searchParams.has('episode')) return true;
+    if (parsed.searchParams.has('no') && /(viewer|detail|episode)/i.test(parsed.pathname)) return true;
+  } catch {
+    // Ignore invalid URL parsing.
+  }
+
+  return /(chapter|chapitre|episode|viewer|read|scan|detail)/i.test(`${page.pathname} ${page.title}`);
+}
+
 function buildCurrentCandidate(page: PageIdentity): ChapterLinkCandidate {
   const identity = parseChapterIdentity(page.title, page.url);
   return {
@@ -135,10 +148,17 @@ export function buildMangaLinkMap(
   const cluster = pickBestChapterSet(
     deduped.filter((candidate) => candidate.relation === 'candidate')
   );
+  const includeCurrentInChapters =
+    pageLooksLikeReader(page) ||
+    deduped.some((candidate) => candidate.relation === 'current' && candidate.canonicalUrl === current.canonicalUrl);
 
   const chapters = sortChapterCandidates(
     dedupeChapterCandidates(
-      [current, ...cluster, ...deduped.filter((candidate) => candidate.relation !== 'candidate' && candidate.relation !== 'listing')]
+      [
+        ...(includeCurrentInChapters ? [current] : []),
+        ...cluster,
+        ...deduped.filter((candidate) => candidate.relation !== 'candidate' && candidate.relation !== 'listing'),
+      ]
         .filter(Boolean)
         .filter((candidate) => candidate.score >= 8)
     )

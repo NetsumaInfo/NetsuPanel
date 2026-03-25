@@ -74,7 +74,7 @@ describe('buildMangaLinkMap', () => {
     expect(badChapter).toBeUndefined();
   });
 
-  it('always includes current page in chapters', () => {
+  it('includes current page in chapters on reader pages', () => {
     const result = buildMangaLinkMap(page, [
       createChapterCandidate('ch1', 'Chapter 1', 1),
       createChapterCandidate('ch2', 'Chapter 2', 2),
@@ -82,6 +82,23 @@ describe('buildMangaLinkMap', () => {
     const current = result.chapters.find((c) => c.relation === 'current');
     expect(current).toBeDefined();
     expect(current?.url).toBe(page.url);
+  });
+
+  it('does not inject a fake current chapter on series listing pages', () => {
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://reader.example.com/series/list?title_no=2154',
+        title: 'Series Home',
+        host: 'reader.example.com',
+        pathname: '/series/list',
+      },
+      [
+        createChapterCandidate('ch9', 'Chapter 9', 9),
+        createChapterCandidate('ch10', 'Chapter 10', 10),
+      ]
+    );
+
+    expect(result.chapters.some((chapter) => chapter.relation === 'current')).toBe(false);
   });
 
   it('falls back to multiple candidate groups when the best cluster is too small', () => {
@@ -114,6 +131,7 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('', 'https://reader.example.com/title/12/all-pages').chapterNumber).toBe(12);
     expect(parseChapterIdentity('', 'https://reader.example.com/title/ep-87').chapterNumber).toBe(87);
     expect(parseChapterIdentity('', 'https://reader.example.com/webtoon/detail?titleId=77&no=19').chapterNumber).toBe(19);
+    expect(parseChapterIdentity('', 'https://reader.example.com/series/list?title_no=2154').chapterNumber).toBe(null);
   });
 
   it('rejects common navigation and footer links from chapter collection', () => {

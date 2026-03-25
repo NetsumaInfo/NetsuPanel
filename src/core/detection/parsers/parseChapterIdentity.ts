@@ -3,7 +3,7 @@ import { compactWhitespace } from '@shared/utils/strings';
 const CHAPTER_RE = /(chapter|chapitre|chap|ch\.?|episode|ep\.?|capitulo|cap\.?|raw)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const VOLUME_RE = /(volume|vol\.?)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const NUMERIC_RE = /(^|[^a-z0-9])([0-9]{1,4}(?:\.[0-9]+)?)(?=[^a-z0-9]|$)/i;
-const CHAPTER_QUERY_KEYS = ['chapter', 'chap', 'ch', 'episode', 'ep', 'no', 'episode_no', 'cid'] as const;
+const DIRECT_QUERY_KEYS = ['chapter', 'chap', 'ch', 'episode', 'ep', 'episode_no'] as const;
 const CHAPTER_PATH_PATTERNS = [
   /(?:^|\/)(?:chapter|chapitre|chap|ch|episode|ep|capitulo|capitolo|cap|raw)[-_/ ]*([0-9]+(?:\.[0-9]+)?)(?=$|[/?#._-])/i,
   /(?:^|\/)([0-9]+(?:\.[0-9]+)?)(?=$|\/(?:all-pages?|read|viewer|page-\d+)|[?#])/i,
@@ -15,14 +15,32 @@ export interface ParsedChapterIdentity {
   volumeNumber: number | null;
 }
 
+function looksLikeReaderPath(pathname: string): boolean {
+  return /(viewer|episode|chapter|chapitre|read|scan|detail)/i.test(pathname);
+}
+
+function extractNumericValue(value: string): number | null {
+  const match = value.match(/[0-9]+(?:\.[0-9]+)?/);
+  if (!match) return null;
+  return Number(match[0]);
+}
+
 function parseFromQuery(url: string): number | null {
   try {
     const parsed = new URL(url);
-    for (const key of CHAPTER_QUERY_KEYS) {
+    for (const key of DIRECT_QUERY_KEYS) {
       const value = parsed.searchParams.get(key);
       if (!value) continue;
-      const match = value.match(/[0-9]+(?:\.[0-9]+)?/);
-      if (match) return Number(match[0]);
+      return extractNumericValue(value);
+    }
+
+    const genericNo = parsed.searchParams.get('no');
+    if (
+      genericNo &&
+      looksLikeReaderPath(parsed.pathname) &&
+      (parsed.searchParams.has('titleId') || parsed.searchParams.has('title_no') || /detail|viewer|episode/i.test(parsed.pathname))
+    ) {
+      return extractNumericValue(genericNo);
     }
   } catch {
     // Ignore URL parse errors.
@@ -52,6 +70,11 @@ function parseFromPath(url: string): number | null {
     .replace(/[-_]+/g, ' ');
   const chapterMatch = slug.match(CHAPTER_RE);
   if (chapterMatch) return Number(chapterMatch[2]);
+
+  if (!looksLikeReaderPath(decoded)) {
+    return null;
+  }
+
   const numberMatch = slug.match(NUMERIC_RE);
   return numberMatch ? Number(numberMatch[2]) : null;
 }

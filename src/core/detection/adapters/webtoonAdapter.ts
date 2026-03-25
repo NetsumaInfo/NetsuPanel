@@ -6,10 +6,11 @@
  * API possible : https://www.webtoons.com/ajax/.../info
  */
 
-import type { MangaScanResult } from '@shared/types';
+import type { ChapterLinkCandidate, MangaScanResult } from '@shared/types';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 function matchesWebtoon(url: string): boolean {
@@ -93,6 +94,82 @@ function collectWebtoonImages(document: ParentNode, baseUrl: string): string[] {
   return nonThumb.length > 0 ? nonThumb : resolved;
 }
 
+function createWebtoonChapterCandidate(
+  anchor: HTMLAnchorElement,
+  pageUrl: string,
+  index: number,
+  relation: ChapterLinkCandidate['relation'],
+  containerSignature: string,
+  score: number
+): ChapterLinkCandidate | null {
+  let resolvedUrl = '';
+  try {
+    resolvedUrl = new URL(anchor.href, pageUrl).href;
+  } catch {
+    return null;
+  }
+
+  const label = (
+    anchor.getAttribute('title') ||
+    anchor.textContent ||
+    anchor.querySelector('img')?.getAttribute('alt') ||
+    ''
+  ).trim();
+  const identity = parseChapterIdentity(label, resolvedUrl);
+  const normalizedRelation =
+    resolvedUrl.split('#')[0] === pageUrl.split('#')[0]
+      ? 'current'
+      : relation;
+
+  return {
+    id: `webtoon-chapter-${relation}-${index}`,
+    url: resolvedUrl,
+    canonicalUrl: resolvedUrl.split('#')[0],
+    label: identity.label || label || `Episode ${identity.chapterNumber ?? '?'}`,
+    relation: normalizedRelation,
+    score,
+    chapterNumber: identity.chapterNumber,
+    volumeNumber: identity.volumeNumber,
+    containerSignature,
+    diagnostics: [],
+  };
+}
+
+function collectWebtoonChapterCandidates(document: ParentNode, pageUrl: string): ChapterLinkCandidate[] {
+  const results: ChapterLinkCandidate[] = [];
+  const episodeAnchors = Array.from(
+    (document as Document).querySelectorAll<HTMLAnchorElement>(
+      '.detail_lst li._episodeItem a, #_listUl li a, .episode_lst li a[href*="episode_no="], .viewer_lst li a[href*="episode_no="]'
+    )
+  );
+
+  episodeAnchors.forEach((anchor, index) => {
+    const candidate = createWebtoonChapterCandidate(anchor, pageUrl, index, 'candidate', 'webtoon:episode-list', 92);
+    if (candidate) results.push(candidate);
+  });
+
+  const prevAnchor = (document as Document).querySelector<HTMLAnchorElement>('a.pg_prev[href], a[title="Previous Episode"][href]');
+  const nextAnchor = (document as Document).querySelector<HTMLAnchorElement>('a.pg_next[href], a._nextEpisode[href], a[title="Next Episode"][href]');
+  const firstEpisodeAnchor = (document as Document).querySelector<HTMLAnchorElement>('a#_btnEpisode[href]');
+
+  if (prevAnchor) {
+    const candidate = createWebtoonChapterCandidate(prevAnchor, pageUrl, 0, 'previous', 'webtoon:episode-nav', 98);
+    if (candidate) results.push(candidate);
+  }
+
+  if (nextAnchor) {
+    const candidate = createWebtoonChapterCandidate(nextAnchor, pageUrl, 0, 'next', 'webtoon:episode-nav', 98);
+    if (candidate) results.push(candidate);
+  }
+
+  if (firstEpisodeAnchor) {
+    const candidate = createWebtoonChapterCandidate(firstEpisodeAnchor, pageUrl, 0, 'candidate', 'webtoon:first-episode', 86);
+    if (candidate) results.push(candidate);
+  }
+
+  return results;
+}
+
 function scanWebtoon(input: ScanAdapterInput): MangaScanResult {
   const viewerPage = isViewerPage(input.page.url);
   const webtoonUrls = viewerPage ? collectWebtoonImages(input.document, input.page.url) : [];
@@ -126,7 +203,10 @@ function scanWebtoon(input: ScanAdapterInput): MangaScanResult {
       : filteredInputCandidates;
 
   const currentPages = buildImageCollection(allCandidates, 'manga');
-  const chapterCandidates = collectChapterLinks(input.document, input.page.url, input.page.url);
+  const chapterCandidates = [
+    ...collectWebtoonChapterCandidates(input.document, input.page.url),
+    ...collectChapterLinks(input.document, input.page.url, input.page.url),
+  ];
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 
   return {
