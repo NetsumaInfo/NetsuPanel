@@ -16,6 +16,7 @@ export function useNetsuController() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const waifuRuntimeRef = useRef<Waifu2xRuntime>(new Waifu2xRuntime());
   const previewObjectUrlRef = useRef<string | null>(null);
+  const chapterPreviewTasksRef = useRef<Map<string, ReturnType<typeof fetchChapterPreview>>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -126,9 +127,15 @@ export function useNetsuController() {
         throw new Error('Analyse source indisponible');
       }
       const source = state.source;
+      const currentScan = state.scan;
 
       if (chapter.previewStatus === 'ready' && chapter.preview) {
         return chapter.preview;
+      }
+
+      const existingTask = chapterPreviewTasksRef.current.get(chapter.canonicalUrl);
+      if (existingTask) {
+        return existingTask;
       }
 
       dispatch({
@@ -137,36 +144,42 @@ export function useNetsuController() {
         status: 'loading',
       });
 
-      try {
-        const preview =
-          isSameChapterUrl(chapter.canonicalUrl, source.url)
-            ? state.scan.manga.currentPages
-            : await fetchChapterPreview(
-                chapter.url,
-                {
-                  fetchDocument: (url, options = {}) =>
-                    fetchDocument(url, {
-                      referrer: options.referrer || chapter.url || source.url,
-                      tabId: source.id,
-                    }),
-                },
-                { referrer: chapter.url || source.url, tabId: source.id }
-              );
-        dispatch({
-          type: 'set-chapter-preview',
-          chapterUrl: chapter.canonicalUrl,
-          preview,
-        });
-        return preview;
-      } catch (error) {
-        dispatch({
-          type: 'set-chapter-preview',
-          chapterUrl: chapter.canonicalUrl,
-          preview: undefined,
-          error: error instanceof Error ? error.message : 'Chargement de l’aperçu impossible',
-        });
-        throw error;
-      }
+      const task = (async () => {
+        try {
+          const preview =
+            isSameChapterUrl(chapter.canonicalUrl, source.url)
+              ? currentScan.manga.currentPages
+              : await fetchChapterPreview(
+                  chapter.url,
+                  {
+                    fetchDocument: (url, options = {}) =>
+                      fetchDocument(url, {
+                        referrer: options.referrer || chapter.url || source.url,
+                        tabId: source.id,
+                      }),
+                  },
+                  { referrer: chapter.url || source.url, tabId: source.id }
+                );
+          dispatch({
+            type: 'set-chapter-preview',
+            chapterUrl: chapter.canonicalUrl,
+            preview,
+          });
+          return preview;
+        } catch (error) {
+          dispatch({
+            type: 'set-chapter-preview',
+            chapterUrl: chapter.canonicalUrl,
+            preview: undefined,
+            error: error instanceof Error ? error.message : 'Chargement de l’aperçu impossible',
+          });
+          throw error;
+        } finally {
+          chapterPreviewTasksRef.current.delete(chapter.canonicalUrl);
+        }
+      })();
+      chapterPreviewTasksRef.current.set(chapter.canonicalUrl, task);
+      return task;
     },
     [state.scan, state.source]
   );
@@ -260,6 +273,51 @@ export function useNetsuController() {
     [state.generalSelection, state.scan]
   );
 
+  const loadAllChapterPreviews = useCallback(async () => {
+    if (state.chapters.length === 0) return;
+
+    const chapters = [...state.chapters];
+    const workerCount = Math.min(3, chapters.length);
+    let completed = 0;
+    let failed = 0;
+
+    updateActivity('Chargement des apercus de chapitres…', 0);
+
+    const runWorker = async () => {
+      while (chapters.length > 0) {
+        const chapter = chapters.shift();
+        if (!chapter) return;
+
+        try {
+          await ensureChapterPreview(chapter);
+        } catch {
+          failed += 1;
+        } finally {
+          completed += 1;
+          updateActivity(
+            `Chargement des apercus de chapitres… ${completed}/${state.chapters.length}`,
+            completed / state.chapters.length
+          );
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+    dispatch({
+      type: 'set-activity',
+      activity: {
+        active: false,
+        cancelled: false,
+        progress: 1,
+        message:
+          failed === 0
+            ? `${completed} chapitres charges.`
+            : `${completed - failed}/${completed} chapitres charges, ${failed} echec(s).`,
+      },
+    });
+  }, [dispatch, ensureChapterPreview, state.chapters, updateActivity]);
+
   return {
     state,
     selectedGeneralImages,
@@ -271,6 +329,7 @@ export function useNetsuController() {
     setUpscaleSettings: (mode: 'manga' | 'general', settings: Partial<UpscaleSettings>) =>
       dispatch({ type: 'set-upscale-settings', mode, settings }),
     ensureChapterPreview,
+    loadAllChapterPreviews,
     previewUpscale,
     downloadGeneral: downloads.downloadGeneral,
     downloadChapter: downloads.downloadChapter,

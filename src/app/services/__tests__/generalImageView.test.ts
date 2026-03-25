@@ -1,6 +1,7 @@
 import type { ImageCandidate } from '@shared/types';
 import {
   applyGeneralImageView,
+  buildGeneralImageSections,
   buildGeneralTypeOptions,
   resolveGeneralImageType,
 } from '@app/services/generalImageView';
@@ -67,5 +68,20 @@ describe('generalImageView helpers', () => {
 
     const filtered = applyGeneralImageView(items, 'jpeg', 'size-desc');
     expect(filtered.map((item) => item.id)).toEqual(['big', 'small']);
+  });
+
+  it('builds grouped sections by type and by name', () => {
+    const items = [
+      createItem({ id: 'jpg', extensionHint: 'jpg', filenameHint: 'apple.jpg' }),
+      createItem({ id: 'png', extensionHint: 'png', filenameHint: 'banana.png' }),
+      createItem({ id: 'gif', extensionHint: 'gif', filenameHint: '9-anim.gif' }),
+    ];
+
+    const typeSections = buildGeneralImageSections(items, 'group-type');
+    const nameSections = buildGeneralImageSections(items, 'group-name');
+
+    expect(typeSections.some((section) => section.title === 'JPEG')).toBe(true);
+    expect(typeSections.some((section) => section.title === 'PNG')).toBe(true);
+    expect(nameSections.map((section) => section.title)).toEqual(['#', 'A', 'B']);
   });
 });

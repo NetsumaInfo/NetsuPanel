@@ -13,11 +13,18 @@ export type GeneralImageTypeFilter =
   | 'poster'
   | 'unknown';
 
-export type GeneralImageSortMode = 'page-order' | 'size-desc' | 'size-asc' | 'type';
+export type GeneralImageSortMode = 'page-order' | 'size-desc' | 'size-asc' | 'name-asc' | 'name-desc';
+export type GeneralImageDisplayMode = 'grid' | 'group-type' | 'group-name';
 
 export interface GeneralSelectOption<T extends string> {
   value: T;
   label: string;
+}
+
+export interface GeneralImageSection {
+  id: string;
+  title: string;
+  items: ImageCandidate[];
 }
 
 const TYPE_LABELS: Record<Exclude<GeneralImageTypeFilter, 'all'>, string> = {
@@ -48,9 +55,16 @@ const TYPE_ORDER: Exclude<GeneralImageTypeFilter, 'all'>[] = [
 
 const SORT_OPTIONS: GeneralSelectOption<GeneralImageSortMode>[] = [
   { value: 'page-order', label: 'Ordre page' },
-  { value: 'type', label: 'Par type' },
   { value: 'size-desc', label: 'Taille décroissante' },
   { value: 'size-asc', label: 'Taille croissante' },
+  { value: 'name-asc', label: 'Nom A-Z' },
+  { value: 'name-desc', label: 'Nom Z-A' },
+];
+
+const DISPLAY_OPTIONS: GeneralSelectOption<GeneralImageDisplayMode>[] = [
+  { value: 'grid', label: 'Grille simple' },
+  { value: 'group-type', label: 'Catégories type' },
+  { value: 'group-name', label: 'Catégories nom' },
 ];
 
 function extensionToType(extension: string): Exclude<GeneralImageTypeFilter, 'all'> {
@@ -91,6 +105,10 @@ export function getGeneralSortOptions(): GeneralSelectOption<GeneralImageSortMod
   return SORT_OPTIONS;
 }
 
+export function getGeneralDisplayOptions(): GeneralSelectOption<GeneralImageDisplayMode>[] {
+  return DISPLAY_OPTIONS;
+}
+
 function sortByPageOrder(items: ImageCandidate[]): ImageCandidate[] {
   return [...items].sort((left, right) => {
     if (left.pageNumber !== null && right.pageNumber !== null && left.pageNumber !== right.pageNumber) {
@@ -102,9 +120,8 @@ function sortByPageOrder(items: ImageCandidate[]): ImageCandidate[] {
   });
 }
 
-function typeRank(type: Exclude<GeneralImageTypeFilter, 'all'>): number {
-  const rank = TYPE_ORDER.indexOf(type);
-  return rank >= 0 ? rank : TYPE_ORDER.length;
+function nameKey(item: ImageCandidate): string {
+  return (item.filenameHint || item.titleText || item.altText || item.url).toLowerCase();
 }
 
 export function applyGeneralImageView(
@@ -135,14 +152,53 @@ export function applyGeneralImageView(
     });
   }
 
-  return [...filtered].sort((left, right) => {
-    const leftTypeRank = typeRank(resolveGeneralImageType(left));
-    const rightTypeRank = typeRank(resolveGeneralImageType(right));
-    if (leftTypeRank !== rightTypeRank) return leftTypeRank - rightTypeRank;
-    if (left.pageNumber !== null && right.pageNumber !== null && left.pageNumber !== right.pageNumber) {
-      return left.pageNumber - right.pageNumber;
+  if (sortMode === 'name-desc') {
+    return [...filtered].sort((left, right) => nameKey(right).localeCompare(nameKey(left), undefined, { numeric: true }));
+  }
+
+  return [...filtered].sort((left, right) => nameKey(left).localeCompare(nameKey(right), undefined, { numeric: true }));
+}
+
+function buildGroupName(item: ImageCandidate, displayMode: GeneralImageDisplayMode): string {
+  if (displayMode === 'group-type') {
+    return resolveGeneralImageType(item);
+  }
+
+  const firstChar = nameKey(item).charAt(0).toUpperCase();
+  if (!firstChar) return 'Sans nom';
+  if (/[A-Z]/.test(firstChar)) return firstChar;
+  if (/[0-9]/.test(firstChar)) return '#';
+  return 'Autres';
+}
+
+export function buildGeneralImageSections(
+  items: ImageCandidate[],
+  displayMode: GeneralImageDisplayMode
+): GeneralImageSection[] {
+  if (displayMode === 'grid') {
+    return [{ id: 'all', title: 'Toutes les images', items }];
+  }
+
+  const sections = new Map<string, ImageCandidate[]>();
+  for (const item of items) {
+    const sectionName = buildGroupName(item, displayMode);
+    const current = sections.get(sectionName) || [];
+    current.push(item);
+    sections.set(sectionName, current);
+  }
+
+  const orderedKeys = [...sections.keys()].sort((left, right) => {
+    if (displayMode === 'group-type') {
+      const leftRank = TYPE_ORDER.indexOf(left as Exclude<GeneralImageTypeFilter, 'all'>);
+      const rightRank = TYPE_ORDER.indexOf(right as Exclude<GeneralImageTypeFilter, 'all'>);
+      if (leftRank !== rightRank) return (leftRank >= 0 ? leftRank : TYPE_ORDER.length) - (rightRank >= 0 ? rightRank : TYPE_ORDER.length);
     }
-    if (left.top !== right.top) return left.top - right.top;
-    return left.domIndex - right.domIndex;
+    return left.localeCompare(right, undefined, { numeric: true });
   });
+
+  return orderedKeys.map((key) => ({
+    id: `section-${key}`,
+    title: displayMode === 'group-type' ? TYPE_LABELS[key as Exclude<GeneralImageTypeFilter, 'all'>] : key,
+    items: sections.get(key) || [],
+  }));
 }

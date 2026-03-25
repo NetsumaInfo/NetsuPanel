@@ -9,8 +9,11 @@ import { useNetsuController } from '@app/hooks/useNetsuController';
 import { useWindowWidth } from '@app/hooks/useWindowWidth';
 import {
   applyGeneralImageView,
+  buildGeneralImageSections,
+  getGeneralDisplayOptions,
   buildGeneralTypeOptions,
   getGeneralSortOptions,
+  type GeneralImageDisplayMode,
   type GeneralImageSortMode,
   type GeneralImageTypeFilter,
 } from '@app/services/generalImageView';
@@ -78,6 +81,7 @@ export function App() {
   const controller = useNetsuController();
   const { state } = controller;
   const windowWidth = useWindowWidth();
+  const [generalDisplayMode, setGeneralDisplayMode] = useState<GeneralImageDisplayMode>('grid');
   const [generalTypeFilter, setGeneralTypeFilter] = useState<GeneralImageTypeFilter>('all');
   const [generalSortMode, setGeneralSortMode] = useState<GeneralImageSortMode>('page-order');
   const [viewer, setViewer] = useState<ViewerState | null>(null);
@@ -90,11 +94,16 @@ export function App() {
   );
 
   const generalItems = state.scan?.general.items ?? EMPTY_IMAGES;
+  const generalDisplayOptions = useMemo(() => getGeneralDisplayOptions(), []);
   const generalTypeOptions = useMemo(() => buildGeneralTypeOptions(generalItems), [generalItems]);
   const generalSortOptions = useMemo(() => getGeneralSortOptions(), []);
   const filteredGeneralItems = useMemo(
     () => applyGeneralImageView(generalItems, generalTypeFilter, generalSortMode),
     [generalItems, generalSortMode, generalTypeFilter]
+  );
+  const generalSections = useMemo(
+    () => buildGeneralImageSections(filteredGeneralItems, generalDisplayMode),
+    [filteredGeneralItems, generalDisplayMode]
   );
 
   useEffect(() => {
@@ -132,6 +141,8 @@ export function App() {
       selectedGeneralCount={generalSelectedCount}
       activity={state.activity}
       mode={state.mode}
+      generalDisplayMode={generalDisplayMode}
+      generalDisplayOptions={generalDisplayOptions}
       generalTypeFilter={generalTypeFilter}
       generalTypeOptions={generalTypeOptions}
       generalSortMode={generalSortMode}
@@ -141,10 +152,12 @@ export function App() {
       backendLabel={state.waifuBackendLabel}
       preview={state.upscalePreview}
       onArchiveFormatChange={controller.setArchiveFormat}
+      onGeneralDisplayModeChange={setGeneralDisplayMode}
       onGeneralTypeFilterChange={setGeneralTypeFilter}
       onGeneralSortModeChange={setGeneralSortMode}
       onUpscaleToggle={controller.setUpscaleEnabled}
       onUpscaleSettingsChange={controller.setUpscaleSettings}
+      onLoadAllChapters={() => void controller.loadAllChapterPreviews()}
       onDownloadCurrent={() => currentChapter && void controller.downloadChapter(currentChapter)}
       onDownloadAll={() => void controller.downloadAllChapters()}
       onDownloadGeneral={() => void controller.downloadGeneral()}
@@ -212,6 +225,7 @@ export function App() {
                 ) : (
                   <GeneralGrid
                     items={filteredGeneralItems}
+                    sections={generalSections}
                     selected={state.generalSelection}
                     thumbnailSize={autoUi.thumbnailSize}
                     compact={autoUi.compactMode}

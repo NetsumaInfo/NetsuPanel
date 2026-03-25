@@ -13,6 +13,7 @@ import {
   splitArchiveFormat,
 } from '@core/download/archiveFormats';
 import type {
+  GeneralImageDisplayMode,
   GeneralImageSortMode,
   GeneralImageTypeFilter,
   GeneralSelectOption,
@@ -29,6 +30,8 @@ interface AppSidebarProps {
   selectedGeneralCount: number;
   activity: DownloadJobState;
   mode: AppMode;
+  generalDisplayMode: GeneralImageDisplayMode;
+  generalDisplayOptions: GeneralSelectOption<GeneralImageDisplayMode>[];
   generalTypeFilter: GeneralImageTypeFilter;
   generalTypeOptions: GeneralSelectOption<GeneralImageTypeFilter>[];
   generalSortMode: GeneralImageSortMode;
@@ -38,10 +41,12 @@ interface AppSidebarProps {
   backendLabel: string;
   preview: UpscalePreviewState | null;
   onArchiveFormatChange(format: ArchiveFormat): void;
+  onGeneralDisplayModeChange(mode: GeneralImageDisplayMode): void;
   onGeneralTypeFilterChange(filter: GeneralImageTypeFilter): void;
   onGeneralSortModeChange(sortMode: GeneralImageSortMode): void;
   onUpscaleToggle(enabled: boolean): void;
   onUpscaleSettingsChange(mode: AppMode, settings: Partial<UpscaleSettings>): void;
+  onLoadAllChapters(): void;
   onDownloadCurrent(): void;
   onDownloadAll(): void;
   onDownloadGeneral(): void;
@@ -54,6 +59,8 @@ export function AppSidebar({
   selectedGeneralCount,
   activity,
   mode,
+  generalDisplayMode,
+  generalDisplayOptions,
   generalTypeFilter,
   generalTypeOptions,
   generalSortMode,
@@ -63,10 +70,12 @@ export function AppSidebar({
   backendLabel,
   preview,
   onArchiveFormatChange,
+  onGeneralDisplayModeChange,
   onGeneralTypeFilterChange,
   onGeneralSortModeChange,
   onUpscaleToggle,
   onUpscaleSettingsChange,
+  onLoadAllChapters,
   onDownloadCurrent,
   onDownloadAll,
   onDownloadGeneral,
@@ -97,28 +106,17 @@ export function AppSidebar({
           </div>
 
           <div className="mt-1 grid gap-1.5">
-            {mode === 'general' && (
-              <div className="mb-1 grid gap-1.5 rounded-xl border border-border/70 bg-[#f8f9fb] p-2">
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Type</span>
-                  <CompactSelect
-                    value={generalTypeFilter}
-                    options={generalTypeOptions}
-                    onChange={onGeneralTypeFilterChange}
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tri</span>
-                  <CompactSelect
-                    value={generalSortMode}
-                    options={generalSortOptions}
-                    onChange={onGeneralSortModeChange}
-                  />
-                </div>
-              </div>
-            )}
             {mode === 'manga' && (
               <>
+                <button
+                  type="button"
+                  className="btn w-full justify-center"
+                  disabled={chapterCount === 0}
+                  onClick={onLoadAllChapters}
+                >
+                  <DownloadIcon size={16} />
+                  Charger tous les ch
+                </button>
                 <button
                   type="button"
                   className="btn btn-primary w-full justify-center"
@@ -153,6 +151,47 @@ export function AppSidebar({
           </div>
         </div>
       </div>
+
+      {mode === 'general' && (
+        <div className="rounded-[18px] border border-border bg-white p-3 shadow-sm">
+          <div className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tri</span>
+
+            <div className="rounded-xl border border-border/70 bg-[#f8f9fb] p-2">
+              <div className="grid gap-2">
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Affichage</span>
+                  <CompactSelect
+                    value={generalDisplayMode}
+                    options={generalDisplayOptions}
+                    onChange={onGeneralDisplayModeChange}
+                  />
+                </div>
+
+                <div className="h-px bg-border/70" />
+
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Type</span>
+                  <CompactSelect
+                    value={generalTypeFilter}
+                    options={generalTypeOptions}
+                    onChange={onGeneralTypeFilterChange}
+                  />
+                </div>
+
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Ordre</span>
+                  <CompactSelect
+                    value={generalSortMode}
+                    options={generalSortOptions}
+                    onChange={onGeneralSortModeChange}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showStatus && <StatusStrip message={activity.message} progress={activity.progress} error={activity.error} />}
 

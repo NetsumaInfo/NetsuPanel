@@ -103,6 +103,12 @@ function isNetworkUrl(src: string): boolean {
   return /^https?:\/\//i.test(src);
 }
 
+function isGifLikeSource(src: string): boolean {
+  if (!src) return false;
+  if (/^data:image\/gif/i.test(src)) return true;
+  return /\.gif(?:$|[?#])/i.test(src);
+}
+
 function getCachedObjectUrl(key: string): string | undefined {
   const value = objectUrlCache.get(key);
   if (!value) return undefined;
@@ -163,6 +169,7 @@ export function SafeImage({
   const captureAttemptedRef = useRef(false);
   const networkAttemptedRef = useRef(false);
   const sourceKey = buildSourceKey(src, referrer, captureTabId, captureCandidateId);
+  const preferNetworkFallback = isGifLikeSource(src);
 
   useEffect(() => {
     requestTokenRef.current += 1;
@@ -170,7 +177,7 @@ export function SafeImage({
     networkAttemptedRef.current = false;
 
     const captureKey = buildCaptureKey(captureTabId, captureCandidateId);
-    const cachedCapture = getCachedObjectUrl(captureKey);
+    const cachedCapture = preferNetworkFallback ? undefined : getCachedObjectUrl(captureKey);
     if (cachedCapture) {
       dispatchState({ type: 'sync-source', sourceKey, resolvedSrc: cachedCapture });
       return;
@@ -182,7 +189,7 @@ export function SafeImage({
       sourceKey,
       resolvedSrc: getCachedObjectUrl(networkKey) || src,
     });
-  }, [captureCandidateId, captureTabId, referrer, sourceKey, src]);
+  }, [captureCandidateId, captureTabId, preferNetworkFallback, referrer, sourceKey, src]);
 
   const fetchFromCapture = useCallback(async (): Promise<boolean> => {
     if (!captureTabId || !captureCandidateId) return false;
@@ -258,7 +265,12 @@ export function SafeImage({
     if (loadingFallback) return;
 
     const tryFallbacks = async () => {
-      if (captureTabId && captureCandidateId && !captureAttemptedRef.current) {
+      if (preferNetworkFallback && !networkAttemptedRef.current) {
+        const loaded = await fetchFromNetwork();
+        if (loaded) return;
+      }
+
+      if (captureTabId && captureCandidateId && !captureAttemptedRef.current && !preferNetworkFallback) {
         const loaded = await fetchFromCapture();
         if (loaded) return;
       }
@@ -272,7 +284,15 @@ export function SafeImage({
     };
 
     void tryFallbacks();
-  }, [captureCandidateId, captureTabId, fetchFromCapture, fetchFromNetwork, loadingFallback, sourceKey]);
+  }, [
+    captureCandidateId,
+    captureTabId,
+    fetchFromCapture,
+    fetchFromNetwork,
+    loadingFallback,
+    preferNetworkFallback,
+    sourceKey,
+  ]);
 
   const title = captureCandidateId ? `${src}\n[candidate=${captureCandidateId}]` : src;
 
