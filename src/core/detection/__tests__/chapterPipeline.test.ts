@@ -113,6 +113,7 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('', 'https://reader.example.com/title/chapter-12.5').chapterNumber).toBe(12.5);
     expect(parseChapterIdentity('', 'https://reader.example.com/title/12/all-pages').chapterNumber).toBe(12);
     expect(parseChapterIdentity('', 'https://reader.example.com/title/ep-87').chapterNumber).toBe(87);
+    expect(parseChapterIdentity('', 'https://reader.example.com/webtoon/detail?titleId=77&no=19').chapterNumber).toBe(19);
   });
 
   it('rejects common navigation and footer links from chapter collection', () => {
@@ -135,5 +136,40 @@ describe('chapter detection helpers', () => {
     expect(candidates.some((candidate) => candidate.label === 'Contact')).toBe(false);
     expect(candidates.some((candidate) => candidate.label === 'Latest Release')).toBe(false);
     expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('extracts chapter candidates from select options used by many readers', () => {
+    document.body.innerHTML = `
+      <select id="chapter-select" name="chapter">
+        <option value="/series/chapter-9">Chapter 9</option>
+        <option value="/series/chapter-10" selected>Chapter 10</option>
+        <option value="/series/chapter-11">Chapter 11</option>
+      </select>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/chapter-10',
+      'https://reader.example.com/series/chapter-10'
+    );
+
+    expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
+    expect(candidates.some((candidate) => candidate.relation === 'current')).toBe(true);
+  });
+
+  it('extracts previous/next from link rel tags', () => {
+    document.head.innerHTML = `
+      <link rel="prev" href="https://reader.example.com/series/chapter-9" />
+      <link rel="next" href="https://reader.example.com/series/chapter-11" />
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/chapter-10',
+      'https://reader.example.com/series/chapter-10'
+    );
+
+    expect(candidates.some((candidate) => candidate.relation === 'previous')).toBe(true);
+    expect(candidates.some((candidate) => candidate.relation === 'next')).toBe(true);
   });
 });

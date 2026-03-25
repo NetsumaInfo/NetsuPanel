@@ -42,6 +42,36 @@ function bestNavigationCandidate(
     .sort((left, right) => right.score - left.score)[0];
 }
 
+function inferNavigationByChapterNumber(
+  candidates: ChapterLinkCandidate[],
+  current: ChapterLinkCandidate,
+  relation: 'previous' | 'next'
+): ChapterLinkCandidate | undefined {
+  if (current.chapterNumber === null) return undefined;
+
+  const numbered = candidates
+    .filter(
+      (candidate) =>
+        candidate.chapterNumber !== null &&
+        candidate.canonicalUrl !== current.canonicalUrl &&
+        candidate.relation !== 'listing'
+    )
+    .sort((left, right) => {
+      if (left.chapterNumber === null || right.chapterNumber === null) return 0;
+      return left.chapterNumber - right.chapterNumber;
+    });
+
+  if (numbered.length === 0) return undefined;
+
+  if (relation === 'previous') {
+    return [...numbered]
+      .reverse()
+      .find((candidate) => (candidate.chapterNumber ?? Number.POSITIVE_INFINITY) < current.chapterNumber!);
+  }
+
+  return numbered.find((candidate) => (candidate.chapterNumber ?? Number.NEGATIVE_INFINITY) > current.chapterNumber!);
+}
+
 function buildCurrentCandidate(page: PageIdentity): ChapterLinkCandidate {
   const identity = parseChapterIdentity(page.title, page.url);
   return {
@@ -122,12 +152,33 @@ export function buildMangaLinkMap(
     });
   }
 
+  const explicitPrevious = bestNavigationCandidate(deduped, 'previous');
+  const explicitNext = bestNavigationCandidate(deduped, 'next');
+  const previous = explicitPrevious || inferNavigationByChapterNumber(deduped, current, 'previous');
+  const next = explicitNext || inferNavigationByChapterNumber(deduped, current, 'next');
+
+  if (!explicitPrevious && previous) {
+    diagnostics.push({
+      code: 'navigation-previous-inferred',
+      message: `Previous chapter inferred from chapter number (${previous.chapterNumber ?? '?'})`,
+      level: 'info',
+    });
+  }
+
+  if (!explicitNext && next) {
+    diagnostics.push({
+      code: 'navigation-next-inferred',
+      message: `Next chapter inferred from chapter number (${next.chapterNumber ?? '?'})`,
+      level: 'info',
+    });
+  }
+
   return {
     chapters,
     navigation: {
       current,
-      previous: bestNavigationCandidate(deduped, 'previous'),
-      next: bestNavigationCandidate(deduped, 'next'),
+      previous,
+      next,
       listing: bestNavigationCandidate(deduped, 'listing'),
     },
     diagnostics,

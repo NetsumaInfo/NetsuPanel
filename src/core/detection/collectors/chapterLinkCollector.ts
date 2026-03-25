@@ -3,20 +3,24 @@ import { compactWhitespace } from '@shared/utils/strings';
 import { resolveUrl, sameHost } from '@shared/utils/url';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 
-const CHAPTER_HINT_RE = /(?:^|\b)(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|part|vol\.?)\b/i;
+const CHAPTER_HINT_RE =
+  /(?:^|\b)(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|part|vol\.?|capitulo|capitolo|scan|회|话|話)\b/i;
 const LISTING_HINT_RE =
-  /(all chapters|chapter list|chapters|volumes|table of contents|toc|manga info|series)/i;
+  /(all chapters|chapter list|chapters|volumes|table of contents|toc|manga info|liste des chapitres|chapters list|all episodes)/i;
 const LISTING_PATH_RE =
-  /(?:all-chapters|chapter-list|chapters|volumes|manga-info|table-of-contents|toc)(?:$|[/?#_-])/i;
-const PREVIOUS_HINT_RE = /(prev|previous|older|back|<<|‹|←)/i;
-const NEXT_HINT_RE = /(next|newer|forward|>>|›|→)/i;
+  /(?:all-chapters|chapter-list|chapters|volumes|manga-info|table-of-contents|toc|chapters-list|manga\/[^/]+\/?$)(?:$|[/?#_-])/i;
+const PREVIOUS_HINT_RE = /(prev|previous|older|back|precedent|pr[eé]c[eé]dent|<<|‹|←)/i;
+const NEXT_HINT_RE = /(next|newer|forward|suivant|>>|›|→)/i;
 const BAD_LINK_RE = /(?:login|signup|register|discord|facebook|twitter|instagram|privacy|terms|about|contact|dmca)/i;
 const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan)/i;
-const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment|sidebar)/i;
+const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {
-  const rel = anchor.getAttribute('rel') || '';
+  const rel = (anchor.getAttribute('rel') || '').toLowerCase();
   const href = anchor.href || '';
+  const classes = `${anchor.className || ''} ${anchor.id || ''}`.toLowerCase();
+  const listingHints = `${label} ${classes}`.trim();
+  const navigationHints = `${label} ${href} ${classes}`.trim();
   const listingByPath = (() => {
     try {
       return LISTING_PATH_RE.test(new URL(href).pathname);
@@ -25,9 +29,12 @@ function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRe
     }
   })();
 
-  if (LISTING_HINT_RE.test(label) || listingByPath) return 'listing';
-  if (rel.includes('prev') || PREVIOUS_HINT_RE.test(`${label} ${href}`)) return 'previous';
-  if (rel.includes('next') || NEXT_HINT_RE.test(`${label} ${href}`)) return 'next';
+  if (rel.includes('canonical') || rel.includes('alternate')) return 'candidate';
+  if (rel.includes('prev')) return 'previous';
+  if (rel.includes('next')) return 'next';
+  if (LISTING_HINT_RE.test(listingHints) || listingByPath) return 'listing';
+  if (PREVIOUS_HINT_RE.test(navigationHints)) return 'previous';
+  if (NEXT_HINT_RE.test(navigationHints)) return 'next';
   return 'candidate';
 }
 
@@ -49,6 +56,7 @@ function computeScore(
   if (CHAPTER_HINT_RE.test(label) || CHAPTER_HINT_RE.test(href)) score += 30;
   if (CHAPTER_PATH_RE.test(href)) score += 18;
   if (relation === 'listing') score += 18;
+  if (relation === 'current') score += 14;
   if (relation === 'next' || relation === 'previous') score += 14;
   if (label.length >= 2 && label.length <= 60) score += 6;
   if (chapterNumber !== null) score += 15;
@@ -95,6 +103,23 @@ function buildContainerSignature(anchor: Element): string {
   return segments.join('>');
 }
 
+function relationFromHints(input: string): Exclude<ChapterRelation, 'current'> {
+  if (PREVIOUS_HINT_RE.test(input)) return 'previous';
+  if (NEXT_HINT_RE.test(input)) return 'next';
+  if (LISTING_HINT_RE.test(input) || LISTING_PATH_RE.test(input)) return 'listing';
+  return 'candidate';
+}
+
+function extractOptionUrl(option: HTMLOptionElement, baseUrl: string): string | null {
+  const rawValue =
+    option.getAttribute('value') ||
+    option.getAttribute('data-href') ||
+    option.getAttribute('data-url') ||
+    '';
+  if (!rawValue || rawValue.startsWith('#')) return null;
+  return resolveUrl(rawValue, baseUrl);
+}
+
 export function collectChapterLinks(
   root: ParentNode,
   baseUrl: string,
@@ -102,6 +127,10 @@ export function collectChapterLinks(
 ): ChapterLinkCandidate[] {
   const anchors = [...root.querySelectorAll<HTMLAnchorElement>('a[href]')];
   const dataHrefElements = [...root.querySelectorAll<HTMLElement>('[data-href], [data-url], [data-next], [data-prev]')];
+  const relationLinks = [...root.querySelectorAll<HTMLLinkElement>('link[rel][href]')];
+  const chapterOptions = [
+    ...root.querySelectorAll<HTMLOptionElement>('select option[value], select option[data-href], select option[data-url]'),
+  ];
   const results: ChapterLinkCandidate[] = [];
 
   anchors.forEach((anchor, index) => {
@@ -188,6 +217,85 @@ export function collectChapterLinks(
 
     results.push({
       id: `chapter-data-link-${index}`,
+      url: resolvedUrl,
+      canonicalUrl: resolvedUrl.split('#')[0],
+      label: identity.label,
+      relation,
+      score,
+      chapterNumber: identity.chapterNumber,
+      volumeNumber: identity.volumeNumber,
+      containerSignature,
+      diagnostics: [],
+    });
+  });
+
+  relationLinks.forEach((link, index) => {
+    const resolvedUrl = resolveUrl(link.getAttribute('href') || '', baseUrl);
+    if (!resolvedUrl) return;
+
+    const label = compactWhitespace(
+      `${link.getAttribute('title') || ''} ${link.getAttribute('rel') || ''}`.trim()
+    );
+    const relation = relationFromHints(`${label} ${resolvedUrl} ${link.getAttribute('rel') || ''}`);
+    if (relation !== 'previous' && relation !== 'next' && relation !== 'listing') {
+      return;
+    }
+
+    const identity = parseChapterIdentity(label, resolvedUrl);
+    const score =
+      computeScore(
+        identity.label,
+        currentUrl,
+        resolvedUrl,
+        relation,
+        identity.chapterNumber,
+        'head:link-rel'
+      ) + 14;
+    if (score < 8) return;
+
+    results.push({
+      id: `chapter-rel-link-${index}`,
+      url: resolvedUrl,
+      canonicalUrl: resolvedUrl.split('#')[0],
+      label: identity.label || relation,
+      relation,
+      score,
+      chapterNumber: identity.chapterNumber,
+      volumeNumber: identity.volumeNumber,
+      containerSignature: 'head:link-rel',
+      diagnostics: [],
+    });
+  });
+
+  chapterOptions.forEach((option, index) => {
+    const resolvedUrl = extractOptionUrl(option, baseUrl);
+    if (!resolvedUrl) return;
+
+    const select = option.closest('select');
+    const selectHint = compactWhitespace(
+      `${select?.getAttribute('name') || ''} ${select?.id || ''} ${select?.className || ''}`
+    );
+    const label = compactWhitespace(option.textContent || option.label || '');
+    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl)) {
+      return;
+    }
+
+    const relation = option.selected ? 'current' : relationFromHints(`${label} ${selectHint} ${resolvedUrl}`);
+    const identity = parseChapterIdentity(label || selectHint, resolvedUrl);
+    const containerSignature = buildContainerSignature(option);
+    const score =
+      computeScore(
+        identity.label,
+        currentUrl,
+        resolvedUrl,
+        relation,
+        identity.chapterNumber,
+        containerSignature
+      ) + (CHAPTER_HINT_RE.test(selectHint) ? 20 : 10);
+    if (score < 12) return;
+
+    results.push({
+      id: `chapter-select-option-${index}`,
       url: resolvedUrl,
       canonicalUrl: resolvedUrl.split('#')[0],
       label: identity.label,

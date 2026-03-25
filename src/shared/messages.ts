@@ -55,11 +55,13 @@ export interface GetSourceContextResponse {
 }
 
 export interface FetchDocumentResponse {
-  html: string;
+  html?: string;
+  error?: string;
 }
 
 export interface FetchBinaryResponse {
-  resource: FetchBinaryResult;
+  resource?: FetchBinaryResult;
+  error?: string;
 }
 
 export interface CaptureImageResponse {

@@ -44,7 +44,11 @@ export async function fetchDocument(url: string, options: FetchDocumentOptions =
     referrer: options.referrer,
     tabId: options.tabId,
   } satisfies FetchDocumentRequest);
-  return response.html as string;
+  const html = response.html as string | undefined;
+  if (typeof html === 'string') {
+    return html;
+  }
+  throw new Error((response.error as string | undefined) || 'Document fetch failed');
 }
 
 export async function fetchBinary(url: string, options: FetchBinaryOptions = {}): Promise<FetchBinaryResult> {
@@ -55,6 +59,9 @@ export async function fetchBinary(url: string, options: FetchBinaryOptions = {})
     headers: options.headers,
     tabId: options.tabId,
   } satisfies FetchBinaryRequest);
+  if (!response.resource) {
+    throw new Error((response.error as string | undefined) || 'Image fetch failed');
+  }
   const resource = response.resource as FetchBinaryResult;
   return {
     ...resource,

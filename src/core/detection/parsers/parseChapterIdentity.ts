@@ -3,6 +3,7 @@ import { compactWhitespace } from '@shared/utils/strings';
 const CHAPTER_RE = /(chapter|chapitre|chap|ch\.?|episode|ep\.?|capitulo|cap\.?|raw)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const VOLUME_RE = /(volume|vol\.?)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const NUMERIC_RE = /(^|[^a-z0-9])([0-9]{1,4}(?:\.[0-9]+)?)(?=[^a-z0-9]|$)/i;
+const CHAPTER_QUERY_KEYS = ['chapter', 'chap', 'ch', 'episode', 'ep', 'no', 'episode_no', 'cid'] as const;
 const CHAPTER_PATH_PATTERNS = [
   /(?:^|\/)(?:chapter|chapitre|chap|ch|episode|ep|capitulo|capitolo|cap|raw)[-_/ ]*([0-9]+(?:\.[0-9]+)?)(?=$|[/?#._-])/i,
   /(?:^|\/)([0-9]+(?:\.[0-9]+)?)(?=$|\/(?:all-pages?|read|viewer|page-\d+)|[?#])/i,
@@ -14,7 +15,28 @@ export interface ParsedChapterIdentity {
   volumeNumber: number | null;
 }
 
+function parseFromQuery(url: string): number | null {
+  try {
+    const parsed = new URL(url);
+    for (const key of CHAPTER_QUERY_KEYS) {
+      const value = parsed.searchParams.get(key);
+      if (!value) continue;
+      const match = value.match(/[0-9]+(?:\.[0-9]+)?/);
+      if (match) return Number(match[0]);
+    }
+  } catch {
+    // Ignore URL parse errors.
+  }
+
+  return null;
+}
+
 function parseFromPath(url: string): number | null {
+  const fromQuery = parseFromQuery(url);
+  if (fromQuery !== null) {
+    return fromQuery;
+  }
+
   const decoded = decodeURIComponent(url);
   for (const pattern of CHAPTER_PATH_PATTERNS) {
     const match = decoded.match(pattern);

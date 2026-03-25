@@ -225,64 +225,88 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
       return { scan };
     }
 
-    case RuntimeMessageType.FetchDocument:
-      if (message.tabId) {
-        try {
-          const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
-          return { html: pageWorldDocument.html };
-        } catch (pageWorldErr) {
-          console.debug('[NetsuPanel] Page-world document fetch failed:', (pageWorldErr as Error).message);
+    case RuntimeMessageType.FetchDocument: {
+      if (!/^https?:\/\//i.test(message.url)) {
+        return {
+          error: `Unsupported URL scheme for document fetch: ${message.url}`,
+        };
+      }
+      try {
+        if (message.tabId) {
           try {
-            const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
-            return {
-              html: (contentDocument as { html: string }).html,
-            };
-          } catch (contentErr) {
-            console.debug('[NetsuPanel] Content-script document fetch failed:', (contentErr as Error).message);
+            const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
+            return { html: pageWorldDocument.html };
+          } catch (pageWorldErr) {
+            console.debug('[NetsuPanel] Page-world document fetch failed:', (pageWorldErr as Error).message);
+            try {
+              const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
+              return {
+                html: (contentDocument as { html: string }).html,
+              };
+            } catch (contentErr) {
+              console.debug('[NetsuPanel] Content-script document fetch failed:', (contentErr as Error).message);
+            }
           }
         }
+        return {
+          html: await fetchDocumentHtml(message.url, { referrer: message.referrer }),
+        };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : 'Document fetch failed',
+        };
       }
-      return {
-        html: await fetchDocumentHtml(message.url, { referrer: message.referrer }),
-      };
+    }
 
-    case RuntimeMessageType.FetchBinary:
-      if (message.tabId) {
-        try {
-          const pageWorldResource = await fetchBinaryViaPageWorld(
-            message.tabId,
-            message.url,
-            message.referrer,
-            message.headers
-          );
-          return {
-            resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
-          };
-        } catch (pageWorldErr) {
-          console.debug('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
+    case RuntimeMessageType.FetchBinary: {
+      if (!/^https?:\/\//i.test(message.url)) {
+        return {
+          error: `Unsupported URL scheme for binary fetch: ${message.url}`,
+        };
+      }
+      try {
+        if (message.tabId) {
           try {
-            const contentResource = await fetchBinaryViaContentScript(
+            const pageWorldResource = await fetchBinaryViaPageWorld(
               message.tabId,
               message.url,
               message.referrer,
               message.headers
             );
             return {
-              resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
+              resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
             };
-          } catch (contentErr) {
-            console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
+          } catch (pageWorldErr) {
+            console.debug('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
+            try {
+              const contentResource = await fetchBinaryViaContentScript(
+                message.tabId,
+                message.url,
+                message.referrer,
+                message.headers
+              );
+              return {
+                resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
+              };
+            } catch (contentErr) {
+              console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
+            }
           }
         }
+        return {
+          resource: serializeBinaryResource(
+            await fetchBinaryResource(message.url, {
+              referrer: message.referrer,
+              headers: message.headers,
+            })
+          ),
+        };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : 'Binary fetch failed',
+        };
       }
-      return {
-        resource: serializeBinaryResource(
-          await fetchBinaryResource(message.url, {
-            referrer: message.referrer,
-            headers: message.headers,
-          })
-        ),
-      };
+    }
 
     case RuntimeMessageType.CaptureImage: {
       await ensureContentScript(message.tabId);
