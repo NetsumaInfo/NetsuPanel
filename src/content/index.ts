@@ -326,7 +326,7 @@ async function scanCurrentPage() {
   const page = getPageIdentity();
   const readerPage = looksLikeReaderPage(page);
   let collection = await collectLiveDomImages(page.url, {
-    includeBackgroundCandidates: false,
+    includeBackgroundCandidates: true,
     includeSvgCandidates: true,
     includeMediaCandidates: true,
     includeCssRuleCandidates: false,
@@ -338,7 +338,7 @@ async function scanCurrentPage() {
     await triggerLazyLoading();
     await sleep(RECHECK_DELAY_MS);
     const afterLazy = await collectLiveDomImages(page.url, {
-      includeBackgroundCandidates: false,
+      includeBackgroundCandidates: true,
       includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
@@ -351,7 +351,7 @@ async function scanCurrentPage() {
   if (isLowCoverage(allCandidates) && isWithinBudget()) {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
-      includeBackgroundCandidates: false,
+      includeBackgroundCandidates: true,
       includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,

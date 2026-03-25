@@ -187,7 +187,7 @@ function collectBackgroundCandidates(baseUrl: string, startIndex: number): RawIm
 
   elements.forEach((element, index) => {
     const rect = element.getBoundingClientRect();
-    if (rect.width < 140 || rect.height < 140) return;
+    if (rect.width < 72 || rect.height < 72) return;
 
     const style = window.getComputedStyle(element);
     const urls = readBackgroundImageUrls(style.backgroundImage);
@@ -198,6 +198,7 @@ function collectBackgroundCandidates(baseUrl: string, startIndex: number): RawIm
       }))
       .find((descriptor) => descriptor.resolved);
     if (!selected?.resolved) return;
+    if (/^data:image\/svg\+xml/i.test(selected.resolved)) return;
 
     results.push({
       id: `background-${startIndex + index}`,
