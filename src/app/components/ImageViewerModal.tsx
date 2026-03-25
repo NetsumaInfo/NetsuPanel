@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImageCandidate, UpscalePreviewState } from '@shared/types';
+import { formatMediaMeta, resolveMediaName } from '@app/services/mediaMeta';
 import { SafeImage } from './SafeImage';
 import { ChevronDownIcon, CompareIcon, DownloadIcon, XIcon } from './icons';
 
@@ -85,6 +86,8 @@ export function ImageViewerModal({
   const currentIndex = clampIndex(index, items.length);
   const currentItem = items[currentIndex];
   const previewMatches = preview?.sourceImageId === currentItem?.id;
+  const headerMediaName = currentItem ? resolveMediaName(currentItem) : title;
+  const headerMediaMeta = currentItem ? formatMediaMeta(currentItem) : '';
 
   const resolveHandlePosition = useCallback((clientX: number, clientY: number): HandlePosition | null => {
     const rect = compareRef.current?.getBoundingClientRect();
@@ -248,7 +251,8 @@ export function ImageViewerModal({
       <div className="relative flex h-auto max-h-[94vh] w-full max-w-[1160px] flex-col overflow-visible rounded-[28px] border border-border bg-white shadow-[0_22px_60px_rgba(15,17,23,0.10)]">
         <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold text-ink">{title}</p>
+            <p className="truncate text-[15px] font-semibold text-ink" title={headerMediaName}>{headerMediaName}</p>
+            <p className="truncate text-[11px] text-muted" title={headerMediaMeta}>{headerMediaMeta}</p>
           </div>
 
           <div className="flex items-center gap-2">

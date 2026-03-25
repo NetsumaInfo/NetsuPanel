@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import type { GeneralImageSection } from '@app/services/generalImageView';
-import { resolveGeneralImageType } from '@app/services/generalImageView';
+import { formatMediaMeta, resolveMediaName } from '@app/services/mediaMeta';
 import { SafeImage } from './SafeImage';
 import { CheckIcon, DownloadIcon, ImageIcon } from './icons';
 
@@ -22,43 +22,6 @@ interface GeneralGridProps {
 
 const INITIAL_RENDER_COUNT = 72;
 const RENDER_BATCH_SIZE = 48;
-
-const TYPE_LABELS: Record<string, string> = {
-  jpeg: 'JPEG',
-  png: 'PNG',
-  webp: 'WEBP',
-  avif: 'AVIF',
-  gif: 'GIF',
-  svg: 'SVG',
-  canvas: 'CANVAS',
-  poster: 'POSTER',
-  unknown: 'AUTRE',
-};
-
-function formatEstimatedWeight(candidate: ImageCandidate): string {
-  if (candidate.width <= 0 || candidate.height <= 0) return 'poids ?';
-  const area = candidate.width * candidate.height;
-  const type = resolveGeneralImageType(candidate);
-  const ratio =
-    type === 'jpeg' ? 0.18 :
-    type === 'png' ? 0.42 :
-    type === 'webp' ? 0.14 :
-    type === 'avif' ? 0.1 :
-    type === 'gif' ? 0.24 :
-    type === 'svg' ? 0.06 :
-    0.2;
-  const bytes = Math.max(256, Math.round(area * ratio));
-  if (bytes >= 1024 * 1024) return `~${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  return `~${Math.max(0.1, bytes / 1024).toFixed(1)} KB`;
-}
-
-function formatCardMeta(candidate: ImageCandidate): string {
-  const type = TYPE_LABELS[resolveGeneralImageType(candidate)] || 'AUTRE';
-  const dimensions = candidate.width > 0 && candidate.height > 0
-    ? `${candidate.width}×${candidate.height}`
-    : 'dimensions ?';
-  return `${type} • ${dimensions} • ${formatEstimatedWeight(candidate)}`;
-}
 
 export function GeneralGrid({
   items,
@@ -213,8 +176,11 @@ export function GeneralGrid({
                       />
 
                       <div className="border-t border-border/50 bg-white px-2 py-1.5">
-                        <p className="truncate text-2xs text-muted" title={item.filenameHint}>
-                          {formatCardMeta(item)}
+                        <p className="truncate text-2xs font-medium text-ink" title={resolveMediaName(item)}>
+                          {resolveMediaName(item)}
+                        </p>
+                        <p className="truncate text-2xs text-muted" title={formatMediaMeta(item)}>
+                          {formatMediaMeta(item)}
                         </p>
                       </div>
 
