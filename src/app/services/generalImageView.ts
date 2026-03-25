@@ -104,11 +104,11 @@ export function resolveGeneralImageType(item: ImageCandidate): Exclude<GeneralIm
     textHintToType(item.url) ||
     textHintToType(item.previewUrl);
 
+  if (sourceKind.includes('svg') || extensionType === 'svg' || mimeType === 'svg' || textType === 'svg') return 'svg';
+  if (sourceKind.includes('gif') || extensionType === 'gif' || mimeType === 'gif' || textType === 'gif') return 'gif';
   if (sourceKind.includes('canvas')) return 'canvas';
   if (sourceKind.includes('video-poster')) return 'poster';
   if (sourceKind.includes('background')) return 'background';
-  if (sourceKind.includes('svg') || extensionType === 'svg' || mimeType === 'svg' || textType === 'svg') return 'svg';
-  if (sourceKind.includes('gif') || extensionType === 'gif' || mimeType === 'gif' || textType === 'gif') return 'gif';
 
   return extensionType;
 }

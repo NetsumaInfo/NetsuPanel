@@ -230,9 +230,16 @@ export function SafeImage({
     networkAttemptedRef.current = true;
 
     try {
-      const resource = await withNetworkFallbackSlot(() =>
-        fetchBinary(src, { referrer, tabId: captureTabId })
-      );
+      let resource;
+      try {
+        resource = await withNetworkFallbackSlot(() =>
+          fetchBinary(src, { referrer, tabId: captureTabId })
+        );
+      } catch {
+        resource = await withNetworkFallbackSlot(() =>
+          fetchBinary(src, { tabId: captureTabId })
+        );
+      }
       const objectUrl = URL.createObjectURL(new Blob([resource.bytes], { type: resource.mime || 'image/jpeg' }));
       setCachedObjectUrl(cacheKey, objectUrl);
 
