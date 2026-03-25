@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
@@ -7,6 +7,13 @@ import { GeneralGrid } from '@app/components/GeneralGrid';
 import { ImageViewerModal } from '@app/components/ImageViewerModal';
 import { useNetsuController } from '@app/hooks/useNetsuController';
 import { useWindowWidth } from '@app/hooks/useWindowWidth';
+import {
+  applyGeneralImageView,
+  buildGeneralTypeOptions,
+  getGeneralSortOptions,
+  type GeneralImageSortMode,
+  type GeneralImageTypeFilter,
+} from '@app/services/generalImageView';
 
 interface AutoUiSettings {
   thumbnailSize: number;
@@ -20,6 +27,8 @@ interface ViewerState {
   referrer?: string;
   sourceTabId?: number;
 }
+
+const EMPTY_IMAGES: ImageCandidate[] = [];
 
 function resolveAutoUiSettings(windowWidth: number): AutoUiSettings {
   if (windowWidth < 920) {
@@ -69,6 +78,8 @@ export function App() {
   const controller = useNetsuController();
   const { state } = controller;
   const windowWidth = useWindowWidth();
+  const [generalTypeFilter, setGeneralTypeFilter] = useState<GeneralImageTypeFilter>('all');
+  const [generalSortMode, setGeneralSortMode] = useState<GeneralImageSortMode>('page-order');
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const handleViewerCompare = useCallback(
     (candidate: ImageCandidate) => {
@@ -77,6 +88,21 @@ export function App() {
     },
     [controller.previewUpscale, viewer?.referrer]
   );
+
+  const generalItems = state.scan?.general.items ?? EMPTY_IMAGES;
+  const generalTypeOptions = useMemo(() => buildGeneralTypeOptions(generalItems), [generalItems]);
+  const generalSortOptions = useMemo(() => getGeneralSortOptions(), []);
+  const filteredGeneralItems = useMemo(
+    () => applyGeneralImageView(generalItems, generalTypeFilter, generalSortMode),
+    [generalItems, generalSortMode, generalTypeFilter]
+  );
+
+  useEffect(() => {
+    if (generalTypeOptions.some((option) => option.value === generalTypeFilter)) {
+      return;
+    }
+    setGeneralTypeFilter('all');
+  }, [generalTypeFilter, generalTypeOptions]);
 
   if (state.loading) {
     return <LoadingScreen message={state.loadingMessage || 'Initialisation…'} />;
@@ -106,11 +132,17 @@ export function App() {
       selectedGeneralCount={generalSelectedCount}
       activity={state.activity}
       mode={state.mode}
+      generalTypeFilter={generalTypeFilter}
+      generalTypeOptions={generalTypeOptions}
+      generalSortMode={generalSortMode}
+      generalSortOptions={generalSortOptions}
       upscaleEnabled={state.upscaleEnabled}
       settings={state.upscaleSettings[state.mode]}
       backendLabel={state.waifuBackendLabel}
       preview={state.upscalePreview}
       onArchiveFormatChange={controller.setArchiveFormat}
+      onGeneralTypeFilterChange={setGeneralTypeFilter}
+      onGeneralSortModeChange={setGeneralSortMode}
       onUpscaleToggle={controller.setUpscaleEnabled}
       onUpscaleSettingsChange={controller.setUpscaleSettings}
       onDownloadCurrent={() => currentChapter && void controller.downloadChapter(currentChapter)}
@@ -179,21 +211,26 @@ export function App() {
                   </>
                 ) : (
                   <GeneralGrid
-                    items={scan.general.items}
+                    items={filteredGeneralItems}
                     selected={state.generalSelection}
                     thumbnailSize={autoUi.thumbnailSize}
                     compact={autoUi.compactMode}
                     referrer={source.url}
                     sourceTabId={source.id}
                     onToggle={controller.toggleGeneralItem}
-                    onSelectAll={controller.selectAllGeneral}
+                    onSelectAll={(checked) =>
+                      controller.selectAllGeneral(
+                        checked,
+                        filteredGeneralItems.map((item) => item.id)
+                      )
+                    }
                     onDownload={() => void controller.downloadGeneral()}
                     onDownloadImage={(candidate) => void controller.downloadImage(candidate, { referrer: source.url })}
                     onOpen={(candidate) => {
                       setViewer({
                         title: source.title || 'Images détectées',
-                        items: scan.general.items,
-                        index: scan.general.items.findIndex((item) => item.id === candidate.id),
+                        items: filteredGeneralItems,
+                        index: filteredGeneralItems.findIndex((item) => item.id === candidate.id),
                         referrer: source.url,
                         sourceTabId: source.id,
                       });

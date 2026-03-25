@@ -12,6 +12,11 @@ import {
   resolveArchiveFormat,
   splitArchiveFormat,
 } from '@core/download/archiveFormats';
+import type {
+  GeneralImageSortMode,
+  GeneralImageTypeFilter,
+  GeneralSelectOption,
+} from '@app/services/generalImageView';
 import { CompactSelect } from './CompactSelect';
 import { StatusStrip } from './StatusStrip';
 import { UpscalePanel } from './UpscalePanel';
@@ -24,11 +29,17 @@ interface AppSidebarProps {
   selectedGeneralCount: number;
   activity: DownloadJobState;
   mode: AppMode;
+  generalTypeFilter: GeneralImageTypeFilter;
+  generalTypeOptions: GeneralSelectOption<GeneralImageTypeFilter>[];
+  generalSortMode: GeneralImageSortMode;
+  generalSortOptions: GeneralSelectOption<GeneralImageSortMode>[];
   upscaleEnabled: boolean;
   settings: UpscaleSettings;
   backendLabel: string;
   preview: UpscalePreviewState | null;
   onArchiveFormatChange(format: ArchiveFormat): void;
+  onGeneralTypeFilterChange(filter: GeneralImageTypeFilter): void;
+  onGeneralSortModeChange(sortMode: GeneralImageSortMode): void;
   onUpscaleToggle(enabled: boolean): void;
   onUpscaleSettingsChange(mode: AppMode, settings: Partial<UpscaleSettings>): void;
   onDownloadCurrent(): void;
@@ -43,11 +54,17 @@ export function AppSidebar({
   selectedGeneralCount,
   activity,
   mode,
+  generalTypeFilter,
+  generalTypeOptions,
+  generalSortMode,
+  generalSortOptions,
   upscaleEnabled,
   settings,
   backendLabel,
   preview,
   onArchiveFormatChange,
+  onGeneralTypeFilterChange,
+  onGeneralSortModeChange,
   onUpscaleToggle,
   onUpscaleSettingsChange,
   onDownloadCurrent,
@@ -80,6 +97,26 @@ export function AppSidebar({
           </div>
 
           <div className="mt-1 grid gap-1.5">
+            {mode === 'general' && (
+              <div className="mb-1 grid gap-1.5 rounded-xl border border-border/70 bg-[#f8f9fb] p-2">
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Type</span>
+                  <CompactSelect
+                    value={generalTypeFilter}
+                    options={generalTypeOptions}
+                    onChange={onGeneralTypeFilterChange}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tri</span>
+                  <CompactSelect
+                    value={generalSortMode}
+                    options={generalSortOptions}
+                    onChange={onGeneralSortModeChange}
+                  />
+                </div>
+              </div>
+            )}
             {mode === 'manga' && (
               <>
                 <button
