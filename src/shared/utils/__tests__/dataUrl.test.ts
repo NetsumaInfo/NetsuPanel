@@ -10,4 +10,9 @@ describe('dataUrlToBytes', () => {
   test('rejects invalid data urls', () => {
     expect(() => dataUrlToBytes('not-a-data-url')).toThrow(/invalid data url/i);
   });
+
+  test('rejects SVG data urls', () => {
+    expect(() => dataUrlToBytes('data:image/svg+xml,%3Csvg%20xmlns%3D%22http://www.w3.org/2000/svg%22%3E%3C/svg%3E'))
+      .toThrow(/unsupported data url image type/i);
+  });
 });

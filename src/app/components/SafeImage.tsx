@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { captureImage, fetchBinary } from '@app/services/runtimeClient';
+import { isSafeRenderableImageSrc } from '@shared/utils/resourcePolicy';
 
 interface SafeImageProps {
   src: string;
@@ -178,7 +179,7 @@ export function SafeImage({
     dispatchState({
       type: 'sync-source',
       sourceKey,
-      resolvedSrc: getCachedObjectUrl(networkKey) || src,
+      resolvedSrc: getCachedObjectUrl(networkKey) || (isSafeRenderableImageSrc(src) ? src : ''),
     });
   }, [captureCandidateId, captureTabId, preferNetworkFallback, referrer, sourceKey, src]);
 
@@ -257,7 +258,9 @@ export function SafeImage({
 
   const loadingFallback = state.sourceKey === sourceKey ? state.loadingFallback : false;
   const failed = state.sourceKey === sourceKey ? state.failed : false;
-  const resolvedSrc = state.sourceKey === sourceKey && state.resolvedSrc ? state.resolvedSrc : src;
+  const resolvedSrc = state.sourceKey === sourceKey && state.resolvedSrc
+    ? state.resolvedSrc
+    : (isSafeRenderableImageSrc(src) ? src : '');
 
   const handleError = useCallback(() => {
     if (loadingFallback) return;
@@ -299,6 +302,17 @@ export function SafeImage({
       <div
         className={`flex items-center justify-center bg-border/40 text-2xs text-muted ${className ?? ''}`}
         title={title}
+      >
+        ✗
+      </div>
+    );
+  }
+
+  if (!resolvedSrc) {
+    return (
+      <div
+        className={`flex items-center justify-center bg-border/40 text-2xs text-muted ${className ?? ''}`}
+        title={`${title}\n[blocked unsafe image source]`}
       >
         ✗
       </div>

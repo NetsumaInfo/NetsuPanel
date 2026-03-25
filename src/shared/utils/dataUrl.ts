@@ -1,3 +1,5 @@
+import { isSupportedFetchedImageMime } from './resourcePolicy';
+
 export function dataUrlToBytes(dataUrl: string): { bytes: ArrayBuffer; mime: string } {
   const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,(.*)$/i);
   if (!match) {
@@ -5,6 +7,9 @@ export function dataUrlToBytes(dataUrl: string): { bytes: ArrayBuffer; mime: str
   }
 
   const mime = match[1] || 'image/png';
+  if (!isSupportedFetchedImageMime(mime)) {
+    throw new Error(`Unsupported data URL image type: ${mime}`);
+  }
   const payload = match[3] || '';
 
   if (match[2]) {

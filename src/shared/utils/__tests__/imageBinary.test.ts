@@ -15,10 +15,10 @@ describe('validateBinaryImage', () => {
     expect(result.reason).toMatch(/expected image bytes/i);
   });
 
-  test('accepts SVG when declared as image/svg+xml', () => {
+  test('rejects SVG even when declared as image/svg+xml', () => {
     const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     const result = validateBinaryImage(svg.buffer, 'image/svg+xml');
-    expect(result.valid).toBe(true);
-    expect(result.mime).toBe('image/svg+xml');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/unsupported image format/i);
   });
 });

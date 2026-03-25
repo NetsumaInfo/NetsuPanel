@@ -3,6 +3,7 @@ import type { ContentRequest } from '@shared/messages';
 import { ContentMessageType } from '@shared/messages';
 import { browser } from '@shared/browser';
 import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBinary';
+import { normalizeHttpUrl, sanitizeRequestHeaders } from '@shared/utils/resourcePolicy';
 import { collectLiveDomImages, type CapturableNode } from '@core/detection/collectors/liveDomImageCollector';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
@@ -176,26 +177,29 @@ async function fetchBinaryFromPage(
   referrer?: string,
   headers?: Record<string, string>
 ): Promise<FetchBinaryResult> {
-  if (!isFetchableHttpUrl(url)) {
+  const normalizedUrl = normalizeHttpUrl(url);
+  const normalizedReferrer = normalizeHttpUrl(referrer) || undefined;
+  if (!normalizedUrl || !isFetchableHttpUrl(normalizedUrl)) {
     throw new Error(`Unsupported URL scheme for binary fetch: ${url}`);
   }
-  if (shouldAvoidPageContextFetch(url, referrer)) {
-    throw new Error(`Mixed content blocked in page context: ${url}`);
+  if (shouldAvoidPageContextFetch(normalizedUrl, normalizedReferrer)) {
+    throw new Error(`Mixed content blocked in page context: ${normalizedUrl}`);
   }
 
-  const normalizedReferrer = normalizeReferrer(url, referrer);
+  const effectiveReferrer = normalizeReferrer(normalizedUrl, normalizedReferrer);
+  const sanitizedHeaders = sanitizeRequestHeaders(headers);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < FETCH_RETRY_DELAYS.length + 1; attempt += 1) {
     try {
-      const response = await fetch(url, {
+      const response = await fetch(normalizedUrl, {
         credentials: 'include',
-        referrer: normalizedReferrer,
+        referrer: effectiveReferrer,
         referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
           Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
           'Accept-Language': getAcceptLanguageHeader(),
-          ...(headers || {}),
+          ...(sanitizedHeaders || {}),
         },
       });
 
@@ -213,7 +217,7 @@ async function fetchBinaryFromPage(
       return {
         bytes,
         mime: validation.mime,
-        finalUrl: response.url || url,
+        finalUrl: response.url || normalizedUrl,
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Binary fetch failed');
@@ -227,21 +231,23 @@ async function fetchBinaryFromPage(
 }
 
 async function fetchDocumentFromPage(url: string, referrer?: string): Promise<string> {
-  if (!isFetchableHttpUrl(url)) {
+  const normalizedUrl = normalizeHttpUrl(url);
+  const normalizedReferrer = normalizeHttpUrl(referrer) || undefined;
+  if (!normalizedUrl || !isFetchableHttpUrl(normalizedUrl)) {
     throw new Error(`Unsupported URL scheme for document fetch: ${url}`);
   }
-  if (shouldAvoidPageContextFetch(url, referrer)) {
-    throw new Error(`Mixed content blocked in page context: ${url}`);
+  if (shouldAvoidPageContextFetch(normalizedUrl, normalizedReferrer)) {
+    throw new Error(`Mixed content blocked in page context: ${normalizedUrl}`);
   }
 
-  const normalizedReferrer = normalizeReferrer(url, referrer);
+  const effectiveReferrer = normalizeReferrer(normalizedUrl, normalizedReferrer);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < FETCH_RETRY_DELAYS.length + 1; attempt += 1) {
     try {
-      const response = await fetch(url, {
+      const response = await fetch(normalizedUrl, {
         credentials: 'include',
-        referrer: normalizedReferrer,
+        referrer: effectiveReferrer,
         referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

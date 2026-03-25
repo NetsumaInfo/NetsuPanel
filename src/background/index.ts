@@ -3,6 +3,7 @@ import { ContentMessageType, RuntimeMessageType } from '@shared/messages';
 import { browser } from '@shared/browser';
 import { coerceArrayBuffer, serializeArrayBuffer } from '@shared/utils/binaryTransfer';
 import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBinary';
+import { normalizeHttpUrl, sanitizeRequestHeaders } from '@shared/utils/resourcePolicy';
 import { fetchBinaryResource, fetchDocumentHtml } from './fetch';
 
 const LAST_SOURCE_TAB_ID_KEY = 'lastSourceTabId';
@@ -72,7 +73,7 @@ async function fetchBinaryViaContentScript(
     type: ContentMessageType.FetchBinary,
     url,
     referrer,
-    headers,
+    headers: sanitizeRequestHeaders(headers),
   });
 }
 
@@ -91,6 +92,7 @@ async function fetchBinaryViaPageWorld(
   referrer?: string,
   headers?: Record<string, string>
 ) {
+  const sanitizedHeaders = sanitizeRequestHeaders(headers);
   const results = await browser.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
@@ -136,7 +138,7 @@ async function fetchBinaryViaPageWorld(
         finalUrl: response.url || fetchUrl,
       };
     },
-    args: [url, referrer, headers],
+    args: [url, referrer, sanitizedHeaders],
   });
   const result = results[0]?.result as PageWorldBinaryResult | undefined;
   if (!result?.ok || !result.bytes || !result.mime || !result.finalUrl) {
@@ -322,7 +324,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
       if (message.tabId !== undefined && !isFiniteTabId(message.tabId)) {
         return { error: 'Invalid tab identifier.' };
       }
-      if (!/^https?:\/\//i.test(message.url)) {
+      const normalizedUrl = normalizeHttpUrl(message.url);
+      const normalizedReferrer = normalizeHttpUrl(message.referrer);
+      const sanitizedHeaders = sanitizeRequestHeaders(message.headers);
+      if (!normalizedUrl) {
         return {
           error: `Unsupported URL scheme for binary fetch: ${message.url}`,
         };
@@ -332,9 +337,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
           try {
             const pageWorldResource = await fetchBinaryViaPageWorld(
               message.tabId,
-              message.url,
-              message.referrer,
-              message.headers
+              normalizedUrl,
+              normalizedReferrer || undefined,
+              sanitizedHeaders
             );
             return {
               resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
@@ -344,9 +349,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
             try {
               const contentResource = await fetchBinaryViaContentScript(
                 message.tabId,
-                message.url,
-                message.referrer,
-                message.headers
+                normalizedUrl,
+                normalizedReferrer || undefined,
+                sanitizedHeaders
               );
               return {
                 resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
@@ -359,8 +364,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
         return {
           resource: serializeBinaryResource(
             await fetchBinaryResource(message.url, {
-              referrer: message.referrer,
-              headers: message.headers,
+              referrer: normalizedReferrer || undefined,
+              headers: sanitizedHeaders,
             })
           ),
         };

@@ -1,3 +1,5 @@
+import { isSupportedFetchedImageMime } from './resourcePolicy';
+
 const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const GIF_SIGNATURE = [0x47, 0x49, 0x46];
@@ -78,14 +80,17 @@ export function validateBinaryImage(
   const bytes = new Uint8Array(arrayBuffer);
   const detectedMime = detectMimeFromBytes(bytes);
   if (detectedMime) {
+    if (!isSupportedFetchedImageMime(detectedMime)) {
+      return {
+        valid: false,
+        mime: detectedMime,
+        reason: `Unsupported image format (${detectedMime}).`,
+      };
+    }
     return { valid: true, mime: detectedMime };
   }
 
   const normalizedMime = normalizeMime(declaredMime);
-  if (normalizedMime === 'image/svg+xml') {
-    return { valid: true, mime: normalizedMime };
-  }
-
   if (looksLikeTextPayload(bytes)) {
     return {
       valid: false,
@@ -94,14 +99,14 @@ export function validateBinaryImage(
     };
   }
 
-  if (normalizedMime?.startsWith('image/')) {
+  if (normalizedMime && isSupportedFetchedImageMime(normalizedMime)) {
     return { valid: true, mime: normalizedMime };
   }
 
   return {
     valid: false,
     mime: normalizedMime || 'image/jpeg',
-    reason: `Unexpected binary payload (${normalizedMime || 'unknown mime'}).`,
+    reason: `Unexpected or unsupported binary payload (${normalizedMime || 'unknown mime'}).`,
   };
 }
 

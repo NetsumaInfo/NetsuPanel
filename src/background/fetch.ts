@@ -1,5 +1,6 @@
 import type { FetchBinaryResult } from '@shared/types';
 import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBinary';
+import { normalizeHttpUrl, sanitizeRequestHeaders } from '@shared/utils/resourcePolicy';
 
 const RETRYABLE_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS = [200, 500, 1200];
@@ -141,8 +142,14 @@ async function fetchWithReferrerWorkaround(url: string, requestInit: RequestInit
 }
 
 async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<Response> {
+  const normalizedUrl = normalizeHttpUrl(url);
+  if (!normalizedUrl) {
+    throw new Error(`Unsupported URL scheme for request: ${url}`);
+  }
+
   let lastError: Error | null = null;
-  const normalizedReferrer = normalizeReferrer(url, options.referrer);
+  const normalizedReferrer = normalizeReferrer(normalizedUrl, normalizeHttpUrl(options.referrer) || undefined);
+  const sanitizedHeaders = sanitizeRequestHeaders(options.headers);
 
   for (let attempt = 0; attempt < RETRY_DELAYS.length + 1; attempt += 1) {
     try {
@@ -151,14 +158,14 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
         headers: {
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': getAcceptLanguageHeader(),
-          ...(options.headers || {}),
+          ...(sanitizedHeaders || {}),
         },
       };
       if (normalizedReferrer && !getChromeDnrApi()) {
         requestInit.referrer = normalizedReferrer;
         requestInit.referrerPolicy = 'no-referrer-when-downgrade';
       }
-      const response = await fetchWithReferrerWorkaround(url, requestInit, normalizedReferrer);
+      const response = await fetchWithReferrerWorkaround(normalizedUrl, requestInit, normalizedReferrer);
       if (response.ok) {
         return response;
       }
