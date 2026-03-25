@@ -74,19 +74,41 @@ function extensionToType(extension: string): Exclude<GeneralImageTypeFilter, 'al
   if (normalized === 'webp') return 'webp';
   if (normalized === 'avif') return 'avif';
   if (normalized === 'gif') return 'gif';
-  if (normalized === 'svg') return 'svg';
+  if (normalized === 'svg' || normalized === 'svg+xml') return 'svg';
   return 'unknown';
+}
+
+function mimeToType(value: string): Exclude<GeneralImageTypeFilter, 'all'> | null {
+  const lower = value.toLowerCase();
+  if (lower.includes('image/svg+xml') || lower.includes('data:image/svg+xml')) return 'svg';
+  if (lower.includes('image/gif') || lower.includes('data:image/gif')) return 'gif';
+  return null;
+}
+
+function textHintToType(value: string): Exclude<GeneralImageTypeFilter, 'all'> | null {
+  const lower = value.toLowerCase();
+  if (/\.svg(?:$|[?#])/.test(lower) || /(?:[?&](?:format|fm|type|ext)=svg(?:\+xml)?)/.test(lower)) return 'svg';
+  if (/\.gif(?:$|[?#])/.test(lower) || /(?:[?&](?:format|fm|type|ext)=gif)/.test(lower)) return 'gif';
+  return null;
 }
 
 export function resolveGeneralImageType(item: ImageCandidate): Exclude<GeneralImageTypeFilter, 'all'> {
   const sourceKind = item.sourceKind.toLowerCase();
   const extensionType = extensionToType(item.extensionHint || '');
+  const mimeType =
+    mimeToType(item.url) ||
+    mimeToType(item.previewUrl) ||
+    mimeToType(item.extensionHint || '');
+  const textType =
+    textHintToType(item.filenameHint || '') ||
+    textHintToType(item.url) ||
+    textHintToType(item.previewUrl);
 
-  if (extensionType === 'svg' || sourceKind.includes('svg')) return 'svg';
-  if (extensionType === 'gif') return 'gif';
   if (sourceKind.includes('canvas')) return 'canvas';
   if (sourceKind.includes('video-poster')) return 'poster';
   if (sourceKind.includes('background')) return 'background';
+  if (sourceKind.includes('svg') || extensionType === 'svg' || mimeType === 'svg' || textType === 'svg') return 'svg';
+  if (sourceKind.includes('gif') || extensionType === 'gif' || mimeType === 'gif' || textType === 'gif') return 'gif';
 
   return extensionType;
 }

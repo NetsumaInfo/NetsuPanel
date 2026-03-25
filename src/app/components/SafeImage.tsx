@@ -118,21 +118,12 @@ function getCachedObjectUrl(key: string): string | undefined {
 }
 
 function setCachedObjectUrl(key: string, objectUrl: string): void {
-  const previous = objectUrlCache.get(key);
-  if (previous && previous !== objectUrl) {
-    URL.revokeObjectURL(previous);
-  }
-
   objectUrlCache.delete(key);
   objectUrlCache.set(key, objectUrl);
 
   if (objectUrlCache.size > FALLBACK_CACHE_LIMIT) {
     const oldestKey = objectUrlCache.keys().next().value as string | undefined;
     if (!oldestKey) return;
-    const oldestUrl = objectUrlCache.get(oldestKey);
-    if (oldestUrl) {
-      URL.revokeObjectURL(oldestUrl);
-    }
     objectUrlCache.delete(oldestKey);
   }
 }
@@ -270,7 +261,7 @@ export function SafeImage({
         if (loaded) return;
       }
 
-      if (captureTabId && captureCandidateId && !captureAttemptedRef.current && !preferNetworkFallback) {
+      if (captureTabId && captureCandidateId && !captureAttemptedRef.current) {
         const loaded = await fetchFromCapture();
         if (loaded) return;
       }

@@ -46,6 +46,28 @@ describe('generalImageView helpers', () => {
     expect(resolveGeneralImageType(createItem({ sourceKind: 'canvas', extensionHint: '' }))).toBe('canvas');
   });
 
+  it('resolves gif and svg from data mime or url hints', () => {
+    expect(
+      resolveGeneralImageType(
+        createItem({
+          extensionHint: 'svg+xml',
+          url: 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E',
+          filenameHint: 'vector',
+        })
+      )
+    ).toBe('svg');
+
+    expect(
+      resolveGeneralImageType(
+        createItem({
+          extensionHint: 'jpg',
+          url: 'https://cdn.example.com/media/render?format=gif&id=123',
+          filenameHint: 'anim-preview',
+        })
+      )
+    ).toBe('gif');
+  });
+
   it('builds type options from available item types', () => {
     const options = buildGeneralTypeOptions([
       createItem({ id: 'jpg', extensionHint: 'jpg' }),
