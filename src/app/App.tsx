@@ -122,6 +122,17 @@ export function App() {
     container.scrollTo({ top: nextScrollTop, behavior: 'auto' });
   }, [state.mode]);
 
+  const handleModeChange = useCallback(
+    (nextMode: 'manga' | 'general') => {
+      const container = mainScrollRef.current;
+      if (container) {
+        modeScrollPositionsRef.current[state.mode] = container.scrollTop;
+      }
+      controller.setMode(nextMode);
+    },
+    [controller, state.mode]
+  );
+
   if (state.loading) {
     return <LoadingScreen message={state.loadingMessage || 'Initialisation…'} />;
   }
@@ -141,16 +152,6 @@ export function App() {
   const showDesktopSidebar = windowWidth >= 1024;
   const chapterThumbnailSize = Math.max(88, autoUi.thumbnailSize - 18);
   const mainSpacingClass = autoUi.compactMode ? 'space-y-2' : 'space-y-2.5';
-  const handleModeChange = useCallback(
-    (nextMode: 'manga' | 'general') => {
-      const container = mainScrollRef.current;
-      if (container) {
-        modeScrollPositionsRef.current[state.mode] = container.scrollTop;
-      }
-      controller.setMode(nextMode);
-    },
-    [controller, state.mode]
-  );
 
   const sidebar = (
     <AppSidebar
