@@ -1,4 +1,4 @@
-import { compactWhitespace } from '@shared/utils/strings';
+import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
 
 const CHAPTER_RE = /(chapter|chapitre|chap|ch\.?|episode|ep\.?|capitulo|cap\.?|raw)\s*([0-9]+(?:\.[0-9]+)?)/i;
 const VOLUME_RE = /(volume|vol\.?)\s*([0-9]+(?:\.[0-9]+)?)/i;
@@ -80,8 +80,8 @@ function parseFromPath(url: string): number | null {
 }
 
 export function parseChapterIdentity(label: string, url: string): ParsedChapterIdentity {
-  const normalizedLabel = compactWhitespace(
-    label || decodeURIComponent(url.split('/').filter(Boolean).pop() || url)
+  const normalizedLabel = stripChapterLabelMetadata(
+    compactWhitespace(label || decodeURIComponent(url.split('/').filter(Boolean).pop() || url))
   );
   const chapterMatch = normalizedLabel.match(CHAPTER_RE);
   const volumeMatch = normalizedLabel.match(VOLUME_RE);

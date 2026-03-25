@@ -1,5 +1,5 @@
 import type { ChapterLinkCandidate, ChapterRelation } from '@shared/types';
-import { compactWhitespace } from '@shared/utils/strings';
+import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
 import { resolveUrl, sameHost } from '@shared/utils/url';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 
@@ -103,6 +103,58 @@ function buildContainerSignature(anchor: Element): string {
   return segments.join('>');
 }
 
+function isLikelyHiddenElement(element: Element): boolean {
+  if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') {
+    return true;
+  }
+  if (element.getAttribute('data-state') === 'inactive') {
+    return true;
+  }
+  if (element instanceof HTMLElement) {
+    const style = window.getComputedStyle?.(element);
+    if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function extractChapterLabel(element: Element): string {
+  const prioritizedNodes = Array.from(
+    element.querySelectorAll(
+      [
+        '[data-chapter-title]',
+        '[class*="chapter-title"]',
+        '[class*="chapter_name"]',
+        '[class*="chapter-name"]',
+        '[class*="episode-title"]',
+        '[class*="title"]',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'strong',
+      ].join(', ')
+    )
+  );
+
+  for (const node of prioritizedNodes) {
+    const text = stripChapterLabelMetadata(compactWhitespace(node.textContent || ''));
+    if (CHAPTER_HINT_RE.test(text) || text.length <= 80) {
+      return text;
+    }
+  }
+
+  return stripChapterLabelMetadata(
+    compactWhitespace(
+      element.textContent ||
+      element.getAttribute('title') ||
+      element.getAttribute('aria-label') ||
+      ''
+    )
+  );
+}
+
 function relationFromHints(input: string): Exclude<ChapterRelation, 'current'> {
   if (PREVIOUS_HINT_RE.test(input)) return 'previous';
   if (NEXT_HINT_RE.test(input)) return 'next';
@@ -134,12 +186,11 @@ export function collectChapterLinks(
   const results: ChapterLinkCandidate[] = [];
 
   anchors.forEach((anchor, index) => {
+    if (isLikelyHiddenElement(anchor)) return;
     const resolvedUrl = resolveUrl(anchor.getAttribute('href') || '', baseUrl);
     if (!resolvedUrl) return;
 
-    const label = compactWhitespace(
-      anchor.textContent || anchor.getAttribute('title') || anchor.getAttribute('aria-label') || ''
-    );
+    const label = extractChapterLabel(anchor);
     if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !LISTING_HINT_RE.test(resolvedUrl)) {
       return;
     }
@@ -175,6 +226,7 @@ export function collectChapterLinks(
   });
 
   dataHrefElements.forEach((element, index) => {
+    if (isLikelyHiddenElement(element)) return;
     const rawHref =
       element.getAttribute('data-href') ||
       element.getAttribute('data-url') ||
@@ -184,9 +236,7 @@ export function collectChapterLinks(
     const resolvedUrl = resolveUrl(rawHref, baseUrl);
     if (!resolvedUrl) return;
 
-    const label = compactWhitespace(
-      element.textContent || element.getAttribute('title') || element.getAttribute('aria-label') || ''
-    );
+    const label = extractChapterLabel(element);
     if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl)) {
       return;
     }
@@ -268,6 +318,7 @@ export function collectChapterLinks(
   });
 
   chapterOptions.forEach((option, index) => {
+    if (isLikelyHiddenElement(option)) return;
     const resolvedUrl = extractOptionUrl(option, baseUrl);
     if (!resolvedUrl) return;
 
@@ -275,7 +326,7 @@ export function collectChapterLinks(
     const selectHint = compactWhitespace(
       `${select?.getAttribute('name') || ''} ${select?.id || ''} ${select?.className || ''}`
     );
-    const label = compactWhitespace(option.textContent || option.label || '');
+    const label = stripChapterLabelMetadata(compactWhitespace(option.textContent || option.label || ''));
     if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl)) {
       return;
     }

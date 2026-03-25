@@ -10,6 +10,7 @@ import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePip
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
 import { resolveUrl } from '@shared/utils/url';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
@@ -68,12 +69,12 @@ function collectMangagoChapterCandidates(document: ParentNode, currentUrl: strin
   anchors.forEach((anchor, index) => {
     const url = resolveUrl(anchor.getAttribute('href') || '', currentUrl);
     if (!url) return;
-    const label = (
+    const label = stripChapterLabelMetadata(compactWhitespace(
       anchor.textContent ||
       anchor.getAttribute('title') ||
       anchor.getAttribute('aria-label') ||
       ''
-    ).trim();
+    ));
     const identity = parseChapterIdentity(label, url);
     results.push({
       id: `mangago-chapter-${index}`,

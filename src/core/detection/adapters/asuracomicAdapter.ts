@@ -10,6 +10,7 @@ import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePip
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
 import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
@@ -142,12 +143,13 @@ function buildAsuraChapterCandidate(
   }
 
   const url = new URL(`/comics/${seriesSlug}/chapter/${chapter.number}`, baseUrl).href;
-  const identity = parseChapterIdentity(chapter.title || `Chapter ${chapter.number}`, url);
+  const label = stripChapterLabelMetadata(compactWhitespace(chapter.title || `Chapter ${chapter.number}`));
+  const identity = parseChapterIdentity(label, url);
   return {
     id: `asura-chapter-${relation}-${index}`,
     url,
     canonicalUrl: url.split('#')[0],
-    label: identity.label || `Chapter ${chapter.number}`,
+    label: identity.label || label || `Chapter ${chapter.number}`,
     relation: url.split('#')[0] === currentUrl.split('#')[0] ? 'current' : relation,
     score,
     chapterNumber: identity.chapterNumber,

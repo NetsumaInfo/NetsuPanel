@@ -4,6 +4,7 @@ import { collectChapterLinks } from '@core/detection/collectors/chapterLinkColle
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
+import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
 import { resolveUrl } from '@shared/utils/url';
 import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
@@ -99,12 +100,12 @@ function createMadaraChapterCandidate(
 ): ChapterLinkCandidate | null {
   const resolvedUrl = resolveUrl(anchor.getAttribute('href') || '', currentUrl);
   if (!resolvedUrl) return null;
-  const label = (
+  const label = stripChapterLabelMetadata(compactWhitespace(
     anchor.textContent ||
     anchor.getAttribute('title') ||
     anchor.getAttribute('aria-label') ||
     ''
-  ).trim();
+  ));
   const identity = parseChapterIdentity(label, resolvedUrl);
 
   return {
