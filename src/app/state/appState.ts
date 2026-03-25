@@ -34,7 +34,7 @@ export const initialAppState: NetsuAppState = {
   scan: null,
   chapters: [],
   generalSelection: {},
-  mode: 'manga',
+  mode: 'general',
   archiveFormat: 'cbz',
   loading: true,
   loadingMessage: 'Initialisation de l’onglet source…',
@@ -76,16 +76,25 @@ function buildGeneralSelection(scan: PageScanResult): Record<string, boolean> {
   return Object.fromEntries(scan.general.items.map((item) => [item.id, true]));
 }
 
-function resolvePreferredMode(scan: PageScanResult): AppMode {
-  const hasReaderPages = scan.manga.currentPages.items.length >= 2;
+export function resolvePreferredMode(scan: PageScanResult): AppMode {
+  const readerPages = scan.manga.currentPages.items;
+  const hasReaderPages = readerPages.length >= 2;
+  const hasSingleReaderPage =
+    readerPages.length === 1 &&
+    readerPages[0].width >= 520 &&
+    readerPages[0].height >= 720;
   const hasChapterList = scan.manga.chapters.length >= 2;
   const hasChapterNavigation = Boolean(
     scan.manga.navigation.previous ||
     scan.manga.navigation.next ||
     scan.manga.navigation.listing
   );
+  const siteSupportedAsReader = scan.manga.diagnostics.some((diagnostic) => diagnostic.code === 'site-support-supported');
+  const hasSpecificAdapter = scan.manga.adapterId !== 'generic';
 
-  return hasReaderPages || hasChapterList || hasChapterNavigation ? 'manga' : 'general';
+  return hasReaderPages || hasSingleReaderPage || hasChapterList || hasChapterNavigation || siteSupportedAsReader || hasSpecificAdapter
+    ? 'manga'
+    : 'general';
 }
 
 export function appReducer(state: NetsuAppState, action: AppAction): NetsuAppState {

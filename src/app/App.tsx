@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import { AppHeader } from '@app/components/AppHeader';
 import { AppSidebar } from '@app/components/AppSidebar';
@@ -85,8 +85,6 @@ export function App() {
   const [generalTypeFilter, setGeneralTypeFilter] = useState<GeneralImageTypeFilter>('all');
   const [generalSortMode, setGeneralSortMode] = useState<GeneralImageSortMode>('page-order');
   const [viewer, setViewer] = useState<ViewerState | null>(null);
-  const mainScrollRef = useRef<HTMLDivElement | null>(null);
-  const modeScrollPositionsRef = useRef<Record<'manga' | 'general', number>>({ manga: 0, general: 0 });
   const handleViewerCompare = useCallback(
     (candidate: ImageCandidate) => {
       if (!viewer?.referrer) return;
@@ -115,22 +113,11 @@ export function App() {
     setGeneralTypeFilter('all');
   }, [generalTypeFilter, generalTypeOptions]);
 
-  useEffect(() => {
-    const container = mainScrollRef.current;
-    if (!container) return;
-    const nextScrollTop = modeScrollPositionsRef.current[state.mode] || 0;
-    container.scrollTo({ top: nextScrollTop, behavior: 'auto' });
-  }, [state.mode]);
-
   const handleModeChange = useCallback(
     (nextMode: 'manga' | 'general') => {
-      const container = mainScrollRef.current;
-      if (container) {
-        modeScrollPositionsRef.current[state.mode] = container.scrollTop;
-      }
       controller.setMode(nextMode);
     },
-    [controller, state.mode]
+    [controller]
   );
 
   if (state.loading) {
@@ -212,65 +199,63 @@ export function App() {
               </div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <div ref={mainScrollRef} className={`h-full overflow-y-auto pr-1 ${mainSpacingClass}`}>
-                {isManga ? (
-                  <>
-                    {state.chapters.length === 0 ? (
-                      <EmptyChapterState />
-                    ) : (
-                      state.chapters.map((chapter) => (
-                        <ChapterAccordion
-                          key={chapter.canonicalUrl}
-                          chapter={chapter}
-                          sourceTabId={source.id}
-                          compact={autoUi.compactMode}
-                          thumbnailSize={chapterThumbnailSize}
-                          onEnsurePreview={controller.ensureChapterPreview}
-                          onDownload={(item) => void controller.downloadChapter(item)}
-                          onDownloadImage={(image, chapterItem) => void controller.downloadImage(image, { referrer: chapterItem.url })}
-                          onOpenImage={(item, items, index) => {
-                            setViewer({
-                              title: item.label,
-                              items,
-                              index,
-                              referrer: item.url,
-                              sourceTabId: source.id,
-                            });
-                          }}
-                        />
-                      ))
-                    )}
-                  </>
+            <div className="min-h-0 flex-1">
+              <div className={`h-full overflow-y-auto pr-1 ${mainSpacingClass} ${isManga ? '' : 'hidden'}`}>
+                {state.chapters.length === 0 ? (
+                  <EmptyChapterState />
                 ) : (
-                  <GeneralGrid
-                    items={filteredGeneralItems}
-                    sections={generalSections}
-                    selected={state.generalSelection}
-                    thumbnailSize={autoUi.thumbnailSize}
-                    compact={autoUi.compactMode}
-                    referrer={source.url}
-                    sourceTabId={source.id}
-                    onToggle={controller.toggleGeneralItem}
-                    onSelectAll={(checked) =>
-                      controller.selectAllGeneral(
-                        checked,
-                        filteredGeneralItems.map((item) => item.id)
-                      )
-                    }
-                    onDownload={() => void controller.downloadGeneral()}
-                    onDownloadImage={(candidate) => void controller.downloadImage(candidate, { referrer: source.url })}
-                    onOpen={(candidate) => {
-                      setViewer({
-                        title: source.title || 'Images détectées',
-                        items: filteredGeneralItems,
-                        index: filteredGeneralItems.findIndex((item) => item.id === candidate.id),
-                        referrer: source.url,
-                        sourceTabId: source.id,
-                      });
-                    }}
-                  />
+                  state.chapters.map((chapter) => (
+                    <ChapterAccordion
+                      key={chapter.canonicalUrl}
+                      chapter={chapter}
+                      sourceTabId={source.id}
+                      compact={autoUi.compactMode}
+                      thumbnailSize={chapterThumbnailSize}
+                      onEnsurePreview={controller.ensureChapterPreview}
+                      onDownload={(item) => void controller.downloadChapter(item)}
+                      onDownloadImage={(image, chapterItem) => void controller.downloadImage(image, { referrer: chapterItem.url })}
+                      onOpenImage={(item, items, index) => {
+                        setViewer({
+                          title: item.label,
+                          items,
+                          index,
+                          referrer: item.url,
+                          sourceTabId: source.id,
+                        });
+                      }}
+                    />
+                  ))
                 )}
+              </div>
+
+              <div className={`h-full overflow-y-auto pr-1 ${mainSpacingClass} ${isManga ? 'hidden' : ''}`}>
+                <GeneralGrid
+                  items={filteredGeneralItems}
+                  sections={generalSections}
+                  selected={state.generalSelection}
+                  thumbnailSize={autoUi.thumbnailSize}
+                  compact={autoUi.compactMode}
+                  referrer={source.url}
+                  sourceTabId={source.id}
+                  onToggle={controller.toggleGeneralItem}
+                  onSelectAll={(checked) =>
+                    controller.selectAllGeneral(
+                      checked,
+                      filteredGeneralItems.map((item) => item.id)
+                    )
+                  }
+                  onDownload={() => void controller.downloadGeneral()}
+                  onDownloadImage={(candidate) => void controller.downloadImage(candidate, { referrer: source.url })}
+                  onOpen={(candidate) => {
+                    setViewer({
+                      title: source.title || 'Images détectées',
+                      items: filteredGeneralItems,
+                      index: filteredGeneralItems.findIndex((item) => item.id === candidate.id),
+                      referrer: source.url,
+                      sourceTabId: source.id,
+                    });
+                  }}
+                />
               </div>
             </div>
           </div>
