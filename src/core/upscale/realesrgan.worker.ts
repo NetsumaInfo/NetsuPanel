@@ -44,6 +44,9 @@ let webglContextPatched = false;
 let webGpuRequestAdapterPatched = false;
 let activeWebgpuAdapterInfo: string | null = null;
 let preferredWebglVersion: 1 | 2 = 2;
+const IS_WINDOWS =
+  typeof navigator !== 'undefined' &&
+  /win/i.test(navigator.userAgent || navigator.platform || '');
 
 interface AxisLayout {
   locations: number[];
@@ -77,10 +80,12 @@ function patchWebGpuRequestAdapter(): void {
 
   const originalRequestAdapter = gpu.requestAdapter.bind(gpu) as (options?: unknown) => Promise<any>;
   gpu.requestAdapter = async (options?: Record<string, unknown>) => {
-    const nextOptions = {
-      ...(typeof options === 'object' && options ? options : {}),
-      powerPreference: 'high-performance',
-    };
+    const nextOptions = IS_WINDOWS
+      ? (typeof options === 'object' && options ? { ...options } : undefined)
+      : {
+          ...(typeof options === 'object' && options ? options : {}),
+          powerPreference: 'high-performance',
+        };
     try {
       return await originalRequestAdapter(nextOptions);
     } catch {
@@ -104,16 +109,18 @@ function patchWebGlContextPreference(): void {
 
   offscreenProto.getContext = function patchedGetContext(this: OffscreenCanvas, contextId: string, options?: any) {
     if (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl') {
-      const nextOptions = {
+      const nextOptions: WebGLContextAttributes = {
         ...(typeof options === 'object' && options ? options : {}),
         alpha: false,
         antialias: false,
         depth: false,
         desynchronized: true,
         preserveDrawingBuffer: false,
-        powerPreference: 'high-performance',
         stencil: false,
-      } as WebGLContextAttributes;
+      };
+      if (!IS_WINDOWS) {
+        (nextOptions as WebGLContextAttributes & { powerPreference?: 'default' | 'high-performance' | 'low-power' }).powerPreference = 'high-performance';
+      }
       return originalGetContext.call(this, contextId, nextOptions);
     }
     return originalGetContext.call(this, contextId, options);
@@ -153,10 +160,11 @@ function configureWebGlFlags(isIntegratedGpu: boolean): void {
 function probeWebGl(): { renderer: string | null; integrated: boolean; version: 1 | 2 } {
   try {
     const probe = new OffscreenCanvas(1, 1);
-    const gl2 = probe.getContext('webgl2', { powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
+    const contextOptions = IS_WINDOWS ? undefined : { powerPreference: 'high-performance' as const };
+    const gl2 = probe.getContext('webgl2', contextOptions) as WebGL2RenderingContext | null;
     const gl =
       gl2
-      || (probe.getContext('webgl', { powerPreference: 'high-performance' }) as WebGLRenderingContext | null);
+      || (probe.getContext('webgl', contextOptions) as WebGLRenderingContext | null);
     if (!gl) {
       return {
         renderer: null,
@@ -248,9 +256,9 @@ async function probeWebGpu(): Promise<{ renderer: string | null; integrated: boo
   }
 
   try {
-    const adapter =
-      await nav.gpu.requestAdapter({ powerPreference: 'high-performance' })
-      || await nav.gpu.requestAdapter();
+    const adapter = IS_WINDOWS
+      ? await nav.gpu.requestAdapter()
+      : await nav.gpu.requestAdapter({ powerPreference: 'high-performance' }) || await nav.gpu.requestAdapter();
     if (!adapter) {
       return { renderer: null, integrated: true };
     }

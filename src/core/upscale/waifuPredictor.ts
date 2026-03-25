@@ -27,10 +27,15 @@ interface ParamsObject {
   bias: number[];
 }
 
+const IS_WINDOWS =
+  typeof navigator !== 'undefined' &&
+  /win/i.test(navigator.userAgent || navigator.platform || '');
+
 if (self.OffscreenCanvas !== undefined) {
   const canvas = new OffscreenCanvas(320, 200);
-  canvas.getContext('webgl2', { powerPreference: 'high-performance' })
-    || canvas.getContext('webgl', { powerPreference: 'high-performance' });
+  const options = IS_WINDOWS ? undefined : { powerPreference: 'high-performance' as const };
+  canvas.getContext('webgl2', options)
+    || canvas.getContext('webgl', options);
 }
 
 function predictionBatchSize(channelCount: number): number {
@@ -272,6 +277,7 @@ export class WaifuPredictor {
     this.initialized = false;
     this.modelFetchProgress = 0;
     this.modelPredictProgress = 0;
+    this.params = [];
     this.modelInstance?.dispose();
     this.modelInstance = null;
   }

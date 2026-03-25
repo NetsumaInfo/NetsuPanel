@@ -27,6 +27,7 @@ interface PendingJob {
 const CACHE_LIMIT = 16;
 const PROGRESS_THROTTLE_MS = 90;
 const PROGRESS_MIN_DELTA = 0.02;
+const IDLE_RESET_MS = 10_000;
 
 export class Waifu2xRuntime {
   private worker: Worker | null = null;
@@ -40,6 +41,26 @@ export class Waifu2xRuntime {
   private cache = new Map<string, Blob>();
 
   private disabledReason: string | null = null;
+
+  private idleResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearIdleReset(): void {
+    if (this.idleResetTimer) {
+      clearTimeout(this.idleResetTimer);
+      this.idleResetTimer = null;
+    }
+  }
+
+  private scheduleIdleReset(): void {
+    this.clearIdleReset();
+    if (!this.worker || this.pending.size > 0) {
+      return;
+    }
+
+    this.idleResetTimer = setTimeout(() => {
+      this.reset();
+    }, IDLE_RESET_MS);
+  }
 
   private rememberCache(cacheKey: string, blob: Blob): void {
     if (this.cache.has(cacheKey)) {
@@ -153,6 +174,7 @@ export class Waifu2xRuntime {
   }
 
   upscale(options: UpscaleOptions): Promise<Blob> {
+    this.clearIdleReset();
     const useCache = options.useCache ?? true;
     if (useCache) {
       const cached = this.cache.get(options.cacheKey);
@@ -176,9 +198,13 @@ export class Waifu2xRuntime {
             if (useCache) {
               this.rememberCache(options.cacheKey, blob);
             }
+            this.scheduleIdleReset();
             resolve(blob);
           },
-          reject,
+          reject: (reason) => {
+            this.scheduleIdleReset();
+            reject(reason);
+          },
           onProgress: options.onProgress,
           lastProgressAt: 0,
           lastProgressRatio: 0,
@@ -222,6 +248,7 @@ export class Waifu2xRuntime {
   }
 
   reset(): void {
+    this.clearIdleReset();
     if (this.worker) {
       this.worker.postMessage({ type: 'reset' });
       this.worker.terminate();
