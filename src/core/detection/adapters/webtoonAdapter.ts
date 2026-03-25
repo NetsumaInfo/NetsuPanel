@@ -11,6 +11,7 @@ import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePip
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+import { resolveUrl } from '@shared/utils/url';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 function matchesWebtoon(url: string): boolean {
@@ -102,10 +103,8 @@ function createWebtoonChapterCandidate(
   containerSignature: string,
   score: number
 ): ChapterLinkCandidate | null {
-  let resolvedUrl = '';
-  try {
-    resolvedUrl = new URL(anchor.href, pageUrl).href;
-  } catch {
+  const resolvedUrl = resolveUrl(anchor.getAttribute('href') || '', pageUrl);
+  if (!resolvedUrl) {
     return null;
   }
 

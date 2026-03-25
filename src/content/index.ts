@@ -144,6 +144,24 @@ function normalizeReferrer(url: string, referrer?: string): string | undefined {
   }
 }
 
+function isFetchableHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+function shouldAvoidPageContextFetch(url: string, referrer?: string): boolean {
+  if (!isFetchableHttpUrl(url)) {
+    return true;
+  }
+
+  try {
+    const requestUrl = new URL(url);
+    const referrerUrl = referrer ? new URL(referrer) : new URL(location.href);
+    return referrerUrl.protocol === 'https:' && requestUrl.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 function getAcceptLanguageHeader(): string {
   const languages = navigator.languages?.filter(Boolean) || [];
   if (languages.length > 0) {
@@ -157,6 +175,13 @@ async function fetchBinaryFromPage(
   referrer?: string,
   headers?: Record<string, string>
 ): Promise<FetchBinaryResult> {
+  if (!isFetchableHttpUrl(url)) {
+    throw new Error(`Unsupported URL scheme for binary fetch: ${url}`);
+  }
+  if (shouldAvoidPageContextFetch(url, referrer)) {
+    throw new Error(`Mixed content blocked in page context: ${url}`);
+  }
+
   const normalizedReferrer = normalizeReferrer(url, referrer);
   let lastError: Error | null = null;
 
@@ -201,6 +226,13 @@ async function fetchBinaryFromPage(
 }
 
 async function fetchDocumentFromPage(url: string, referrer?: string): Promise<string> {
+  if (!isFetchableHttpUrl(url)) {
+    throw new Error(`Unsupported URL scheme for document fetch: ${url}`);
+  }
+  if (shouldAvoidPageContextFetch(url, referrer)) {
+    throw new Error(`Mixed content blocked in page context: ${url}`);
+  }
+
   const normalizedReferrer = normalizeReferrer(url, referrer);
   let lastError: Error | null = null;
 

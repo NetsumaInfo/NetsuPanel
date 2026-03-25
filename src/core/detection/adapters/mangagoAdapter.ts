@@ -10,6 +10,7 @@ import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePip
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+import { resolveUrl } from '@shared/utils/url';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
 const MANGAGO_DOMAINS = ['mangago.me', 'utoon.net'];
@@ -65,7 +66,7 @@ function collectMangagoChapterCandidates(document: ParentNode, currentUrl: strin
 
   const results: ChapterLinkCandidate[] = [];
   anchors.forEach((anchor, index) => {
-    const url = anchor.href;
+    const url = resolveUrl(anchor.getAttribute('href') || '', currentUrl);
     if (!url) return;
     const label = (
       anchor.textContent ||

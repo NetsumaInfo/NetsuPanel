@@ -4,6 +4,7 @@ import { collectChapterLinks } from '@core/detection/collectors/chapterLinkColle
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
+import { resolveUrl } from '@shared/utils/url';
 import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
@@ -96,8 +97,8 @@ function createMadaraChapterCandidate(
   containerSignature: string,
   score: number
 ): ChapterLinkCandidate | null {
-  if (!anchor.href) return null;
-  const resolvedUrl = anchor.href;
+  const resolvedUrl = resolveUrl(anchor.getAttribute('href') || '', currentUrl);
+  if (!resolvedUrl) return null;
   const label = (
     anchor.textContent ||
     anchor.getAttribute('title') ||
@@ -133,7 +134,11 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
         '.version-chap li a',
         '.wp-manga-chapterlist a',
         '.chapters-wrapper a',
+        '.manga-chapters a',
+        '.chapter_container a',
+        '.chapter-page-link a',
         '.chapter-list a',
+        '.listing-chapter a',
         '#chapterlist a',
       ].join(', ')
     )
@@ -145,10 +150,10 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
   });
 
   const previousAnchor = (document as Document).querySelector<HTMLAnchorElement>(
-    'a.prev_page, .nav-previous a, .chapter-nav a.prev, a[rel="prev"]'
+    'a.prev_page, .nav-previous a, .chapter-nav a.prev, .select-pagination a.prev, a[rel="prev"]'
   );
   const nextAnchor = (document as Document).querySelector<HTMLAnchorElement>(
-    'a.next_page, .nav-next a, .chapter-nav a.next, a[rel="next"]'
+    'a.next_page, .nav-next a, .chapter-nav a.next, .select-pagination a.next, a[rel="next"]'
   );
 
   if (previousAnchor) {

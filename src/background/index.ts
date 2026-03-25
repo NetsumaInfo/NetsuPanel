@@ -21,6 +21,22 @@ interface PageWorldDocumentResult {
   error?: string;
 }
 
+function shouldBypassTabFetch(url: string, referrer?: string): boolean {
+  try {
+    const requestUrl = new URL(url);
+    if (!/^https?:$/i.test(requestUrl.protocol)) {
+      return true;
+    }
+    if (!referrer) {
+      return false;
+    }
+    const referrerUrl = new URL(referrer);
+    return referrerUrl.protocol === 'https:' && requestUrl.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
   await browser.scripting.executeScript({
     target: { tabId },
@@ -232,7 +248,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
         };
       }
       try {
-        if (message.tabId) {
+        if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
           try {
             const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
             return { html: pageWorldDocument.html };
@@ -265,7 +281,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
         };
       }
       try {
-        if (message.tabId) {
+        if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
           try {
             const pageWorldResource = await fetchBinaryViaPageWorld(
               message.tabId,
