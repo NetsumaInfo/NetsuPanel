@@ -85,7 +85,13 @@ export function ImageViewerModal({
 
   const currentIndex = clampIndex(index, items.length);
   const currentItem = items[currentIndex];
-  const previewMatches = preview?.sourceImageId === currentItem?.id;
+  const currentItemUrl = currentItem ? (currentItem.previewUrl || currentItem.url) : '';
+  const previewMatches = Boolean(
+    currentItem &&
+    preview &&
+    preview.sourceImageId === currentItem.id &&
+    preview.originalUrl === currentItemUrl
+  );
   const headerMediaName = currentItem ? resolveMediaName(currentItem) : title;
   const headerMediaMeta = currentItem ? formatMediaMeta(currentItem) : '';
 
