@@ -150,18 +150,51 @@ export function buildImageCollection(
     }
 
     const hasDimensions = normalized.width > 0 && normalized.height > 0;
-    const minSizeThreshold = mode === 'general' ? 50 : 150;
-    const minScoreThreshold = mode === 'general' ? 4 : 12;
-    const isTooSmall = hasDimensions && maxDim < minSizeThreshold;
 
-    if (isTooSmall || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
-      diagnostics.push({
-        code: 'image-rejected-low-signal',
-        message: `Rejected low-signal candidate ${normalized.filenameHint}.`,
-        level: 'info',
-        candidateId: normalized.id,
-      });
-      continue;
+    if (mode === 'general') {
+      // General mode: show ALL images with a valid URL.
+      // Only skip genuinely micro images (both dims known AND both < 50px = likely icon/pixel)
+      const isMicro = hasDimensions && normalized.width < 50 && normalized.height < 50;
+      const isDecorativeUnknown =
+        isLikelyDecorative(normalized.url) &&
+        (!hasDimensions || maxDim < 320);
+      const isLowSignalScriptCandidate =
+        (normalized.sourceKind === 'inline-script' || normalized.sourceKind === 'json-embedded') &&
+        !hasDimensions &&
+        normalized.score < 24;
+      if (isMicro) {
+        diagnostics.push({
+          code: 'image-rejected-micro',
+          message: `Rejected micro image ${normalized.filenameHint}.`,
+          level: 'info',
+          candidateId: normalized.id,
+        });
+        continue;
+      }
+      if (isDecorativeUnknown || isLowSignalScriptCandidate) {
+        diagnostics.push({
+          code: 'image-rejected-decorative',
+          message: `Rejected decorative/low-signal image ${normalized.filenameHint}.`,
+          level: 'info',
+          candidateId: normalized.id,
+        });
+        continue;
+      }
+    } else {
+      // Manga mode: strict filtering
+      const minSizeThreshold = 150;
+      const minScoreThreshold = 12;
+      const isTooSmall = hasDimensions && Math.max(normalized.width, normalized.height) < minSizeThreshold;
+
+      if (isTooSmall || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
+        diagnostics.push({
+          code: 'image-rejected-low-signal',
+          message: `Rejected low-signal candidate ${normalized.filenameHint}.`,
+          level: 'info',
+          candidateId: normalized.id,
+        });
+        continue;
+      }
     }
 
     const dedupeKey =

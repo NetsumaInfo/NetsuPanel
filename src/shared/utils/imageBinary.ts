@@ -18,6 +18,14 @@ function normalizeMime(mime?: string): string | null {
   return mime.split(';')[0].trim().toLowerCase() || null;
 }
 
+function isSvgBytes(bytes: Uint8Array): boolean {
+  const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 512)).trimStart().toLowerCase();
+  if (head.startsWith('<svg')) return true;
+  if (head.startsWith('<?xml') && head.includes('<svg')) return true;
+  if (head.startsWith('<!doctype svg')) return true;
+  return false;
+}
+
 function detectMimeFromBytes(bytes: Uint8Array): string | null {
   if (bytesMatch(bytes, 0, JPEG_SIGNATURE)) return 'image/jpeg';
   if (bytesMatch(bytes, 0, PNG_SIGNATURE)) return 'image/png';
@@ -39,11 +47,16 @@ function detectMimeFromBytes(bytes: Uint8Array): string | null {
     return 'image/avif';
   }
 
+  // SVG detection from bytes (handles wrong/missing Content-Type)
+  if (isSvgBytes(bytes)) return 'image/svg+xml';
+
   return null;
 }
 
 function looksLikeTextPayload(bytes: Uint8Array): boolean {
   const sample = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 256)).trimStart().toLowerCase();
+  // SVG is text but valid — handled above via detectMimeFromBytes
+  if (sample.startsWith('<svg') || (sample.startsWith('<?xml') && sample.includes('svg'))) return false;
   return (
     sample.startsWith('<!doctype') ||
     sample.startsWith('<html') ||
@@ -93,7 +106,7 @@ export function validateBinaryImage(
 }
 
 export async function assertDecodableImage(arrayBuffer: ArrayBuffer, mime: string): Promise<void> {
-  if (mime === 'image/svg+xml') return;
+  if (mime === 'image/svg+xml' || mime === 'image/gif') return;
   if (typeof createImageBitmap !== 'function') return;
 
   const blob = new Blob([arrayBuffer], { type: mime });

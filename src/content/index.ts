@@ -15,11 +15,12 @@ declare global {
 
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
-const STABILIZE_DELAYS = [90, 130, 180, 240];
-const LAZY_SCROLL_WAIT_MS = 45;
-const RECHECK_DELAY_MS = 180;
+const STABILIZE_DELAYS = [35, 55, 80];
+const LAZY_SCROLL_WAIT_MS = 28;
+const RECHECK_DELAY_MS = 80;
 const MAX_LAZY_SCROLL = 12000;
-const MAX_LAZY_STEPS = 12;
+const MAX_LAZY_STEPS = 7;
+const MAX_SCAN_DURATION_MS = 2200;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -317,6 +318,9 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
 }
 
 async function scanCurrentPage() {
+  const startedAt = Date.now();
+  const isWithinBudget = () => Date.now() - startedAt < MAX_SCAN_DURATION_MS;
+
   await stabilizePage();
 
   const page = getPageIdentity();
@@ -326,11 +330,11 @@ async function scanCurrentPage() {
     includeSvgCandidates: false,
     includeMediaCandidates: true,
     includeCssRuleCandidates: false,
-    includeScriptCandidates: true,
+    includeScriptCandidates: false,
   });
   let allCandidates = collection.candidates;
 
-  if (readerPage && isLowCoverage(allCandidates)) {
+  if (readerPage && isLowCoverage(allCandidates) && isWithinBudget()) {
     await triggerLazyLoading();
     await sleep(RECHECK_DELAY_MS);
     const afterLazy = await collectLiveDomImages(page.url, {
@@ -344,7 +348,7 @@ async function scanCurrentPage() {
     mergeCollectionCapturables(collection.capturables, afterLazy.capturables);
   }
 
-  if (isLowCoverage(allCandidates)) {
+  if (isLowCoverage(allCandidates) && isWithinBudget()) {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: false,
@@ -357,8 +361,9 @@ async function scanCurrentPage() {
     mergeCollectionCapturables(collection.capturables, nextCollection.capturables);
   }
 
-  // Always merge static document images to maximize coverage for general mode
-  allCandidates = mergeCandidates(allCandidates, collectStaticDocumentImages(document, page.url));
+  if (allCandidates.length < 90 && isWithinBudget()) {
+    allCandidates = mergeCandidates(allCandidates, collectStaticDocumentImages(document, page.url));
+  }
 
   capturableRegistry.clear();
   collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
