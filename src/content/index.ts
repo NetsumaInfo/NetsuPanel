@@ -327,7 +327,7 @@ async function scanCurrentPage() {
   const readerPage = looksLikeReaderPage(page);
   let collection = await collectLiveDomImages(page.url, {
     includeBackgroundCandidates: false,
-    includeSvgCandidates: false,
+    includeSvgCandidates: true,
     includeMediaCandidates: true,
     includeCssRuleCandidates: false,
     includeScriptCandidates: false,
@@ -352,7 +352,7 @@ async function scanCurrentPage() {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: false,
-      includeSvgCandidates: false,
+      includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
       includeScriptCandidates: true,
