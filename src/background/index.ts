@@ -21,6 +21,23 @@ interface PageWorldDocumentResult {
   error?: string;
 }
 
+function isTrustedExtensionPageSender(sender: { id?: string; url?: string } | undefined): boolean {
+  if (!sender?.id || sender.id !== browser.runtime.id) {
+    return false;
+  }
+
+  const extensionRoot = browser.runtime.getURL('');
+  return typeof sender.url === 'string' && sender.url.startsWith(extensionRoot);
+}
+
+function isFiniteTabId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown, maxLength = 4096): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+}
+
 function shouldBypassTabFetch(url: string, referrer?: string): boolean {
   try {
     const requestUrl = new URL(url);
@@ -219,9 +236,18 @@ browser.action.onClicked.addListener(async (tab: { id?: number }) => {
   await openAppTab(tab.id);
 });
 
-browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
+browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: unknown) => {
+  if (!isTrustedExtensionPageSender(sender as { id?: string; url?: string } | undefined)) {
+    return {
+      error: 'Rejected runtime message from untrusted sender.',
+    };
+  }
+
   switch (message.type) {
     case RuntimeMessageType.GetSourceContext: {
+      if (!isFiniteTabId(message.tabId)) {
+        return { error: 'Invalid tab identifier.' };
+      }
       const tab = await browser.tabs.get(message.tabId);
       return {
         context: {
@@ -234,6 +260,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.ScanTab: {
+      if (!isFiniteTabId(message.tabId)) {
+        return { error: 'Invalid tab identifier.' };
+      }
       await ensureContentScript(message.tabId);
       const scan = await browser.tabs.sendMessage(message.tabId, {
         type: ContentMessageType.ScanPage,
@@ -242,6 +271,15 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.FetchDocument: {
+      if (!isNonEmptyString(message.url)) {
+        return { error: 'Invalid document URL.' };
+      }
+      if (message.referrer !== undefined && !isNonEmptyString(message.referrer)) {
+        return { error: 'Invalid document referrer.' };
+      }
+      if (message.tabId !== undefined && !isFiniteTabId(message.tabId)) {
+        return { error: 'Invalid tab identifier.' };
+      }
       if (!/^https?:\/\//i.test(message.url)) {
         return {
           error: `Unsupported URL scheme for document fetch: ${message.url}`,
@@ -275,6 +313,15 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.FetchBinary: {
+      if (!isNonEmptyString(message.url)) {
+        return { error: 'Invalid binary URL.' };
+      }
+      if (message.referrer !== undefined && !isNonEmptyString(message.referrer)) {
+        return { error: 'Invalid binary referrer.' };
+      }
+      if (message.tabId !== undefined && !isFiniteTabId(message.tabId)) {
+        return { error: 'Invalid tab identifier.' };
+      }
       if (!/^https?:\/\//i.test(message.url)) {
         return {
           error: `Unsupported URL scheme for binary fetch: ${message.url}`,
@@ -325,6 +372,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest) => {
     }
 
     case RuntimeMessageType.CaptureImage: {
+      if (!isFiniteTabId(message.tabId) || !isNonEmptyString(message.candidateId, 512)) {
+        return { error: 'Invalid capture request.' };
+      }
       await ensureContentScript(message.tabId);
       const capture = await browser.tabs.sendMessage(message.tabId, {
         type: ContentMessageType.CaptureImage,
