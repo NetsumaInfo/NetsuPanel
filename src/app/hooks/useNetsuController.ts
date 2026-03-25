@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { ArchiveFormat, ChapterItem, ImageCandidate, UpscalePreviewState, UpscaleSettings } from '@shared/types';
-import { discoverChapters, loadChapterPreview as fetchChapterPreview } from '@core/manga/chapterCrawler';
+import {
+  discoverChapters,
+  loadChapterPreview as fetchChapterPreview,
+  seedChaptersFromScan,
+} from '@core/manga/chapterCrawler';
 import { serializeUpscaleSettings } from '@core/upscale/realesrganModels';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 import { appReducer, initialAppState } from '@app/state/appState';
@@ -33,10 +37,34 @@ export function useNetsuController() {
           });
         dispatch({ type: 'set-loading-message', message: 'Analyse de la page en cours…' });
         const scan = await scanSourceTab(tabId);
-        dispatch({ type: 'set-loading-message', message: 'Découverte des chapitres…' });
-        const chapters = await discoverChapters(scan, { fetchDocument: fetchDocumentForSource }, { referrer: source.url, tabId });
+        const chapters = seedChaptersFromScan(scan);
         if (!cancelled) {
           dispatch({ type: 'bootstrap-success', source, scan, chapters });
+        }
+
+        const hasNavigationHints = Boolean(
+          scan.manga.navigation.listing || scan.manga.navigation.previous || scan.manga.navigation.next
+        );
+        if (hasNavigationHints || chapters.length <= 3) {
+          void (async () => {
+            try {
+              const discovered = await discoverChapters(
+                scan,
+                { fetchDocument: fetchDocumentForSource },
+                {
+                  referrer: source.url,
+                  tabId,
+                  maxLinearSteps: 80,
+                  maxDurationMs: 8_500,
+                }
+              );
+              if (!cancelled && discovered.length > 0) {
+                dispatch({ type: 'set-chapters', chapters: discovered });
+              }
+            } catch {
+              // Non bloquant: on conserve les chapitres initiaux déjà détectés.
+            }
+          })();
         }
       } catch (error) {
         if (!cancelled) {
@@ -216,14 +244,20 @@ export function useNetsuController() {
   });
 
   const selectAllGeneral = useCallback(
-    (checked: boolean) => {
+    (checked: boolean, imageIds?: string[]) => {
       if (!state.scan) return;
+      const targetIds = imageIds && imageIds.length > 0
+        ? imageIds
+        : state.scan.general.items.map((item) => item.id);
       dispatch({
         type: 'set-general-selection',
-        selection: Object.fromEntries(state.scan.general.items.map((item) => [item.id, checked])),
+        selection: {
+          ...state.generalSelection,
+          ...Object.fromEntries(targetIds.map((id) => [id, checked])),
+        },
       });
     },
-    [state.scan]
+    [state.generalSelection, state.scan]
   );
 
   return {

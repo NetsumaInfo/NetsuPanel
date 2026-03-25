@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import { SafeImage } from './SafeImage';
 import { CheckIcon, DownloadIcon, ImageIcon } from './icons';
@@ -16,6 +17,9 @@ interface GeneralGridProps {
   onOpen(candidate: ImageCandidate): void;
 }
 
+const INITIAL_RENDER_COUNT = 72;
+const RENDER_BATCH_SIZE = 48;
+
 export function GeneralGrid({
   items,
   selected,
@@ -29,8 +33,24 @@ export function GeneralGrid({
   onDownloadImage,
   onOpen,
 }: GeneralGridProps) {
+  const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT);
   const selectedCount = items.filter((item) => selected[item.id]).length;
   const allSelected = selectedCount === items.length && items.length > 0;
+  const renderedItems = items.slice(0, renderCount);
+
+  useEffect(() => {
+    setRenderCount(Math.min(items.length, INITIAL_RENDER_COUNT));
+  }, [items]);
+
+  useEffect(() => {
+    if (renderCount >= items.length) return;
+
+    const timer = window.setTimeout(() => {
+      setRenderCount((current) => Math.min(items.length, current + RENDER_BATCH_SIZE));
+    }, 28);
+
+    return () => window.clearTimeout(timer);
+  }, [items.length, renderCount]);
 
   return (
     <div className="flex h-full flex-col">
@@ -79,7 +99,7 @@ export function GeneralGrid({
           className={`grid ${compact ? 'gap-1.5' : 'gap-2'}`}
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))` }}
         >
-          {items.map((item) => {
+          {renderedItems.map((item) => {
             const isSelected = Boolean(selected[item.id]);
             return (
               <article
@@ -146,6 +166,11 @@ export function GeneralGrid({
               </article>
             );
           })}
+        </div>
+      )}
+      {renderCount < items.length && (
+        <div className="pt-2 text-center text-[11px] text-muted">
+          Chargement des vignettes… {renderCount}/{items.length}
         </div>
       )}
     </div>

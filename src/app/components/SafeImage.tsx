@@ -26,6 +26,9 @@ type SafeImageAction =
 
 const FALLBACK_CACHE_LIMIT = 180;
 const objectUrlCache = new Map<string, string>();
+const NETWORK_FALLBACK_CONCURRENCY = 6;
+let activeNetworkFallbackCount = 0;
+const networkFallbackWaiters: Array<() => void> = [];
 const initialSafeImageState: SafeImageState = {
   sourceKey: '',
   resolvedSrc: '',
@@ -128,6 +131,25 @@ function setCachedObjectUrl(key: string, objectUrl: string): void {
   }
 }
 
+async function withNetworkFallbackSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeNetworkFallbackCount >= NETWORK_FALLBACK_CONCURRENCY) {
+    await new Promise<void>((resolve) => {
+      networkFallbackWaiters.push(resolve);
+    });
+  }
+
+  activeNetworkFallbackCount += 1;
+  try {
+    return await task();
+  } finally {
+    activeNetworkFallbackCount = Math.max(0, activeNetworkFallbackCount - 1);
+    const waiter = networkFallbackWaiters.shift();
+    if (waiter) {
+      waiter();
+    }
+  }
+}
+
 export function SafeImage({
   src,
   alt,
@@ -210,7 +232,9 @@ export function SafeImage({
     networkAttemptedRef.current = true;
 
     try {
-      const resource = await fetchBinary(src, { referrer, tabId: captureTabId });
+      const resource = await withNetworkFallbackSlot(() =>
+        fetchBinary(src, { referrer, tabId: captureTabId })
+      );
       const objectUrl = URL.createObjectURL(new Blob([resource.bytes], { type: resource.mime || 'image/jpeg' }));
       setCachedObjectUrl(cacheKey, objectUrl);
 
@@ -268,6 +292,7 @@ export function SafeImage({
       src={resolvedSrc}
       alt={alt}
       loading="lazy"
+      decoding="async"
       className={className}
       onError={handleError}
       title={title}

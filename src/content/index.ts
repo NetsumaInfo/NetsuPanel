@@ -15,6 +15,11 @@ declare global {
 
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
+const STABILIZE_DELAYS = [90, 130, 180, 240];
+const LAZY_SCROLL_WAIT_MS = 45;
+const RECHECK_DELAY_MS = 180;
+const MAX_LAZY_SCROLL = 12000;
+const MAX_LAZY_STEPS = 12;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -23,34 +28,37 @@ function sleep(ms: number): Promise<void> {
 async function stabilizePage(): Promise<void> {
   let lastCount = -1;
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (const delay of STABILIZE_DELAYS) {
     const images = document.querySelectorAll('img');
     const currentCount = images.length;
-    // Also check if images are completing load
+    if (currentCount === 0 && document.readyState === 'complete') {
+      return;
+    }
     const loadedCount = Array.from(images).filter(
       (img) => img.complete && img.naturalWidth > 0
     ).length;
-    if (currentCount === lastCount && loadedCount >= currentCount * 0.8) return;
+    const minLoaded = currentCount > 0 ? Math.max(1, Math.floor(currentCount * 0.45)) : 0;
+    if (currentCount === lastCount && loadedCount >= minLoaded) return;
     lastCount = currentCount;
-    await sleep(400);
+    await sleep(delay);
   }
 }
 
 // Scroll through the page to trigger lazy-loading, then scroll back
 async function triggerLazyLoading(): Promise<void> {
   const originalScrollY = window.scrollY;
-  const step = Math.max(window.innerHeight * 0.8, 400);
-  const maxScroll = Math.min(document.body.scrollHeight, 30000);
+  const step = Math.max(Math.floor(window.innerHeight * 0.7), 320);
+  const maxScroll = Math.min(document.body.scrollHeight, MAX_LAZY_SCROLL);
+  const maxSteps = Math.max(4, Math.min(MAX_LAZY_STEPS, Math.ceil(maxScroll / step)));
   let position = 0;
 
-  while (position < maxScroll) {
+  for (let index = 0; index < maxSteps && position < maxScroll; index += 1) {
     position = Math.min(position + step, maxScroll);
     window.scrollTo({ top: position, behavior: 'instant' as ScrollBehavior });
-    await sleep(80);
+    await sleep(LAZY_SCROLL_WAIT_MS);
   }
-  // Scroll back
   window.scrollTo({ top: originalScrollY, behavior: 'instant' as ScrollBehavior });
-  await sleep(150);
+  await sleep(80);
 }
 
 function mergeCandidates(
@@ -68,7 +76,7 @@ function mergeCandidates(
   return merged;
 }
 
-function shouldUseStaticFallback(candidates: RawImageCandidate[]): boolean {
+function isLowCoverage(candidates: RawImageCandidate[]): boolean {
   const dimensioned = candidates.filter((candidate) => candidate.width >= 160 && candidate.height >= 160);
   const liveDomLoaded = candidates.filter(
     (candidate) =>
@@ -80,6 +88,32 @@ function shouldUseStaticFallback(candidates: RawImageCandidate[]): boolean {
   );
 
   return candidates.length < 8 || dimensioned.length < 4 || liveDomLoaded.length < 3;
+}
+
+function looksLikeReaderPage(page: PageIdentity): boolean {
+  const hintText = `${page.url} ${page.pathname}`.toLowerCase();
+  if (/(chapter|chapitre|episode|viewer|webtoon|scan|read|reader|manga|manhwa|manhua|comic)/i.test(hintText)) {
+    return true;
+  }
+
+  return Boolean(
+    document.querySelector(
+      [
+        '.reading-content',
+        '.reader-area',
+        '.chapter-content',
+        '.wp-manga-chapter-img',
+        '.page-break img',
+        '#readerarea img',
+        '#scansPlacement img',
+        '.viewer_lst img',
+      ].join(', ')
+    )
+  );
+}
+
+function mergeCollectionCapturables(target: Map<string, CapturableNode>, incoming: Map<string, CapturableNode>): void {
+  incoming.forEach((value, key) => target.set(key, value));
 }
 
 function getPageIdentity(): PageIdentity {
@@ -220,43 +254,87 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
     throw new Error('2D canvas context unavailable');
   }
 
-  context.drawImage(node, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => {
-      if (!result) {
-        reject(new Error('Image capture failed'));
-        return;
-      }
-      resolve(result);
-    }, 'image/png');
-  });
-
-  return { bytes: await blobToArrayBuffer(blob), mime: blob.type || 'image/png' };
+  try {
+    context.drawImage(node, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (!result) {
+          reject(new Error('Image capture failed'));
+          return;
+        }
+        resolve(result);
+      }, 'image/png');
+    });
+    return { bytes: await blobToArrayBuffer(blob), mime: blob.type || 'image/png' };
+  } catch {
+    // Cross-origin image (Cloudflare / hotlink protection) taints canvas.
+    // Fall back to credentials-bearing fetch from within page context.
+    const src = (node as HTMLImageElement).currentSrc || (node as HTMLImageElement).src || '';
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      const response = await fetch(src, {
+        credentials: 'include',
+        referrer: location.href,
+        referrerPolicy: 'no-referrer-when-downgrade',
+      });
+      if (!response.ok) throw new Error(`captureNode network fallback: HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      return { bytes, mime: response.headers.get('content-type') || 'image/jpeg' };
+    }
+    throw new Error('Canvas tainted and no network fallback URL available');
+  }
 }
 
 async function scanCurrentPage() {
   await stabilizePage();
 
   const page = getPageIdentity();
-  let collection = await collectLiveDomImages(page.url);
+  const readerPage = looksLikeReaderPage(page);
+  let collection = await collectLiveDomImages(page.url, {
+    includeBackgroundCandidates: false,
+    includeSvgCandidates: false,
+    includeMediaCandidates: true,
+    includeCssRuleCandidates: false,
+    includeScriptCandidates: true,
+  });
   let allCandidates = collection.candidates;
 
-  // If few images found, trigger lazy loading and scan again
-  if (allCandidates.length < 5) {
+  if (readerPage && isLowCoverage(allCandidates)) {
     await triggerLazyLoading();
-    await sleep(400);
-    const afterLazy = await collectLiveDomImages(page.url);
+    await sleep(RECHECK_DELAY_MS);
+    const afterLazy = await collectLiveDomImages(page.url, {
+      includeBackgroundCandidates: true,
+      includeSvgCandidates: true,
+      includeMediaCandidates: true,
+      includeCssRuleCandidates: false,
+      includeScriptCandidates: true,
+    });
     allCandidates = mergeCandidates(allCandidates, afterLazy.candidates);
-    afterLazy.capturables.forEach((value, key) => collection.capturables.set(key, value));
+    mergeCollectionCapturables(collection.capturables, afterLazy.capturables);
   }
 
-  // Retry collection a few times to catch late-loading images
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await sleep(500);
-    const nextCollection = await collectLiveDomImages(page.url);
+  if (isLowCoverage(allCandidates)) {
+    await sleep(RECHECK_DELAY_MS);
+    const nextCollection = await collectLiveDomImages(page.url, {
+      includeBackgroundCandidates: true,
+      includeSvgCandidates: false,
+      includeMediaCandidates: true,
+      includeCssRuleCandidates: false,
+      includeScriptCandidates: true,
+    });
     allCandidates = mergeCandidates(allCandidates, nextCollection.candidates);
-    nextCollection.capturables.forEach((value, key) => collection.capturables.set(key, value));
-    if (allCandidates.length >= 12) break;
+    mergeCollectionCapturables(collection.capturables, nextCollection.capturables);
+  }
+
+  if (isLowCoverage(allCandidates)) {
+    const cssCollection = await collectLiveDomImages(page.url, {
+      includeBackgroundCandidates: false,
+      includeSvgCandidates: false,
+      includeMediaCandidates: false,
+      includeCssRuleCandidates: true,
+      includeScriptCandidates: false,
+    });
+    allCandidates = mergeCandidates(allCandidates, cssCollection.candidates);
+    mergeCollectionCapturables(collection.capturables, cssCollection.capturables);
   }
 
   // Always merge static document images to maximize coverage for general mode
