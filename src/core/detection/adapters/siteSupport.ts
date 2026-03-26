@@ -58,6 +58,7 @@ const SITE_SUPPORT_RULES: SiteSupportRule[] = [
     domains: [
       'webtoons.com',
       'comic.naver.com',
+      'm.comic.naver.com',
     ],
   },
   {
@@ -66,9 +67,21 @@ const SITE_SUPPORT_RULES: SiteSupportRule[] = [
     domains: ['mangadex.org'],
   },
   {
+    status: 'experimental',
+    family: 'Bilibili / Tencent Comic',
+    domains: ['manga.bilibili.com', 'ac.qq.com', 'm.ac.qq.com'],
+    note: 'Ces sites requirent une authentification. Certaines fonctionnalités peuvent être limitées.',
+  },
+  {
+    status: 'experimental',
+    family: 'Kakao / Korean Platform',
+    domains: ['page.kakao.com'],
+    note: 'Plateforme coréenne avec DRM. Nécessite un compte et peut avoir des restrictions.',
+  },
+  {
     status: 'unsupported',
     family: 'Locked Reader',
-    domains: ['page.kakao.com', 'manga.bilibili.com', 'ac.qq.com', 'm.ac.qq.com'],
+    domains: [],
     note: 'Ce lecteur nécessite un adaptateur dédié ou un contournement anti-hotlink/anti-bot spécifique.',
   },
 ];

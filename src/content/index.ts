@@ -476,47 +476,82 @@ async function fetchMadaraChapters(
   mangaId: string,
   nonce?: string
 ): Promise<{ html: string } | { error: string }> {
-  try {
-    const formData = new FormData();
-    formData.append('action', 'manga_get_chapters');
-    formData.append('manga', mangaId);
-    if (nonce) formData.append('_wpnonce', nonce);
+  // Try multiple Madara AJAX action names with different parameter combinations
+  const attempts: Array<() => FormData> = [
+    () => {
+      const fd = new FormData();
+      fd.append('action', 'manga_get_chapters');
+      fd.append('manga', mangaId);
+      if (nonce) fd.append('_wpnonce', nonce);
+      return fd;
+    },
+    () => {
+      const fd = new FormData();
+      fd.append('action', 'wp_manga_get_chapters');
+      fd.append('manga_id', mangaId);
+      if (nonce) fd.append('nonce', nonce);
+      return fd;
+    },
+    () => {
+      const fd = new FormData();
+      fd.append('action', 'manga_get_chapters');
+      fd.append('manga_id', mangaId);
+      if (nonce) fd.append('_wpnonce', nonce);
+      return fd;
+    },
+    () => {
+      const fd = new FormData();
+      fd.append('action', 'wp_manga_chapter_image_sitemap');
+      fd.append('manga', mangaId);
+      return fd;
+    },
+  ];
 
-    // Try POST to admin-ajax.php
-    const response = await fetch(ajaxUrl, {
-      method: 'POST',
-      credentials: 'include',
-      referrer: location.href,
-      referrerPolicy: 'no-referrer-when-downgrade',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      // Some sites use a different action name
-      const formData2 = new FormData();
-      formData2.append('action', 'wp_manga_get_chapters');
-      formData2.append('manga_id', mangaId);
-      if (nonce) formData2.append('nonce', nonce);
-
-      const response2 = await fetch(ajaxUrl, {
+  let lastError = '';
+  for (const buildFormData of attempts) {
+    try {
+      const response = await fetch(ajaxUrl, {
         method: 'POST',
         credentials: 'include',
         referrer: location.href,
         referrerPolicy: 'no-referrer-when-downgrade',
-        body: formData2,
+        body: buildFormData(),
       });
-      if (!response2.ok) {
-        return { error: `HTTP ${response2.status}` };
-      }
-      const html2 = await response2.text();
-      return { html: html2 };
-    }
 
-    const html = await response.text();
-    return { html };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : 'Madara AJAX fetch failed' };
+      if (response.ok) {
+        const text = await response.text();
+        // Validate that response looks like a chapter list, not an error
+        if (text && text.trim().length > 10 && !text.trim().startsWith('{"success":false')) {
+          return { html: text };
+        }
+      }
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Fetch failed';
+    }
   }
+
+  // Last resort: scrape the current listing page HTML for chapters
+  // (useful when AJAX is blocked but the page itself has chapters in DOM)
+  try {
+    const pageChaptersEl = document.querySelector(
+      '#manga-chapters-holder, .listing-chapters_wrap, .main.version-chap'
+    );
+    if (pageChaptersEl) {
+      const anchors = Array.from(pageChaptersEl.querySelectorAll<HTMLAnchorElement>('a[href]'));
+      if (anchors.length > 0) {
+        // Build a synthetic HTML response from DOM content
+        const syntheticHtml = '<ul>' + anchors.map((a) =>
+          `<li class="wp-manga-chapter"><a href="${a.href}">${a.textContent?.trim() || a.href}</a></li>`
+        ).join('') + '</ul>';
+        return { html: syntheticHtml };
+      }
+    }
+  } catch {
+    // ignore DOM scrape errors
+  }
+
+  return { error: lastError || 'All Madara AJAX attempts failed' };
 }
 
 async function scanCurrentPage() {

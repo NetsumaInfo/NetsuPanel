@@ -2,6 +2,7 @@ import type { ChapterLinkCandidate, MangaScanResult } from '@shared/types';
 import { collectRuntimeMangaGlobals } from '@core/detection/collectors/runtimeMangaGlobalsCollector';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { extractMadaraPageInfo, parseMadaraAjaxChapterHtml } from '@core/detection/collectors/madaraAjaxChapterCollector';
+import { detectPaginatedReader } from '@core/detection/collectors/paginatedReaderCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
@@ -31,6 +32,16 @@ const MADARA_DOMAINS = [
   'mangatx',
   'isekaiscan',
   'mangaclash',
+  // Novelists / Isekai reader sites
+  'amiactuallythestrongest',
+  'ibecamethemalelead',
+  'wereadmanga',
+  'mangakakalot',
+  'manganato',
+  'readmanhua',
+  'chapmanganato',
+  'ohmangas',
+  'mangahere',
 ];
 
 function matchesMadara(url: string): boolean {
@@ -104,6 +115,8 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
       image.getAttribute('data-original') ||
       image.getAttribute('data-wpfc-original-src') ||
       image.getAttribute('data-url') ||
+      image.getAttribute('data-lazy') ||
+      image.getAttribute('data-lazyload') ||
       image.currentSrc ||
       image.getAttribute('src') ||
       image.getAttribute('srcset')?.split(',')[0]?.trim().split(' ')[0] ||
@@ -115,7 +128,9 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
     if (
       rawSource.startsWith('data:image/svg+xml') ||
       rawSource.startsWith('data:image/gif;base64,R0lGOD') ||
-      rawSource.includes('cdn-cgi/mirage')
+      rawSource.startsWith('data:image/gif;base64,R0lGOD') ||
+      rawSource.includes('cdn-cgi/mirage') ||
+      rawSource.includes('cdn-cgi/image')
     ) continue;
 
     try {
@@ -337,6 +352,9 @@ function scanMadara(input: ScanAdapterInput): MangaScanResult {
   const runtimeUrls = runtime.tsReaderImages.map(stripWordPressProxy);
   const domUrls = collectMadaraDomImages(input.document, input.page.url).map(stripWordPressProxy);
 
+  // Check for paginated reader (one image per page)
+  const paginatedInfo = detectPaginatedReader(input.document as Document, input.page.url);
+
   // For chapter reader pages: use ts_reader or DOM images
   const chapterCandidates = [
     ...collectMadaraChapterCandidates(input.document, input.page.url),
@@ -347,30 +365,56 @@ function scanMadara(input: ScanAdapterInput): MangaScanResult {
 
   const isListingPage = isMadaraListingPage(input.page.url);
 
+  // Determine best image source:
+  // 1. ts_reader (most reliable for scroll readers)
+  // 2. DOM images (may include paginated current page)
+  // 3. Paginated reader image (if detected)
+  let sourceUrls: string[];
+  if (runtimeUrls.length > 0) {
+    sourceUrls = runtimeUrls;
+  } else if (domUrls.length > 0) {
+    sourceUrls = domUrls;
+  } else if (paginatedInfo.isPaginatedReader && paginatedInfo.currentImageUrl) {
+    // Paginated reader: we only have the current page image here.
+    // The chapterCrawler or the app will crawl other pages via next-page links.
+    sourceUrls = [paginatedInfo.currentImageUrl];
+  } else {
+    sourceUrls = [];
+  }
+
   // On listing pages, don't force manga-mode image collection (no chapter images exist)
   const extraCandidates = isListingPage
     ? []
-    : createOrderedNetworkCandidates(runtimeUrls.length > 0 ? runtimeUrls : domUrls, {
+    : createOrderedNetworkCandidates(sourceUrls, {
         prefix: 'madara',
-        sourceKind: runtimeUrls.length > 0 ? 'madara-ts-reader' : 'madara-dom',
+        sourceKind: runtimeUrls.length > 0 ? 'madara-ts-reader' : (paginatedInfo.isPaginatedReader ? 'madara-paginated' : 'madara-dom'),
         origin: input.origin,
         containerSignature: 'madara-reader',
         referrer: input.page.url,
         transform: runtimeUrls.length > 0 ? undefined : 'strip-wordpress-cdn',
       });
 
+  const paginatedDiagnostic = paginatedInfo.isPaginatedReader && !isListingPage
+    ? [{
+        code: 'madara-paginated-reader',
+        message: `Lecteur paginé détecté: page ${paginatedInfo.currentPage ?? '?'}/${paginatedInfo.totalPages ?? '?'}. ${paginatedInfo.totalPages ? `${paginatedInfo.totalPages} pages à télécharger.` : 'Navigation de pages disponible.'}`,
+        level: 'info' as const,
+      }]
+    : [];
+
   const diagnostics = [
     ...links.diagnostics,
+    ...paginatedDiagnostic,
     isListingPage
       ? { code: 'madara-listing-page', message: 'Page listing manga: chapitres chargés via AJAX (content script).', level: 'info' as const }
-      : (runtimeUrls.length === 0 && domUrls.length === 0
+      : (sourceUrls.length === 0
           ? [{ code: 'madara-no-pages', message: 'Aucune page Madara resolue, fallback global conserve.', level: 'info' as const }]
           : []
-        )[0] || { code: 'madara-ok', message: `${(runtimeUrls.length > 0 ? runtimeUrls : domUrls).length} pages Madara resolues.`, level: 'info' as const },
+        )[0] || { code: 'madara-ok', message: `${sourceUrls.length} pages Madara resolues.`, level: 'info' as const },
   ].filter(Boolean);
 
   return {
-    adapterId: 'madara',
+    adapterId: paginatedInfo.isPaginatedReader ? 'madara-paginated' : 'madara',
     currentPages: buildImageCollection(
       isListingPage ? [] : prependCandidates(extraCandidates, input.imageCandidates),
       'manga'

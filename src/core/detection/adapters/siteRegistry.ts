@@ -20,6 +20,7 @@ import { weebcentralAdapter } from './weebcentralAdapter';
 import { speedbinbAdapter } from './speedbinbAdapter';
 import { asuracomicAdapter } from './asuracomicAdapter';
 import { mangagoAdapter } from './mangagoAdapter';
+import { bilibiliAdapter } from './bilibiliAdapter';
 import { genericSiteAdapter } from './genericSiteAdapter';
 
 /**
@@ -28,11 +29,12 @@ import { genericSiteAdapter } from './genericSiteAdapter';
  */
 const ADAPTERS: SiteAdapter[] = [
   mangadexAdapter,          // MangaDex (API publique)
-  webtoonAdapter,           // Webtoons.com (LINE Webtoon)
+  webtoonAdapter,           // Webtoons.com (LINE Webtoon), Naver Comic
   weebcentralAdapter,       // WeebCentral
   speedbinbAdapter,         // SpeedBinb readers
   asuracomicAdapter,        // AsuraComic, AnimeSama, MangaBuddy, GalaxyManga (Next.js)
   mangagoAdapter,           // Mangago.me, Utoon (var imglist=[])
+  bilibiliAdapter,          // Bilibili Manga, Tencent QQ Comics (ac.qq.com)
   madaraAdapter,            // Madara / WP-Manga with ts_reader and page-break
   mangastreamAdapter,       // MangaStream / ThemeSia-like readers
   wordpressMangaAdapter,    // Tous les sites WP-Manga/Madara (ts_reader.run)

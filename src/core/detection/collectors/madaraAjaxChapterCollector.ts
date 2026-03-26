@@ -53,13 +53,16 @@ export function extractMadaraPageInfo(document: Document, url: string): MadaraPa
     /\/(read|viewer)\//i.test(pathname);
 
   // 1. Try to get manga_id from DOM attribute (most reliable)
+  // Supports both numeric WP post IDs and UUID-style IDs (e.g. astral-manga.fr)
   const mangaIdEl =
-    document.querySelector<HTMLElement>('[data-id]') ||
-    document.querySelector<HTMLElement>('.wp-manga[data-id]') ||
     document.querySelector<HTMLElement>('#manga-chapters-holder[data-id]') ||
-    document.querySelector<HTMLElement>('.manga-info-top[data-id]') ||
+    document.querySelector<HTMLElement>('.wp-manga[data-id]') ||
     document.querySelector<HTMLElement>('[data-manga-id]') ||
-    document.querySelector<HTMLElement>('[data-post-id]');
+    document.querySelector<HTMLElement>('[data-post-id]') ||
+    document.querySelector<HTMLElement>('.manga-title-badges[data-id]') ||
+    document.querySelector<HTMLElement>('.tab-summary[data-id]') ||
+    document.querySelector<HTMLElement>('.post-title[data-id]') ||
+    document.querySelector<HTMLElement>('[data-id]');
 
   if (mangaIdEl) {
     result.mangaId =
@@ -106,14 +109,18 @@ export function extractMadaraPageInfo(document: Document, url: string): MadaraPa
 
   // 3. Try URL-based extraction (some sites put manga ID in URL)
   if (!result.mangaId) {
-    const uuidOrIdMatch = pathname.match(/\/manga\/([a-f0-9-]{8,})\/?$/i);
-    // UUID-style IDs are not WP post IDs; skip
-    // But numeric IDs might work:
-    const numericMatch = pathname.match(/\/manga\/(\d{1,10})\/?$/i);
+    // Numeric post ID (standard WP)
+    const numericMatch = pathname.match(/\/(?:manga|manhwa|manhua|comic|webtoon|scan)\/([0-9]{1,10})\/?$/i);
     if (numericMatch) {
       result.mangaId = numericMatch[1];
     }
-    void uuidOrIdMatch; // UUID format is not a WP post ID
+    // UUID-style ID (e.g. astral-manga.fr): some Madara variants pass the UUID to manga_get_chapters
+    if (!result.mangaId) {
+      const uuidMatch = pathname.match(/\/(?:manga|manhwa|manhua|comic|webtoon|scan)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/?$/i);
+      if (uuidMatch) {
+        result.mangaId = uuidMatch[1];
+      }
+    }
   }
 
   // 4. Default admin AJAX URL if not found
@@ -123,6 +130,14 @@ export function extractMadaraPageInfo(document: Document, url: string): MadaraPa
       result.ajaxUrl = `${origin}/wp-admin/admin-ajax.php`;
     } catch {
       result.ajaxUrl = '/wp-admin/admin-ajax.php';
+    }
+  }
+
+  // 5. Try to extract AJAX URL from meta tags or noscript
+  if (!result.nonce) {
+    const nonceMeta = document.querySelector<HTMLMetaElement>('meta[name="manga-nonce"], meta[name="wp-nonce"]');
+    if (nonceMeta) {
+      result.nonce = nonceMeta.getAttribute('content') || null;
     }
   }
 
@@ -144,7 +159,19 @@ export function parseMadaraAjaxChapterHtml(html: string, baseUrl: string): Madar
   const doc = parser.parseFromString(html, 'text/html');
 
   const anchors = Array.from(doc.querySelectorAll<HTMLAnchorElement>(
-    'li.wp-manga-chapter a, .wp-manga-chapter a, .chapter-li a, li a[href]'
+    [
+      'li.wp-manga-chapter a',
+      '.wp-manga-chapter a',
+      '.chapter-li a',
+      '.listing-chapters_wrap li a',
+      '.main.version-chap li a',
+      'ul.clstyle li a',
+      '.chapters-wrapper li a',
+      '#manga-chapters-holder li a',
+      'li a[href*="/chapter"]',
+      'li a[href*="/chapitre"]',
+      'li a[href]',
+    ].join(', ')
   ));
 
   const entries: MadaraChapterEntry[] = [];

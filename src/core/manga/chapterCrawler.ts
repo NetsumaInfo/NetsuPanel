@@ -6,6 +6,7 @@ import type {
   PageScanResult,
 } from '@shared/types';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
+import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
 
 export interface ChapterCrawlerDependencies {
@@ -189,11 +190,69 @@ export async function loadChapterPreview(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
-  const scan = await scanRemotePage(chapterUrl, dependencies, options);
+  const html = await dependencies.fetchDocument(chapterUrl, options);
+  const doc = parseRemoteDocument(html);
+  const scan = scanPageDocument({
+    document: doc,
+    page: buildPageIdentity(chapterUrl, doc),
+    origin: 'static-html',
+    imageCandidates: collectStaticDocumentImages(doc, chapterUrl),
+  });
+
   // Prefer manga-specific detection (better ordering/filtering)
   // but fall back to general collection when manga finds nothing meaningful
   const mangaResult = scan.manga.currentPages;
   const generalResult = scan.general;
+
+  // Check if the chapter uses a paginated reader
+  const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
+  if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
+    // Crawl all pages to get all images
+    const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
+      dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
+
+    const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
+    if (allImageUrls.length > 0) {
+      // Build an ImageCollectionResult from the crawled URLs
+      const paginatedItems = allImageUrls.map((url, i) => ({
+        id: `paginated-${i}`,
+        url,
+        previewUrl: url,
+        referrer: chapterUrl,
+        canonicalUrl: url.split('?')[0],
+        querylessUrl: url.split('?')[0],
+        captureStrategy: 'network' as const,
+        sourceKind: 'paginated-crawl',
+        origin: 'static-html' as const,
+        width: 0,
+        height: 0,
+        area: 0,
+        domIndex: i,
+        top: i * 100,
+        left: 0,
+        altText: `Page ${i + 1}`,
+        titleText: '',
+        containerSignature: 'paginated-reader',
+        familyKey: url.split('?')[0],
+        visible: true,
+        filenameHint: `page-${String(i + 1).padStart(3, '0')}`,
+        extensionHint: url.match(/\.(jpe?g|png|webp|avif)/i)?.[1]?.toLowerCase() || 'jpg',
+        pageNumber: i + 1,
+        score: 100,
+        diagnostics: [],
+      }));
+      return {
+        items: paginatedItems,
+        totalCandidates: paginatedItems.length,
+        diagnostics: [{
+          code: 'paginated-crawl',
+          message: `${paginatedItems.length} images récupérées depuis ${paginatedInfo.totalPages} pages.`,
+          level: 'info',
+        }],
+      };
+    }
+  }
+
   if (mangaResult.items.length >= 2) return mangaResult;
   return generalResult.items.length > mangaResult.items.length ? generalResult : mangaResult;
 }
