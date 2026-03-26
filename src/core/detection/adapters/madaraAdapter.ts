@@ -1,6 +1,7 @@
 import type { ChapterLinkCandidate, MangaScanResult } from '@shared/types';
 import { collectRuntimeMangaGlobals } from '@core/detection/collectors/runtimeMangaGlobalsCollector';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
+import { extractMadaraPageInfo, parseMadaraAjaxChapterHtml } from '@core/detection/collectors/madaraAjaxChapterCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
@@ -25,6 +26,11 @@ const MADARA_DOMAINS = [
   'mangaread',
   'mangaball',
   'scan-manga',
+  'reaper-scans',
+  'luminousscans',
+  'mangatx',
+  'isekaiscan',
+  'mangaclash',
 ];
 
 function matchesMadara(url: string): boolean {
@@ -36,6 +42,27 @@ function matchesMadara(url: string): boolean {
   }
 }
 
+/**
+ * Detect if this is a Madara manga listing page (not a chapter reader page).
+ * Listing pages have the chapter list but no manga pages/images.
+ */
+function isMadaraListingPage(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname;
+    // Typical listing: /manga/slug/ or /manga/uuid/
+    // NOT a chapter page: /manga/slug/chapter-1/ or /manga/slug/volume-1/chapter-1/
+    const hasChapterSegment = /\/(chapter|chapitre|episode|ch|vol|partie|chap)[-_]?\d/i.test(pathname);
+    const isMangaRoot = /^\/(manga|manhwa|manhua|comic|webtoon|scan)\/[^/]+\/?$/i.test(pathname);
+    return isMangaRoot && !hasChapterSegment;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Collect images from Madara chapter reader DOM.
+ * Handles multiple lazy-loading patterns and Cloudflare placeholder src.
+ */
 function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[] {
   const images = Array.from(
     (document as Document).querySelectorAll<HTMLImageElement>(
@@ -44,37 +71,84 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
         '.page-break source',
         '.wp-manga-chapter-img',
         '.reading-content img',
+        '.reading-content source',
         '.chapter-content img',
         '.entry-content img',
         '.text-left img',
         '#readerarea img',
+        '#readerarea source',
         '.ts-main-image',
         '.ts-main-image.curdown',
         'main img[alt*="Page"]',
+        // Cloudflare lazy patterns
+        'img[data-cfsrc]',
+        'img[data-src][class*="page"]',
+        'img[data-src][class*="wp-manga"]',
       ].join(', ')
     )
   );
 
-  return images
-    .map((image) => {
-      const source =
-        image.dataset.url ||
-        image.getAttribute('data-url') ||
-        image.dataset.src ||
-        image.getAttribute('data-src') ||
-        image.dataset.lazySrc ||
-        image.currentSrc ||
-        image.getAttribute('src') ||
-        image.getAttribute('srcset')?.split(',')[0]?.trim().split(' ')[0] ||
-        '';
-      if (!source) return '';
-      try {
-        return new URL(source, baseUrl).href;
-      } catch {
-        return '';
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const image of images) {
+    // Priority order: data-cfsrc (Cloudflare) > data-src > data-lazy-src > data-original > currentSrc > src
+    const rawSource =
+      image.getAttribute('data-cfsrc') ||
+      image.getAttribute('data-src') ||
+      image.getAttribute('data-lazy-src') ||
+      image.getAttribute('data-original') ||
+      image.getAttribute('data-wpfc-original-src') ||
+      image.getAttribute('data-url') ||
+      image.currentSrc ||
+      image.getAttribute('src') ||
+      image.getAttribute('srcset')?.split(',')[0]?.trim().split(' ')[0] ||
+      '';
+
+    if (!rawSource) continue;
+
+    // Skip Cloudflare placeholder data URIs
+    if (
+      rawSource.startsWith('data:image/svg+xml') ||
+      rawSource.startsWith('data:image/gif;base64,R0lGOD') ||
+      rawSource.includes('cdn-cgi/mirage')
+    ) continue;
+
+    try {
+      const resolved = new URL(rawSource, baseUrl).href;
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        urls.push(resolved);
       }
-    })
-    .filter(Boolean);
+    } catch {
+      // ignore malformed URLs
+    }
+  }
+
+  // Also check noscript tags (Cloudflare Mirage pattern)
+  const noscripts = Array.from((document as Document).querySelectorAll('noscript'));
+  for (const ns of noscripts) {
+    const html = ns.textContent || ns.innerHTML || '';
+    if (!html.includes('<img')) continue;
+
+    const srcMatch = html.match(/data-src=["']([^"']+)["']/i) ||
+      html.match(/src=["']([^"']+)["']/i);
+    if (!srcMatch) continue;
+
+    const raw = srcMatch[1];
+    if (!raw || raw.startsWith('data:')) continue;
+    try {
+      const resolved = new URL(raw, baseUrl).href;
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        urls.push(resolved);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return urls;
 }
 
 function stripWordPressProxy(url: string): string {
@@ -124,6 +198,8 @@ function createMadaraChapterCandidate(
 
 function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string): ChapterLinkCandidate[] {
   const results: ChapterLinkCandidate[] = [];
+
+  // Extended selector list for various Madara versions
   const chapterAnchors = Array.from(
     (document as Document).querySelectorAll<HTMLAnchorElement>(
       [
@@ -141,6 +217,11 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
         '.chapter-list a',
         '.listing-chapter a',
         '#chapterlist a',
+        // Additional Madara variants
+        '.eph-num a',
+        '.chapter-item a',
+        'ul.clstyle li a',
+        '.chapters li a',
       ].join(', ')
     )
   );
@@ -151,10 +232,10 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
   });
 
   const previousAnchor = (document as Document).querySelector<HTMLAnchorElement>(
-    'a.prev_page, .nav-previous a, .chapter-nav a.prev, .select-pagination a.prev, a[rel="prev"]'
+    'a.prev_page, .nav-previous a, .chapter-nav a.prev, .select-pagination a.prev, a[rel="prev"], .btn-prev-chapter, .prev-chapter'
   );
   const nextAnchor = (document as Document).querySelector<HTMLAnchorElement>(
-    'a.next_page, .nav-next a, .chapter-nav a.next, .select-pagination a.next, a[rel="next"]'
+    'a.next_page, .nav-next a, .chapter-nav a.next, .select-pagination a.next, a[rel="next"], .btn-next-chapter, .next-chapter'
   );
 
   if (previousAnchor) {
@@ -167,39 +248,129 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
     if (candidate) results.push(candidate);
   }
 
+  // Also look for chapter select dropdown (Madara 2.x)
+  const chapterSelects = Array.from(
+    (document as Document).querySelectorAll<HTMLOptionElement>('select.selectpicker option[value], .chapter-select option[data-redirect]')
+  );
+  chapterSelects.forEach((option, index) => {
+    const href = option.getAttribute('value') || option.getAttribute('data-redirect') || '';
+    if (!href || href.startsWith('#')) return;
+    const resolved = resolveUrl(href, currentUrl);
+    if (!resolved) return;
+    const label = stripChapterLabelMetadata(compactWhitespace(option.textContent || ''));
+    const identity = parseChapterIdentity(label, resolved);
+    results.push({
+      id: `madara-select-${index}`,
+      url: resolved,
+      canonicalUrl: resolved.split('#')[0],
+      label: identity.label || label,
+      relation: option.selected ? 'current' : 'candidate',
+      chapterNumber: identity.chapterNumber,
+      volumeNumber: identity.volumeNumber,
+      score: 85,
+      containerSignature: 'madara:chapter-select',
+      diagnostics: [],
+    });
+  });
+
   return results;
+}
+
+/**
+ * Attempt to fetch Madara chapters via the AJAX endpoint embedded in the page scripts.
+ * This requires the page to have already loaded (live-dom scan only).
+ * Returns parsed chapter candidates, or empty array if not available.
+ */
+function collectMadaraAjaxChaptersFromPage(document: ParentNode, currentUrl: string): ChapterLinkCandidate[] {
+  // Only usable in live DOM context where we can read scripts/globals
+  const madaraInfo = extractMadaraPageInfo(document as Document, currentUrl);
+
+  if (!madaraInfo.isMangaListingPage) return [];
+
+  // The AJAX chapters will be fetched asynchronously by the content script.
+  // If we're in a static scan (chapter crawler), we can still try to parse
+  // any pre-rendered chapter data from the page.
+
+  // Check if there's an embedded JSON with chapters
+  const scripts = Array.from((document as Document).querySelectorAll<HTMLScriptElement>('script:not([src])'));
+  for (const script of scripts) {
+    const text = script.textContent || '';
+    // Pattern: chapters data embedded as JSON
+    const jsonMatch = text.match(/chapters\s*[=:]\s*(\[[\s\S]*?\])/);
+    if (!jsonMatch) continue;
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as Array<{ chapter_slug?: string; chapter_name?: string; slug?: string }>;
+      if (!Array.isArray(parsed) || parsed.length === 0) continue;
+
+      return parsed.slice(0, 200).map((ch, idx) => {
+        const slug = ch.chapter_slug || ch.slug || '';
+        const label = ch.chapter_name || slug || `Chapter ${idx + 1}`;
+        const url = slug ? resolveUrl(slug, currentUrl) || currentUrl : currentUrl;
+        const identity = parseChapterIdentity(label, url);
+        return {
+          id: `madara-json-${idx}`,
+          url,
+          canonicalUrl: url.split('#')[0],
+          label: identity.label || label,
+          relation: 'candidate' as const,
+          chapterNumber: identity.chapterNumber,
+          volumeNumber: identity.volumeNumber,
+          score: 88,
+          containerSignature: 'madara:json-embed',
+          diagnostics: [],
+        };
+      });
+    } catch {
+      // ignore JSON parse errors
+    }
+  }
+
+  return [];
 }
 
 function scanMadara(input: ScanAdapterInput): MangaScanResult {
   const runtime = collectRuntimeMangaGlobals(input.document);
   const runtimeUrls = runtime.tsReaderImages.map(stripWordPressProxy);
   const domUrls = collectMadaraDomImages(input.document, input.page.url).map(stripWordPressProxy);
+
+  // For chapter reader pages: use ts_reader or DOM images
   const chapterCandidates = [
     ...collectMadaraChapterCandidates(input.document, input.page.url),
+    ...collectMadaraAjaxChaptersFromPage(input.document, input.page.url),
     ...collectChapterLinks(input.document, input.page.url, input.page.url),
   ];
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 
-  const extraCandidates = createOrderedNetworkCandidates(runtimeUrls.length > 0 ? runtimeUrls : domUrls, {
-    prefix: 'madara',
-    sourceKind: runtimeUrls.length > 0 ? 'madara-ts-reader' : 'madara-dom',
-    origin: input.origin,
-    containerSignature: 'madara-reader',
-    referrer: input.page.url,
-    transform: runtimeUrls.length > 0 ? undefined : 'strip-wordpress-cdn',
-  });
+  const isListingPage = isMadaraListingPage(input.page.url);
+
+  // On listing pages, don't force manga-mode image collection (no chapter images exist)
+  const extraCandidates = isListingPage
+    ? []
+    : createOrderedNetworkCandidates(runtimeUrls.length > 0 ? runtimeUrls : domUrls, {
+        prefix: 'madara',
+        sourceKind: runtimeUrls.length > 0 ? 'madara-ts-reader' : 'madara-dom',
+        origin: input.origin,
+        containerSignature: 'madara-reader',
+        referrer: input.page.url,
+        transform: runtimeUrls.length > 0 ? undefined : 'strip-wordpress-cdn',
+      });
+
+  const diagnostics = [
+    ...links.diagnostics,
+    isListingPage
+      ? { code: 'madara-listing-page', message: 'Page listing manga: chapitres chargés via AJAX (content script).', level: 'info' as const }
+      : (runtimeUrls.length === 0 && domUrls.length === 0
+          ? [{ code: 'madara-no-pages', message: 'Aucune page Madara resolue, fallback global conserve.', level: 'info' as const }]
+          : []
+        )[0] || { code: 'madara-ok', message: `${(runtimeUrls.length > 0 ? runtimeUrls : domUrls).length} pages Madara resolues.`, level: 'info' as const },
+  ].filter(Boolean);
 
   return {
     adapterId: 'madara',
     currentPages: buildImageCollection(prependCandidates(extraCandidates, input.imageCandidates), 'manga'),
     chapters: links.chapters,
     navigation: links.navigation,
-    diagnostics: [
-      ...links.diagnostics,
-      ...(runtimeUrls.length === 0 && domUrls.length === 0
-        ? [{ code: 'madara-no-pages', message: 'Aucune page Madara resolue, fallback global conserve.', level: 'info' as const }]
-        : []),
-    ],
+    diagnostics,
   };
 }
 

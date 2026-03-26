@@ -6,6 +6,7 @@ import { assertDecodableImage, validateBinaryImage } from '@shared/utils/imageBi
 import { normalizeHttpUrl, sanitizeRequestHeaders } from '@shared/utils/resourcePolicy';
 import { collectLiveDomImages, type CapturableNode } from '@core/detection/collectors/liveDomImageCollector';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
+import { extractMadaraPageInfo, parseMadaraAjaxChapterHtml } from '@core/detection/collectors/madaraAjaxChapterCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
 
 declare global {
@@ -333,6 +334,55 @@ async function captureNode(node: CapturableNode): Promise<CapturedImageResult> {
   }
 }
 
+/** Fetch Madara chapter list via AJAX from within page context (bypasses Cloudflare) */
+async function fetchMadaraChapters(
+  ajaxUrl: string,
+  mangaId: string,
+  nonce?: string
+): Promise<{ html: string } | { error: string }> {
+  try {
+    const formData = new FormData();
+    formData.append('action', 'manga_get_chapters');
+    formData.append('manga', mangaId);
+    if (nonce) formData.append('_wpnonce', nonce);
+
+    // Try POST to admin-ajax.php
+    const response = await fetch(ajaxUrl, {
+      method: 'POST',
+      credentials: 'include',
+      referrer: location.href,
+      referrerPolicy: 'no-referrer-when-downgrade',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      // Some sites use a different action name
+      const formData2 = new FormData();
+      formData2.append('action', 'wp_manga_get_chapters');
+      formData2.append('manga_id', mangaId);
+      if (nonce) formData2.append('nonce', nonce);
+
+      const response2 = await fetch(ajaxUrl, {
+        method: 'POST',
+        credentials: 'include',
+        referrer: location.href,
+        referrerPolicy: 'no-referrer-when-downgrade',
+        body: formData2,
+      });
+      if (!response2.ok) {
+        return { error: `HTTP ${response2.status}` };
+      }
+      const html2 = await response2.text();
+      return { html: html2 };
+    }
+
+    const html = await response.text();
+    return { html };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Madara AJAX fetch failed' };
+  }
+}
+
 async function scanCurrentPage() {
   const startedAt = Date.now();
   const isWithinBudget = () => Date.now() - startedAt < MAX_SCAN_DURATION_MS;
@@ -384,12 +434,56 @@ async function scanCurrentPage() {
   capturableRegistry.clear();
   collection.capturables.forEach((value, key) => capturableRegistry.set(key, value));
 
-  return scanPageDocument({
+  // For Madara listing pages: auto-detect manga_id and attach chapter AJAX info
+  // The actual AJAX call will be triggered by the adapter via the background/content message
+  const madaraInfo = extractMadaraPageInfo(document, page.url);
+
+  const result = scanPageDocument({
     document,
     page,
     origin: 'live-dom',
     imageCandidates: allCandidates,
   });
+
+  // If this is a Madara listing page with a manga_id, fetch chapters via AJAX immediately
+  if (madaraInfo.isMangaListingPage && madaraInfo.mangaId && madaraInfo.ajaxUrl) {
+    try {
+      const chapterResult = await fetchMadaraChapters(
+        madaraInfo.ajaxUrl,
+        madaraInfo.mangaId,
+        madaraInfo.nonce || undefined
+      );
+      if ('html' in chapterResult && chapterResult.html) {
+        const parsed = parseMadaraAjaxChapterHtml(chapterResult.html, page.url);
+        if (parsed.length > 0) {
+          // Inject AJAX-fetched chapters into the result
+          const ajaxChapterLinks = parsed.map((entry, idx) => ({
+            id: `madara-ajax-${idx}`,
+            url: entry.url,
+            canonicalUrl: entry.url.split('#')[0],
+            label: entry.label,
+            relation: 'candidate' as const,
+            chapterNumber: entry.chapterNumber,
+            volumeNumber: null,
+            score: 95,
+            containerSignature: 'madara:ajax-chapter-list',
+            diagnostics: [],
+          }));
+          // Merge with existing chapters (AJAX result takes priority)
+          const existingUrls = new Set(result.manga.chapters.map((c) => c.canonicalUrl));
+          const newChapters = ajaxChapterLinks.filter((c) => !existingUrls.has(c.canonicalUrl));
+          result.manga.chapters = [...ajaxChapterLinks, ...result.manga.chapters.filter(
+            (c) => !ajaxChapterLinks.some((a) => a.canonicalUrl === c.canonicalUrl)
+          )];
+          void newChapters; // suppress unused warning
+        }
+      }
+    } catch {
+      // Non-blocking: keep chapters from static HTML scan
+    }
+  }
+
+  return result;
 }
 
 if (!window.__netsuPanelInitialized__) {
@@ -415,6 +509,9 @@ if (!window.__netsuPanelInitialized__) {
         return {
           html: await fetchDocumentFromPage(message.url, message.referrer),
         };
+
+      case ContentMessageType.FetchMadaraChapters:
+        return fetchMadaraChapters(message.ajaxUrl, message.mangaId, message.nonce);
 
       default:
         return undefined;

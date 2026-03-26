@@ -80,6 +80,7 @@ export const enum ContentMessageType {
   CaptureImage = 'CAPTURE_IMAGE',
   FetchBinary = 'FETCH_BINARY',
   FetchDocument = 'FETCH_DOCUMENT',
+  FetchMadaraChapters = 'FETCH_MADARA_CHAPTERS',
 }
 
 export interface ScanPageRequest {
@@ -104,8 +105,19 @@ export interface FetchDocumentContentRequest {
   referrer?: string;
 }
 
+export interface FetchMadaraChaptersContentRequest {
+  type: ContentMessageType.FetchMadaraChapters;
+  /** Admin AJAX URL (e.g. /wp-admin/admin-ajax.php) */
+  ajaxUrl: string;
+  /** WordPress post/manga ID */
+  mangaId: string;
+  /** Optional nonce */
+  nonce?: string;
+}
+
 export type ContentRequest =
   | ScanPageRequest
   | CaptureImageContentRequest
   | FetchBinaryContentRequest
-  | FetchDocumentContentRequest;
+  | FetchDocumentContentRequest
+  | FetchMadaraChaptersContentRequest;
