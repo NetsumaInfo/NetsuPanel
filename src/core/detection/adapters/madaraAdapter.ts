@@ -79,6 +79,36 @@ function isMadaraListingPage(url: string): boolean {
  * Handles multiple lazy-loading patterns and Cloudflare placeholder src.
  */
 function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[] {
+  const tsMainImages = Array.from(
+    (document as Document).querySelectorAll<HTMLImageElement>('#readerarea img.ts-main-image, img.ts-main-image')
+  );
+  if (tsMainImages.length >= 2) {
+    const urls: string[] = [];
+    const seen = new Set<string>();
+    for (const image of tsMainImages) {
+      const rawSource =
+        image.getAttribute('data-cfsrc') ||
+        image.getAttribute('data-src') ||
+        image.getAttribute('data-lazy-src') ||
+        image.getAttribute('data-original') ||
+        image.currentSrc ||
+        image.getAttribute('src') ||
+        '';
+      if (!rawSource) continue;
+      try {
+        const resolved = new URL(rawSource, baseUrl).href;
+        if (seen.has(resolved)) continue;
+        seen.add(resolved);
+        urls.push(resolved);
+      } catch {
+        // ignore malformed URLs
+      }
+    }
+    if (urls.length >= 2) {
+      return urls;
+    }
+  }
+
   const images = Array.from(
     (document as Document).querySelectorAll<HTMLImageElement>(
       [
@@ -106,7 +136,19 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
   const urls: string[] = [];
   const seen = new Set<string>();
 
+  const REJECT_IMAGE_RE = /(?:discord|logo|avatar|icon|emoji|banner|share|social|comment|profile|favicon|ads?)(?:[/?#._-]|$)/i;
+  const READER_HINT_RE = /(page|chapter|chapitre|reader|reading|scan|manga|comic|ts-main-image|wp-manga|page-break)/i;
+
   for (const image of images) {
+    const contextText = [
+      image.getAttribute('alt') || '',
+      image.getAttribute('title') || '',
+      image.className || '',
+      image.id || '',
+      image.parentElement?.className || '',
+      image.closest('[class]')?.getAttribute('class') || '',
+    ].join(' ');
+
     // Priority order: data-cfsrc (Cloudflare) > data-src > data-lazy-src > data-original > currentSrc > src
     const rawSource =
       image.getAttribute('data-cfsrc') ||
@@ -123,6 +165,7 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
       '';
 
     if (!rawSource) continue;
+    if (REJECT_IMAGE_RE.test(rawSource) || REJECT_IMAGE_RE.test(contextText)) continue;
 
     // Skip Cloudflare placeholder data URIs
     if (
@@ -132,6 +175,20 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
       rawSource.includes('cdn-cgi/mirage') ||
       rawSource.includes('cdn-cgi/image')
     ) continue;
+
+    const widthHint =
+      image.naturalWidth ||
+      Number(image.getAttribute('width')) ||
+      Number(image.getAttribute('data-width')) ||
+      0;
+    const heightHint =
+      image.naturalHeight ||
+      Number(image.getAttribute('height')) ||
+      Number(image.getAttribute('data-height')) ||
+      0;
+    const hasReaderHint = READER_HINT_RE.test(`${rawSource} ${contextText}`);
+    const isLargeEnough = widthHint >= 180 || heightHint >= 260 || (widthHint === 0 && heightHint === 0);
+    if (!hasReaderHint && !isLargeEnough) continue;
 
     try {
       const resolved = new URL(rawSource, baseUrl).href;
@@ -425,7 +482,23 @@ function scanMadara(input: ScanAdapterInput): MangaScanResult {
       'manga'
     ),
     chapters: links.chapters,
-    navigation: links.navigation,
+    navigation: {
+      ...links.navigation,
+      listing: links.navigation.listing || (isListingPage
+        ? {
+            id: 'madara-current-listing',
+            url: input.page.url,
+            canonicalUrl: input.page.url.split('#')[0],
+            label: input.page.title,
+            relation: 'listing',
+            score: 100,
+            chapterNumber: null,
+            volumeNumber: null,
+            containerSignature: 'madara:listing-page',
+            diagnostics: [],
+          }
+        : undefined),
+    },
     diagnostics,
   };
 }

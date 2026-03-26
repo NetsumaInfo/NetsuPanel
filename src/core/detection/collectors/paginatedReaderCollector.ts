@@ -275,6 +275,21 @@ export function detectPaginatedReader(doc: Document, url: string): PaginatedRead
     currentImageUrl: null,
   };
 
+  // If the DOM already exposes multiple page images, this is not a paginated reader.
+  const multiPageImageCount = doc.querySelectorAll(
+    [
+      '.page-break img',
+      '.reading-content img',
+      '.wp-manga-chapter-img',
+      '#readerarea img.ts-main-image',
+      '.ts-main-image',
+      '.chapter-content img',
+    ].join(', ')
+  ).length;
+  if (multiPageImageCount >= 2) {
+    return result;
+  }
+
   // Detect paginated reader signals
   const hasPageSelect = !!doc.querySelector(
     'select[name*="page"], select[id*="page"], select.page-select'

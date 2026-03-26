@@ -98,6 +98,7 @@ describe('simple reader adapter coverage', () => {
     });
 
     expect(result.currentPages.items).toEqual([]);
+    expect(result.navigation.listing?.url).toBe('https://astral-manga.fr/manga/cc9c21c9-47f7-4c92-84d1-966bffba9d5f');
   });
 
   test('next-data adapter falls back to direct DOM scan placement images', () => {
