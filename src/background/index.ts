@@ -126,9 +126,10 @@ async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): 
 
     await waitForTabReady(tempTabId);
     await ensureContentScript(tempTabId);
-    return browser.tabs.sendMessage(tempTabId, {
+    const scan = await browser.tabs.sendMessage(tempTabId, {
       type: ContentMessageType.ScanPage,
     });
+    return scan;
   } finally {
     if (createdTabId) {
       try {
