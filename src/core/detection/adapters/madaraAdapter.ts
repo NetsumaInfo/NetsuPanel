@@ -248,24 +248,31 @@ function createMadaraChapterCandidate(
     ''
   ));
 
-  const isPaginationLink =
+  const labelLooksNumericOnly = /^#?(\d{1,5}(?:\.\d+)?)$/.test(label);
+  const urlLooksPagination =
     /(?:^|\/)(?:page|paged|pagination)\/?\d+(?:$|[/?#])/i.test(resolvedUrl) ||
-    /(?:^|\s)(?:page|p\.)\s*\d+(?:$|\s)/i.test(label) ||
-    /^\d+$/.test(label);
-  if (isPaginationLink && !/(chapter|chapitre|episode|ep|ch\.?)/i.test(label)) {
+    /[?&](?:page|paged|pagination)=\d+(?:$|&)/i.test(resolvedUrl);
+  const labelLooksPagination = /(?:^|\s)(?:page|p\.)\s*\d+(?:$|\s)/i.test(label);
+  const containerLooksPagination = /(pagination|pagenavi|page-nav)/i.test(containerSignature);
+  const shouldRejectAsPagination =
+    (urlLooksPagination || labelLooksPagination || (labelLooksNumericOnly && containerLooksPagination)) &&
+    !/(chapter|chapitre|episode|ep|ch\.?)/i.test(label);
+  if (shouldRejectAsPagination) {
     return null;
   }
 
   const identity = parseChapterIdentity(label, resolvedUrl);
+  const chapterNumberFromNumericLabel = labelLooksNumericOnly ? Number(label.replace(/^#/, '')) : null;
+  const chapterNumber = identity.chapterNumber ?? chapterNumberFromNumericLabel;
 
   return {
     id: `madara-chapter-${relation}-${index}`,
     url: resolvedUrl,
     canonicalUrl: resolvedUrl.split('#')[0],
-    label: identity.label || label || `Chapter ${identity.chapterNumber ?? '?'}`,
+    label: identity.label || label || `Chapter ${chapterNumber ?? '?'}`,
     relation: resolvedUrl.split('#')[0] === currentUrl.split('#')[0] ? 'current' : relation,
     score,
-    chapterNumber: identity.chapterNumber,
+    chapterNumber,
     volumeNumber: identity.volumeNumber,
     containerSignature,
     diagnostics: [],
@@ -310,16 +317,20 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
   // Astral-style "read first chapter" CTA can point to chapter 1 even when the listing cluster misses it.
   const firstChapterCtaAnchors = Array.from(
     (document as Document).querySelectorAll<HTMLAnchorElement>('a[href], button[onclick]')
-  ).filter((anchor) => /(?:lire\s+le\s+premier\s+chapitre|read\s+the\s+first\s+chapter|premier\s+chapitre)/i.test(
-    compactWhitespace(anchor.textContent || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || '')
-  ));
+  )
+    .map((anchor) => ({
+      anchor,
+      ctaLabel: compactWhitespace(anchor.textContent || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || ''),
+    }))
+    .filter((item) => /(?:lire\s+le\s+premier\s+chapitre|read\s+the\s+first\s+chapter|premier\s+chapitre)/i.test(item.ctaLabel));
 
-  firstChapterCtaAnchors.forEach((anchor, index) => {
-    const candidate = createMadaraChapterCandidate(anchor, currentUrl, index, 'candidate', 'madara:first-chapter-cta', 99);
+  firstChapterCtaAnchors.forEach(({ anchor, ctaLabel }, index) => {
+    const candidate = createMadaraChapterCandidate(anchor, currentUrl, index, 'candidate', 'madara:first-chapter-cta', 72);
     if (!candidate) return;
+    const fallbackLabel = /\b(premier|chapitre|lire)\b/i.test(ctaLabel) ? 'Chapitre 1' : 'Chapter 1';
     results.push({
       ...candidate,
-      label: candidate.label || 'Chapitre 1',
+      label: candidate.chapterNumber === 1 ? fallbackLabel : (candidate.label || fallbackLabel),
       chapterNumber: candidate.chapterNumber ?? 1,
     });
   });

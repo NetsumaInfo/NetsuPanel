@@ -1,7 +1,7 @@
 import { clamp } from '@shared/utils/number';
 
 const JUNK_RE =
-  /(?:^|[/_\-?=])(avatar|icon|logo|sprite|ad|ads|banner|emoji|favicon|tracker|comment|profile|share|social|loader|loading|spinner|preloader|placeholder|blank|pixel|throbber)(?:$|[/_\-?=.])/i;
+  /(?:^|[/_\-?=%.])(avatar|icons?|logo|sprite|ad|ads|banner|emoji|favicon|tracker|comment|profile|share|social|loader|loading|spinner|preloader|placeholder|blank|pixel|throbber|discord)(?:$|[/_\-?=%.])/i;
 const PAGE_HINT_RE = /(page|chapter|chap|webtoon|manga|manhwa|manhua)/i;
 
 interface ScoreInput {
@@ -17,7 +17,13 @@ interface ScoreInput {
 }
 
 export function isLikelyDecorative(url: string): boolean {
-  return JUNK_RE.test(url);
+  if (!url) return false;
+  if (JUNK_RE.test(url)) return true;
+  try {
+    return JUNK_RE.test(decodeURIComponent(url));
+  } catch {
+    return false;
+  }
 }
 
 export function scoreImageCandidate(input: ScoreInput): number {

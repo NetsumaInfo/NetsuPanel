@@ -38,4 +38,32 @@ describe('madaraAdapter', () => {
     expect(result.currentPages.items[0].referrer).toBe('https://sushiscan.fr/series/chapter-10/');
     expect(result.currentPages.items[1].url).toBe('https://img.example.com/002.jpg');
   });
+
+  test('keeps chapter 2 from numeric labels and prefers chapter-list label over first chapter CTA label', () => {
+    document.body.innerHTML = `
+      <a href="/manga/series/chapitre-1/">Lire le premier chapitre</a>
+      <ul class="main version-chap">
+        <li class="wp-manga-chapter"><a href="/manga/series/chapitre-4/">Chapitre 4</a></li>
+        <li class="wp-manga-chapter"><a href="/manga/series/chapitre-3/">Chapitre 3</a></li>
+        <li class="wp-manga-chapter"><a href="/manga/series/chapitre-2/">2</a></li>
+        <li class="wp-manga-chapter"><a href="/manga/series/chapitre-1/">Chapitre 1</a></li>
+      </ul>
+    `;
+
+    const result = madaraAdapter.scan({
+      document,
+      page: {
+        url: 'https://astral-manga.fr/manga/series/',
+        title: 'Series',
+        host: 'astral-manga.fr',
+        pathname: '/manga/series/',
+      },
+      origin: 'live-dom',
+      imageCandidates: [],
+    });
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3, 4]);
+    const chapterOne = result.chapters.find((chapter) => chapter.chapterNumber === 1);
+    expect(chapterOne?.label).toBe('Chapitre 1');
+  });
 });

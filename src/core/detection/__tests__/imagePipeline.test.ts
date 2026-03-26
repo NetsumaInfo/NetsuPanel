@@ -168,4 +168,32 @@ describe('buildImageCollection — mode general', () => {
     const result = buildImageCollection(candidates, 'general');
     expect(result.items.some((item) => item.url.includes('thumbnail'))).toBe(true);
   });
+
+  test('rejects social/logo decorative assets even when encoded in URL query', () => {
+    const candidates = [
+      makeMangaCandidate({
+        id: 'discord',
+        url: 'https://astral-manga.fr/icons/discord_color.svg',
+        width: 128,
+        height: 128,
+      }),
+      makeMangaCandidate({
+        id: 'next-logo',
+        url: 'https://astral-manga.fr/_next/image?url=%2Fimages%2Flogo.png&w=256&q=75',
+        width: 256,
+        height: 256,
+      }),
+      makeMangaCandidate({
+        id: 'page',
+        url: 'https://cdn.astral-manga.fr/scans/series/chapter-3/page-001.webp',
+        width: 800,
+        height: 1200,
+        altText: 'Page 1',
+      }),
+    ];
+
+    const result = buildImageCollection(candidates, 'general');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe('page');
+  });
 });
