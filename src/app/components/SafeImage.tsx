@@ -110,6 +110,23 @@ function isGifLikeSource(src: string): boolean {
   return /\.gif(?:$|[?#])/i.test(src);
 }
 
+function shouldPreferCaptureFirst(src: string, captureTabId?: number, captureCandidateId?: string): boolean {
+  if (!captureTabId || !captureCandidateId || !isNetworkUrl(src)) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(src);
+    return (
+      parsed.pathname.startsWith('/_next/image') ||
+      parsed.pathname.startsWith('/cdn-cgi/image') ||
+      /(?:^|[?&])url=/.test(parsed.search)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function getCachedObjectUrl(key: string): string | undefined {
   const value = objectUrlCache.get(key);
   if (!value) return undefined;
@@ -162,6 +179,7 @@ export function SafeImage({
   const networkAttemptedRef = useRef(false);
   const sourceKey = buildSourceKey(src, referrer, captureTabId, captureCandidateId);
   const preferNetworkFallback = isGifLikeSource(src);
+  const preferCaptureFirst = shouldPreferCaptureFirst(src, captureTabId, captureCandidateId);
 
   useEffect(() => {
     requestTokenRef.current += 1;
@@ -294,6 +312,26 @@ export function SafeImage({
     preferNetworkFallback,
     sourceKey,
   ]);
+
+  useEffect(() => {
+    if (!preferCaptureFirst || captureAttemptedRef.current) {
+      return;
+    }
+
+    const token = requestTokenRef.current;
+    const loadPreferredSource = async () => {
+      const captured = await fetchFromCapture();
+      if (captured || requestTokenRef.current !== token) {
+        return;
+      }
+
+      if (!networkAttemptedRef.current) {
+        await fetchFromNetwork();
+      }
+    };
+
+    void loadPreferredSource();
+  }, [fetchFromCapture, fetchFromNetwork, preferCaptureFirst]);
 
   const title = captureCandidateId ? `${src}\n[candidate=${captureCandidateId}]` : src;
 
