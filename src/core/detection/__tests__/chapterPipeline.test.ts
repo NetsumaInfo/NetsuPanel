@@ -210,6 +210,7 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('Volume 3 Chapter 12', 'https://reader.example.com/series/chapter-12').volumeNumber).toBe(3);
     expect(parseChapterIdentity('', 'https://reader.example.com/read?ep_no=27').chapterNumber).toBe(27);
     expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd').chapterNumber).toBe(null);
+    expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/page/3').chapterNumber).toBe(null);
   });
 
   it('injects chapter 1 only when chapter list starts at 2 and current page is missing', () => {
@@ -308,6 +309,27 @@ describe('chapter detection helpers', () => {
 
     expect(candidates.some((candidate) => candidate.relation === 'previous')).toBe(true);
     expect(candidates.some((candidate) => candidate.relation === 'next')).toBe(true);
+  });
+
+  it('ignores chapter-list pagination links such as /page/3', () => {
+    document.body.innerHTML = `
+      <div class="chapter-pagination">
+        <a href="/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/page/3">3</a>
+        <a href="/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/page/4">4</a>
+      </div>
+      <ul class="main version-chap">
+        <li class="wp-manga-chapter"><a href="/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/chapitre-3/">Chapitre 3</a></li>
+      </ul>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd',
+      'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd'
+    );
+
+    expect(candidates.some((candidate) => /\/page\/\d+/.test(candidate.url))).toBe(false);
+    expect(candidates.some((candidate) => candidate.chapterNumber === 3)).toBe(true);
   });
 
   it('extracts chapter URLs from inline hydration scripts when the DOM list is lazy', () => {

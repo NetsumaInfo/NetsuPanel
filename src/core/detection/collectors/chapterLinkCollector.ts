@@ -21,6 +21,7 @@ const PREVIOUS_HINT_RE = /(prev|previous|older|back|precedent|pr[eé]c[eé]dent|
 const NEXT_HINT_RE = /(next|newer|forward|suivant|>>|›|→)/i;
 const BAD_LINK_RE = /(?:login|signup|register|discord|facebook|twitter|instagram|privacy|terms|about|contact|dmca|patreon|donate|kofi|support)/i;
 const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan|fiction|novel|story)/i;
+const PAGINATION_PATH_RE = /(?:^|\/)(?:page|paged|pagination|pg)\/?\d+(?:$|[/?#])/i;
 const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {
@@ -58,6 +59,9 @@ function computeScore(
   if (sameHost(currentUrl, href)) score += 20;
   
   if (BAD_LINK_RE.test(label) || BAD_LINK_RE.test(href)) {
+    return -100;
+  }
+  if (PAGINATION_PATH_RE.test(href) && !CHAPTER_HINT_RE.test(label) && chapterNumber === null) {
     return -100;
   }
 

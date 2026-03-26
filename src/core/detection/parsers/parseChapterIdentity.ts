@@ -40,8 +40,8 @@ const DIRECT_QUERY_KEYS = [
 const CHAPTER_PATH_PATTERNS = [
   // Explicit keyword + number: /chapter-12/, /ch_5.5/, /episode-3/
   /(?:^|\/)(?:chapter|chapitre|chap|ch|episode|ep|capitulo|capitolo|cap|raw)[-_/ ]*([0-9]+(?:\.[0-9]+)?)(?=$|[/?#._-])/i,
-  // Pure numeric segment at end of path (before optional read/page suffix)
-  /(?:^|\/)([0-9]+(?:\.[0-9]+)?)(?=$|\/(?:all-pages?|read|viewer|page-\d+)|[?#])/i,
+  // Numeric segment before explicit reader suffix only
+  /(?:^|\/)([0-9]+(?:\.[0-9]+)?)(?=\/(?:all-pages?|read|viewer|page-\d+)(?:$|[?#/]))/i,
 ] as const;
 
 /** Markers that indicate a "reader-type" path (makes bare numerics more reliable) */

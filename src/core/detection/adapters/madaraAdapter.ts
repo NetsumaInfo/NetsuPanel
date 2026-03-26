@@ -190,6 +190,15 @@ function createMadaraChapterCandidate(
     anchor.getAttribute('aria-label') ||
     ''
   ));
+
+  const isPaginationLink =
+    /(?:^|\/)(?:page|paged|pagination)\/?\d+(?:$|[/?#])/i.test(resolvedUrl) ||
+    /(?:^|\s)(?:page|p\.)\s*\d+(?:$|\s)/i.test(label) ||
+    /^\d+$/.test(label);
+  if (isPaginationLink && !/(chapter|chapitre|episode|ep|ch\.?)/i.test(label)) {
+    return null;
+  }
+
   const identity = parseChapterIdentity(label, resolvedUrl);
 
   return {
