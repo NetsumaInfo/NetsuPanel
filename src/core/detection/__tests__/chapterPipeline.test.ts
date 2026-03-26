@@ -259,4 +259,30 @@ describe('chapter detection helpers', () => {
 
     expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
   });
+
+  it('extracts chapter URLs from inline hydration scripts even when the URL itself is opaque', () => {
+    document.body.innerHTML = `
+      <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "chapters": [
+                { "number": 9, "title": "Chapitre 9", "url": "/reader/4f9d7b12" },
+                { "number": 10, "title": "Chapitre 10", "url": "/reader/6a2e8c34" },
+                { "number": 11, "title": "Chapitre 11", "url": "/reader/7c3f9d56" }
+              ]
+            }
+          }
+        }
+      </script>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/chapter-10',
+      'https://reader.example.com/series/chapter-10'
+    );
+
+    expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
+  });
 });

@@ -180,7 +180,7 @@ function collectScriptChapterLinks(
   const scripts = Array.from(root.querySelectorAll<HTMLScriptElement>('script:not([src])'));
   const results: ChapterLinkCandidate[] = [];
   const seen = new Set<string>();
-  const urlRe = /["']((?:https?:\/\/|\/)[^"'\\\s<>]+(?:chapter|chapitre|episode|ep|scan)[^"'\\\s<>]*)["']/gi;
+  const urlRe = /["']((?:https?:\/\/|\/)[^"'\\\s<>]+)["']/gi;
 
   scripts.forEach((script, scriptIndex) => {
     const text = script.textContent || '';
@@ -204,8 +204,16 @@ function collectScriptChapterLinks(
       const contextStart = Math.max(0, (match.index || 0) - 96);
       const contextEnd = Math.min(text.length, (match.index || 0) + rawUrl.length + 96);
       const context = compactWhitespace(text.slice(contextStart, contextEnd));
+      const hasChapterContext =
+        CHAPTER_HINT_RE.test(context) ||
+        LISTING_HINT_RE.test(context) ||
+        /\b(chapters?|chapterNumber|episodeNumber|releaseDate|views|uploadedAt|number)\b/i.test(context);
       const relation = relationFromHints(`${context} ${resolvedUrl}`);
       const identity = parseChapterIdentity(context, resolvedUrl);
+      const urlLooksChapterLike = CHAPTER_PATH_RE.test(resolvedUrl);
+      if (!urlLooksChapterLike && !hasChapterContext && identity.chapterNumber === null) {
+        continue;
+      }
       const score = computeScore(
         identity.label,
         currentUrl,
