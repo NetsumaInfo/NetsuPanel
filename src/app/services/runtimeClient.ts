@@ -3,6 +3,7 @@ import type {
   FetchBinaryRequest,
   FetchDocumentRequest,
   GetSourceContextRequest,
+  ScanRemotePageRequest,
   ScanTabRequest,
 } from '@shared/messages';
 import { RuntimeMessageType } from '@shared/messages';
@@ -30,6 +31,20 @@ export async function scanSourceTab(tabId: number): Promise<PageScanResult> {
     tabId,
   } satisfies ScanTabRequest);
   return response.scan as PageScanResult;
+}
+
+export async function scanRemotePage(url: string, options: FetchDocumentOptions = {}): Promise<PageScanResult> {
+  const response = await browser.runtime.sendMessage({
+    type: RuntimeMessageType.ScanRemotePage,
+    url,
+    referrer: options.referrer,
+    tabId: options.tabId,
+  } satisfies ScanRemotePageRequest);
+  const scan = response.scan as PageScanResult | undefined;
+  if (scan) {
+    return scan;
+  }
+  throw new Error((response.error as string | undefined) || 'Remote page scan failed');
 }
 
 export interface FetchDocumentOptions {

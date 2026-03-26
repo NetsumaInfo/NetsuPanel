@@ -2,6 +2,7 @@ import type { CapturedImageResult, FetchBinaryResult, PageScanResult, SourceTabC
 
 export const enum RuntimeMessageType {
   ScanTab = 'SCAN_TAB',
+  ScanRemotePage = 'SCAN_REMOTE_PAGE',
   GetSourceContext = 'GET_SOURCE_CONTEXT',
   FetchDocument = 'FETCH_DOCUMENT',
   FetchBinary = 'FETCH_BINARY',
@@ -11,6 +12,13 @@ export const enum RuntimeMessageType {
 export interface ScanTabRequest {
   type: RuntimeMessageType.ScanTab;
   tabId: number;
+}
+
+export interface ScanRemotePageRequest {
+  type: RuntimeMessageType.ScanRemotePage;
+  url: string;
+  referrer?: string;
+  tabId?: number;
 }
 
 export interface GetSourceContextRequest {
@@ -41,6 +49,7 @@ export interface CaptureImageRequest {
 
 export type RuntimeRequest =
   | ScanTabRequest
+  | ScanRemotePageRequest
   | GetSourceContextRequest
   | FetchDocumentRequest
   | FetchBinaryRequest

@@ -39,6 +39,10 @@ function isNonEmptyString(value: unknown, maxLength = 4096): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function shouldBypassTabFetch(url: string, referrer?: string): boolean {
   try {
     const requestUrl = new URL(url);
@@ -60,6 +64,80 @@ async function ensureContentScript(tabId: number): Promise<void> {
     target: { tabId },
     files: ['./content.bundle.js'],
   });
+}
+
+async function waitForTabReady(tabId: number, timeoutMs = 20_000): Promise<void> {
+  const existing = await browser.tabs.get(tabId);
+  if (existing.status === 'complete') {
+    await sleep(600);
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      browser.tabs.onUpdated.removeListener(listener);
+      reject(new Error(`Timed out waiting for tab ${tabId} to finish loading.`));
+    }, timeoutMs);
+
+    const listener = (updatedTabId: number, changeInfo: { status?: string }) => {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') return;
+      clearTimeout(timeout);
+      browser.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+
+    browser.tabs.onUpdated.addListener(listener);
+  });
+
+  await sleep(900);
+}
+
+async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): Promise<unknown> {
+  let createdTabId: number | undefined;
+  try {
+    const createOptions: {
+      url: string;
+      active: false;
+      openerTabId?: number;
+      index?: number;
+      windowId?: number;
+    } = {
+      url,
+      active: false,
+    };
+
+    if (sourceTabId) {
+      try {
+        const sourceTab = await browser.tabs.get(sourceTabId);
+        if (typeof sourceTab.windowId === 'number') createOptions.windowId = sourceTab.windowId;
+        if (typeof sourceTab.index === 'number') createOptions.index = sourceTab.index + 1;
+        if (typeof sourceTab.id === 'number') createOptions.openerTabId = sourceTab.id;
+      } catch {
+        // Ignore source-tab lookup failures and fall back to default tab creation.
+      }
+    }
+
+    const createdTab = await browser.tabs.create(createOptions);
+    if (!createdTab.id) {
+      throw new Error('Temporary scan tab was created without an id.');
+    }
+    createdTabId = createdTab.id;
+    const tempTabId = createdTab.id;
+
+    await waitForTabReady(tempTabId);
+    await ensureContentScript(tempTabId);
+    return browser.tabs.sendMessage(tempTabId, {
+      type: ContentMessageType.ScanPage,
+    });
+  } finally {
+    if (createdTabId) {
+      try {
+        await browser.tabs.remove(createdTabId);
+      } catch {
+        // Ignore cleanup errors for temporary tabs.
+      }
+    }
+  }
 }
 
 async function fetchBinaryViaContentScript(
@@ -270,6 +348,28 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
         type: ContentMessageType.ScanPage,
       });
       return { scan };
+    }
+
+    case RuntimeMessageType.ScanRemotePage: {
+      if (!isNonEmptyString(message.url)) {
+        return { error: 'Invalid scan URL.' };
+      }
+      if (message.tabId !== undefined && !isFiniteTabId(message.tabId)) {
+        return { error: 'Invalid tab identifier.' };
+      }
+      if (!/^https?:\/\//i.test(message.url)) {
+        return {
+          error: `Unsupported URL scheme for remote scan: ${message.url}`,
+        };
+      }
+      try {
+        const scan = await scanRemotePageInTemporaryTab(message.url, message.tabId);
+        return { scan };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : 'Remote page scan failed',
+        };
+      }
     }
 
     case RuntimeMessageType.FetchDocument: {

@@ -9,7 +9,14 @@ import { serializeUpscaleSettings } from '@core/upscale/realesrganModels';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 import { appReducer, initialAppState } from '@app/state/appState';
 import { useDownloadActions } from '@app/hooks/useDownloadActions';
-import { captureImage, fetchBinary, fetchDocument, getSourceContext, scanSourceTab } from '@app/services/runtimeClient';
+import {
+  captureImage,
+  fetchBinary,
+  fetchDocument,
+  getSourceContext,
+  scanRemotePage,
+  scanSourceTab,
+} from '@app/services/runtimeClient';
 import { isSameChapterUrl, resolveBootstrapTabId } from '@app/services/sourceBootstrap';
 
 export function useNetsuController() {
@@ -42,6 +49,11 @@ export function useNetsuController() {
             referrer: options.referrer || source.url,
             tabId,
           });
+        const scanPageForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) =>
+          scanRemotePage(url, {
+            referrer: options.referrer || source.url,
+            tabId,
+          });
 
         const chapters = seedChaptersFromScan(scan);
         if (!cancelled) {
@@ -53,7 +65,10 @@ export function useNetsuController() {
           try {
             const discovered = await discoverChapters(
               scan,
-              { fetchDocument: fetchDocumentForSource },
+              {
+                fetchDocument: fetchDocumentForSource,
+                scanPage: scanPageForSource,
+              },
               {
                 referrer: source.url,
                 tabId,
@@ -155,6 +170,11 @@ export function useNetsuController() {
                   {
                     fetchDocument: (url, options = {}) =>
                       fetchDocument(url, {
+                        referrer: options.referrer || chapter.url || source.url,
+                        tabId: source.id,
+                      }),
+                    scanPage: (url, options = {}) =>
+                      scanRemotePage(url, {
                         referrer: options.referrer || chapter.url || source.url,
                         tabId: source.id,
                       }),

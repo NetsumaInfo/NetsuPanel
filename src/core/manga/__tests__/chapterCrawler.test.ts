@@ -113,6 +113,74 @@ describe('chapterCrawler discoverChapters', () => {
 });
 
 describe('chapterCrawler loadChapterPreview', () => {
+  it('prefers live scan results when scanPage dependency is available', async () => {
+    const preview = await loadChapterPreview(
+      'https://example.com/series/chapter-2',
+      {
+        fetchDocument: jest.fn(),
+        scanPage: jest.fn().mockResolvedValue({
+          page: {
+            url: 'https://example.com/series/chapter-2',
+            title: 'Chapter 2',
+            host: 'example.com',
+            pathname: '/series/chapter-2',
+          },
+          general: {
+            items: [],
+            totalCandidates: 0,
+            diagnostics: [],
+          },
+          manga: {
+            adapterId: 'generic',
+            currentPages: {
+              items: [
+                {
+                  id: 'live-1',
+                  url: 'https://cdn.example.com/chapter-2/001.webp',
+                  previewUrl: 'https://cdn.example.com/chapter-2/001.webp',
+                  referrer: 'https://example.com/series/chapter-2',
+                  headers: undefined,
+                  transform: undefined,
+                  canonicalUrl: 'https://cdn.example.com/chapter-2/001.webp',
+                  querylessUrl: 'https://cdn.example.com/chapter-2/001.webp',
+                  captureStrategy: 'network',
+                  sourceKind: 'img-current-src',
+                  origin: 'live-dom',
+                  width: 1200,
+                  height: 1800,
+                  area: 2160000,
+                  domIndex: 0,
+                  top: 0,
+                  left: 0,
+                  altText: '',
+                  titleText: '',
+                  containerSignature: 'reader',
+                  familyKey: 'cdn.example.com/chapter-2',
+                  visible: true,
+                  filenameHint: '001.webp',
+                  extensionHint: 'webp',
+                  pageNumber: 1,
+                  score: 100,
+                  diagnostics: [],
+                },
+              ],
+              totalCandidates: 1,
+              diagnostics: [],
+            },
+            chapters: [],
+            navigation: {},
+            diagnostics: [],
+          },
+        }),
+      },
+      { referrer: 'https://example.com/series/', tabId: 123 }
+    );
+
+    expect(preview.items).toHaveLength(1);
+    expect(preview.items[0]?.url).toBe('https://cdn.example.com/chapter-2/001.webp');
+    expect(preview.items[0]?.origin).toBe('static-html');
+  });
+
   it('extracts images from embedded JSON/script when chapter HTML has no img tags', async () => {
     const chapterUrl = 'https://reader.example.com/series/chapter-2';
     const fetchDocument = jest.fn().mockResolvedValue(`

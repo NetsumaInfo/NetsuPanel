@@ -14,6 +14,7 @@ import { scanPageDocument } from '@core/detection/scanPage';
 
 export interface ChapterCrawlerDependencies {
   fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
+  scanPage?(url: string, options?: { referrer?: string; tabId?: number }): Promise<PageScanResult>;
 }
 
 const DEFAULT_LINEAR_CHAPTER_LIMIT = 64;
@@ -113,6 +114,9 @@ async function scanRemotePage(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<PageScanResult> {
+  if (dependencies.scanPage) {
+    return dependencies.scanPage(url, options);
+  }
   const html = await dependencies.fetchDocument(url, options);
   const document = parseRemoteDocument(html);
   return scanPageDocument({
@@ -297,6 +301,33 @@ export async function loadChapterPreview(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
+  if (dependencies.scanPage) {
+    try {
+      const liveScan = await dependencies.scanPage(chapterUrl, options);
+      const normalizeLiveCollection = (collection: ImageCollectionResult): ImageCollectionResult => ({
+        ...collection,
+        items: collection.items
+          .filter((item) => !item.url.startsWith('content://'))
+          .map((item) => ({
+            ...item,
+            url: unwrapProxiedImageUrl(item.url),
+            previewUrl: unwrapProxiedImageUrl(item.previewUrl || item.url),
+            referrer: chapterUrl,
+            origin: 'static-html',
+            captureStrategy: 'network',
+          })),
+      });
+
+      const liveManga = normalizeLiveCollection(liveScan.manga.currentPages);
+      const liveGeneral = normalizeLiveCollection(liveScan.general);
+      if (liveManga.items.length >= 1 || liveGeneral.items.length >= 1) {
+        return liveManga.items.length >= liveGeneral.items.length ? liveManga : liveGeneral;
+      }
+    } catch {
+      // Fall back to static HTML fetch below when the live DOM scan path fails.
+    }
+  }
+
   const html = await dependencies.fetchDocument(chapterUrl, options);
   const doc = parseRemoteDocument(html);
   const scan = scanPageDocument({
