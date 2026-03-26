@@ -29,7 +29,7 @@
     "<all_urls>"
   ],
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://upscale.chino.icu; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https: http:; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   },
   "background": {
     "service_worker": "background.bundle.js"
