@@ -144,6 +144,7 @@ export function App() {
     <AppSidebar
       archiveFormat={state.archiveFormat}
       currentChapter={currentChapter}
+      sourceTabId={source.id}
       chapterCount={chapterCount}
       selectedGeneralCount={generalSelectedCount}
       activity={state.activity}

@@ -195,7 +195,7 @@ export function ImageViewerModal({
 
   const imageProps = {
     referrer,
-    captureTabId: currentItem.origin === 'live-dom' ? sourceTabId : undefined,
+    captureTabId: sourceTabId,
     captureCandidateId: currentItem.origin === 'live-dom' ? currentItem.id : undefined,
     className: 'h-full w-full object-contain select-none',
   };

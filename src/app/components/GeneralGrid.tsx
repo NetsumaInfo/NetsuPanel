@@ -170,7 +170,7 @@ export function GeneralGrid({
                         src={item.previewUrl || item.url}
                         alt={item.filenameHint}
                         referrer={item.referrer || referrer}
-                        captureTabId={item.origin === 'live-dom' ? sourceTabId : undefined}
+                        captureTabId={sourceTabId}
                         captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
                         className={`${compact ? 'aspect-[3/4]' : 'aspect-[4/5]'} w-full object-contain bg-border/20 transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]`}
                       />

@@ -26,6 +26,7 @@ interface UpscalePanelProps {
   settings: UpscaleSettings;
   backendLabel: string;
   preview: UpscalePreviewState | null;
+  sourceTabId?: number;
   onToggle(enabled: boolean): void;
   onSettingsChange(settings: Partial<UpscaleSettings>): void;
 }
@@ -51,6 +52,7 @@ export function UpscalePanel({
   settings,
   backendLabel,
   preview,
+  sourceTabId,
   onToggle,
   onSettingsChange,
 }: UpscalePanelProps) {
@@ -197,6 +199,7 @@ export function UpscalePanel({
               src={preview.originalUrl}
               alt="Original"
               referrer={preview.originalReferrer}
+              captureTabId={sourceTabId}
               className="h-24 w-full object-contain bg-border/20"
             />
           </div>

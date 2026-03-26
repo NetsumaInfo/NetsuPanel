@@ -27,6 +27,7 @@ import { ModeSwitch } from './ModeSwitch';
 interface AppSidebarProps {
   archiveFormat: ArchiveFormat;
   currentChapter?: ChapterItem;
+  sourceTabId?: number;
   chapterCount: number;
   selectedGeneralCount: number;
   activity: DownloadJobState;
@@ -57,6 +58,7 @@ interface AppSidebarProps {
 export function AppSidebar({
   archiveFormat,
   currentChapter,
+  sourceTabId,
   chapterCount,
   selectedGeneralCount,
   activity,
@@ -204,6 +206,7 @@ export function AppSidebar({
         settings={settings}
         backendLabel={backendLabel}
         preview={preview}
+        sourceTabId={sourceTabId}
         onToggle={onUpscaleToggle}
         onSettingsChange={(nextSettings) => onUpscaleSettingsChange(mode, nextSettings)}
       />
