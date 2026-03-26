@@ -49,11 +49,15 @@ function matchesMadara(url: string): boolean {
 function isMadaraListingPage(url: string): boolean {
   try {
     const pathname = new URL(url).pathname;
+    const segments = pathname.split('/').filter(Boolean);
+    const slug = decodeURIComponent(segments[1] || '');
     // Typical listing: /manga/slug/ or /manga/uuid/
     // NOT a chapter page: /manga/slug/chapter-1/ or /manga/slug/volume-1/chapter-1/
     const hasChapterSegment = /\/(chapter|chapitre|episode|ch|vol|partie|chap)[-_]?\d/i.test(pathname);
     const isMangaRoot = /^\/(manga|manhwa|manhua|comic|webtoon|scan)\/[^/]+\/?$/i.test(pathname);
-    return isMangaRoot && !hasChapterSegment;
+    const chapterLikeSlug =
+      /(?:^|[-_ ])(?:chapter|chapitre|episode|ep|chap|ch|capitulo|capitolo|cap|raw)(?:[-_ ]*\d|\b.*\d)/i.test(slug);
+    return isMangaRoot && !hasChapterSegment && !chapterLikeSlug;
   } catch {
     return false;
   }
@@ -367,7 +371,10 @@ function scanMadara(input: ScanAdapterInput): MangaScanResult {
 
   return {
     adapterId: 'madara',
-    currentPages: buildImageCollection(prependCandidates(extraCandidates, input.imageCandidates), 'manga'),
+    currentPages: buildImageCollection(
+      isListingPage ? [] : prependCandidates(extraCandidates, input.imageCandidates),
+      'manga'
+    ),
     chapters: links.chapters,
     navigation: links.navigation,
     diagnostics,

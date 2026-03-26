@@ -77,6 +77,29 @@ describe('simple reader adapter coverage', () => {
     expect(result.chapters.filter((item) => item.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
   });
 
+  test('madara adapter keeps listing pages free of fake reader pages', () => {
+    document.body.innerHTML = `
+      <main>
+        <img src="https://astral-manga.fr/icons/discord_color.svg" alt="Discord" />
+        <img src="https://astral-manga.fr/_next/image?url=%2Fimages%2Flogo.png&w=256&q=75" alt="Logo" />
+      </main>
+    `;
+
+    const result = madaraAdapter.scan({
+      document,
+      page: {
+        url: 'https://astral-manga.fr/manga/cc9c21c9-47f7-4c92-84d1-966bffba9d5f',
+        title: 'Astral Manga Series',
+        host: 'astral-manga.fr',
+        pathname: '/manga/cc9c21c9-47f7-4c92-84d1-966bffba9d5f',
+      },
+      origin: 'live-dom',
+      imageCandidates: [],
+    });
+
+    expect(result.currentPages.items).toEqual([]);
+  });
+
   test('next-data adapter falls back to direct DOM scan placement images', () => {
     document.body.innerHTML = `
       <div id="scansPlacement">

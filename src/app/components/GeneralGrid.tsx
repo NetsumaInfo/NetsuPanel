@@ -11,6 +11,7 @@ interface GeneralGridProps {
   selected: Record<string, boolean>;
   thumbnailSize: number;
   compact: boolean;
+  infoMessage?: string;
   referrer?: string;
   sourceTabId?: number;
   onToggle(imageId: string): void;
@@ -29,6 +30,7 @@ export function GeneralGrid({
   selected,
   thumbnailSize,
   compact,
+  infoMessage,
   referrer,
   sourceTabId,
   onToggle,
@@ -106,6 +108,12 @@ export function GeneralGrid({
             </button>
           </div>
         </div>
+
+        {infoMessage ? (
+          <div className="mt-2 rounded-xl border border-border/70 bg-[#f8f9fb] px-3 py-2 text-[11px] text-muted">
+            {infoMessage}
+          </div>
+        ) : null}
       </div>
 
       {items.length === 0 ? (

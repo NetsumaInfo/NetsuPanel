@@ -139,6 +139,10 @@ export function App() {
   const showDesktopSidebar = windowWidth >= 1024;
   const chapterThumbnailSize = Math.max(88, autoUi.thumbnailSize - 18);
   const mainSpacingClass = autoUi.compactMode ? 'space-y-2' : 'space-y-2.5';
+  const generalInfoMessage =
+    scan.manga.chapters.length > 0 && scan.manga.currentPages.items.length === 0
+      ? "Page serie detectee : le mode General affiche seulement les images presentes sur cette fiche. Passe en mode Manga pour charger les chapitres."
+      : undefined;
 
   const sidebar = (
     <AppSidebar
@@ -237,6 +241,7 @@ export function App() {
                   selected={state.generalSelection}
                   thumbnailSize={autoUi.thumbnailSize}
                   compact={autoUi.compactMode}
+                  infoMessage={generalInfoMessage}
                   referrer={source.url}
                   sourceTabId={source.id}
                   onToggle={controller.toggleGeneralItem}
