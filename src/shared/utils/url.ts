@@ -43,29 +43,37 @@ export function sameHost(a: string, b: string): boolean {
   return Boolean(left && right && left.host === right.host);
 }
 
-function decodeHttpCandidate(value: string | null): string | null {
+function decodeHttpCandidate(value: string | null, baseOrigin?: string): string | null {
   if (!value) return null;
   try {
     const decoded = decodeURIComponent(value);
     if (/^https?:\/\//i.test(decoded)) return decoded;
+    if (baseOrigin && decoded.startsWith('/')) {
+      return new URL(decoded, baseOrigin).href;
+    }
   } catch {
     // ignore decode errors
   }
-  return /^https?:\/\//i.test(value) ? value : null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (baseOrigin && value.startsWith('/')) {
+    return new URL(value, baseOrigin).href;
+  }
+  return null;
 }
 
 export function unwrapProxiedImageUrl(input: string): string {
   const parsed = safeUrl(input);
   if (!parsed) return input;
+  const origin = `${parsed.protocol}//${parsed.host}`;
 
   const fromSearch =
-    decodeHttpCandidate(parsed.searchParams.get('url')) ||
-    decodeHttpCandidate(parsed.searchParams.get('src'));
+    decodeHttpCandidate(parsed.searchParams.get('url'), origin) ||
+    decodeHttpCandidate(parsed.searchParams.get('src'), origin);
   if (fromSearch) return fromSearch;
 
   const cloudflareMatch = parsed.pathname.match(/\/cdn-cgi\/image\/[^/]+\/(https?:\/\/.+)$/i);
   if (cloudflareMatch?.[1]) {
-    return decodeHttpCandidate(cloudflareMatch[1]) || input;
+    return decodeHttpCandidate(cloudflareMatch[1], origin) || input;
   }
 
   const wordpressProxyHost = /^i\d+\.wp\.com$/i.test(parsed.hostname);

@@ -163,7 +163,35 @@ function dedupeChapterCandidates(candidates: ChapterLinkCandidate[]): ChapterLin
   const byUrl = new Map<string, ChapterLinkCandidate>();
   for (const candidate of candidates) {
     const existing = byUrl.get(candidate.canonicalUrl);
-    if (!existing || candidate.score > existing.score) {
+    if (!existing) {
+      byUrl.set(candidate.canonicalUrl, candidate);
+      continue;
+    }
+
+    const existingHasNumber = existing.chapterNumber !== null;
+    const candidateHasNumber = candidate.chapterNumber !== null;
+    const existingIsListing = existing.relation === 'listing';
+    const candidateIsListing = candidate.relation === 'listing';
+
+    // Prefer chapter-numbered candidates over unnumbered ones for the same URL.
+    if (candidateHasNumber && !existingHasNumber) {
+      byUrl.set(candidate.canonicalUrl, candidate);
+      continue;
+    }
+    if (existingHasNumber && !candidateHasNumber) {
+      continue;
+    }
+
+    // Prefer non-listing chapter candidates over listing links for the same URL.
+    if (!candidateIsListing && existingIsListing) {
+      byUrl.set(candidate.canonicalUrl, candidate);
+      continue;
+    }
+    if (candidateIsListing && !existingIsListing) {
+      continue;
+    }
+
+    if (candidate.score > existing.score) {
       byUrl.set(candidate.canonicalUrl, candidate);
     }
   }

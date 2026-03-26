@@ -9,6 +9,14 @@ describe('url utils', () => {
     ).toBe('https://cdn.example.com/chapter/001.webp');
   });
 
+  test('unwraps _next/image proxy url when nested url is relative', () => {
+    expect(
+      unwrapProxiedImageUrl(
+        'https://astral-manga.fr/_next/image?url=%2Fuploads%2Fchapters%2F001.webp&w=1200&q=75'
+      )
+    ).toBe('https://astral-manga.fr/uploads/chapters/001.webp');
+  });
+
   test('unwraps cloudflare cdn-cgi image proxy path', () => {
     expect(
       unwrapProxiedImageUrl(

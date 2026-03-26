@@ -61,6 +61,33 @@ describe('buildMangaLinkMap', () => {
     expect(ch7s.length).toBeLessThanOrEqual(1);
   });
 
+  it('keeps numbered chapter candidate over listing candidate when canonical URL is the same', () => {
+    const sameUrl = 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/';
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd',
+        title: 'Series',
+        host: 'astral-manga.fr',
+        pathname: '/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd',
+      },
+      [
+        {
+          ...createChapterCandidate('listing', 'All chapters', 0, 'listing', 95),
+          url: sameUrl,
+          canonicalUrl: sameUrl,
+          chapterNumber: null,
+        },
+        {
+          ...createChapterCandidate('chapter-1', 'Chapitre 1', 1, 'candidate', 60),
+          url: sameUrl,
+          canonicalUrl: sameUrl,
+        },
+      ]
+    );
+
+    expect(result.chapters.some((chapter) => chapter.chapterNumber === 1)).toBe(true);
+  });
+
   it('emits chapter-list-limited warning when only current detected', () => {
     const result = buildMangaLinkMap(page, []);
     const warning = result.diagnostics.find((d) => d.code === 'chapter-list-limited');
