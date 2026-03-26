@@ -92,6 +92,32 @@ async function waitForTabReady(tabId: number, timeoutMs = 20_000): Promise<void>
   await sleep(900);
 }
 
+async function triggerLazyLoadInTab(tabId: number): Promise<void> {
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async () => {
+        const totalHeight = Math.max(
+          document.body?.scrollHeight || 0,
+          document.documentElement?.scrollHeight || 0
+        );
+        const steps = Math.max(4, Math.min(16, Math.ceil(totalHeight / 900)));
+        for (let i = 0; i < steps; i += 1) {
+          const ratio = steps === 1 ? 1 : i / (steps - 1);
+          const y = Math.round(totalHeight * ratio);
+          window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+          await new Promise((resolve) => setTimeout(resolve, 180));
+        }
+        window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      },
+    });
+  } catch {
+    // Best effort only. Some pages may reject early scripting during navigation.
+  }
+}
+
 async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): Promise<unknown> {
   let createdTabId: number | undefined;
   try {
@@ -126,6 +152,8 @@ async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): 
 
     await waitForTabReady(tempTabId);
     await ensureContentScript(tempTabId);
+    await sleep(300);
+    await triggerLazyLoadInTab(tempTabId);
     const scan = await browser.tabs.sendMessage(tempTabId, {
       type: ContentMessageType.ScanPage,
     });

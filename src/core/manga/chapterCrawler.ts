@@ -7,6 +7,7 @@ import type {
 } from '@shared/types';
 import { unwrapProxiedImageUrl } from '@shared/utils/url';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
+import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
 import { collectInlineScriptImages } from '@core/detection/collectors/inlineScriptCollector';
 import { collectJsonEmbeddedImages } from '@core/detection/collectors/jsonEmbeddedCollector';
@@ -182,6 +183,24 @@ function extractListingPaginationUrls(document: Document, listingUrl: string): s
     .map((entry) => entry.url);
 }
 
+function mergeRawChapterCandidatesFromDocument(
+  document: Document,
+  pageUrl: string,
+  accumulator: Map<string, ChapterItem>
+): void {
+  const rawCandidates = collectChapterLinks(document, pageUrl, pageUrl);
+  for (const candidate of rawCandidates) {
+    if (candidate.relation === 'listing') continue;
+    if (candidate.chapterNumber === null && !/(chapter|chapitre|episode|ep|ch\.?)/i.test(candidate.label)) {
+      continue;
+    }
+    accumulator.set(
+      candidate.canonicalUrl,
+      mergeChapterItems(accumulator.get(candidate.canonicalUrl), chapterLinkToItem(candidate))
+    );
+  }
+}
+
 async function walkLinearDirection(
   startUrl: string | undefined,
   direction: 'previous' | 'next',
@@ -261,6 +280,7 @@ export async function discoverChapters(
       // Some chapter lists are paginated (/page/2, /page/3...). Fetch additional listing pages.
       const listingHtml = await dependencies.fetchDocument(listingUrl, fetchOptions);
       const listingDoc = parseRemoteDocument(listingHtml);
+      mergeRawChapterCandidatesFromDocument(listingDoc, listingUrl, accumulator);
       const listingPages = extractListingPaginationUrls(listingDoc, listingUrl).slice(
         0,
         Math.max(0, options.maxListingPages ?? 8)
@@ -279,6 +299,12 @@ export async function discoverChapters(
               mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapterLinkToItem(chapter))
             );
           });
+          const pagedHtml = await dependencies.fetchDocument(listingPageUrl, {
+            ...fetchOptions,
+            referrer: listingUrl,
+          });
+          const pagedDoc = parseRemoteDocument(pagedHtml);
+          mergeRawChapterCandidatesFromDocument(pagedDoc, listingPageUrl, accumulator);
         } catch {
           // keep partial chapter discovery
         }

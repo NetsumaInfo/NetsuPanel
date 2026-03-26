@@ -110,6 +110,36 @@ describe('chapterCrawler discoverChapters', () => {
     expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
     expect(fetchDocument).toHaveBeenCalledWith('https://example.com/series/page/2/', expect.anything());
   });
+
+  it('merges raw chapter links from listing HTML when scan result misses some chapters', async () => {
+    const current = createChapterLink('https://example.com/series/chapter-3', 'current', 3, 1);
+    const initialScan = createScan(
+      'https://example.com/series/chapter-3',
+      [current],
+      'https://example.com/series/'
+    );
+
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === 'https://example.com/series/') {
+        return `
+          <html><body>
+            <ul class="main version-chap">
+              <li class="wp-manga-chapter"><a href="https://example.com/series/chapter-3">Chapitre 3</a></li>
+              <li class="wp-manga-chapter"><a href="https://example.com/series/chapter-2">Chapitre 2</a></li>
+              <li class="wp-manga-chapter"><a href="https://example.com/series/chapter-1">Chapitre 1</a></li>
+            </ul>
+          </body></html>
+        `;
+      }
+      return '<html><body></body></html>';
+    });
+
+    const scanPage = jest.fn().mockResolvedValue(createScan('https://example.com/series/', [], 'https://example.com/series/'));
+
+    const chapters = await discoverChapters(initialScan, { fetchDocument, scanPage });
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
+  });
 });
 
 describe('chapterCrawler loadChapterPreview', () => {
