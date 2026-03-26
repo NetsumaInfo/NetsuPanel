@@ -62,6 +62,24 @@ function collectRemoteImageCandidates(document: Document, baseUrl: string) {
   return [...deduped.values()];
 }
 
+function isListingPaginationUrl(url: string): boolean {
+  return /\/page\/\d+(?:\/|$|\?)/i.test(url) || /[?&]page=\d+(?:$|&)/i.test(url);
+}
+
+function buildGuessedListingPageUrls(listingUrl: string, maxPages: number): string[] {
+  const urls: string[] = [];
+  try {
+    const parsed = new URL(listingUrl);
+    const normalizedBase = parsed.href.replace(/\/page\/\d+\/?$/i, '').replace(/[?#].*$/, '');
+    for (let page = 2; page <= maxPages; page += 1) {
+      urls.push(new URL(`page/${page}/`, normalizedBase.endsWith('/') ? normalizedBase : `${normalizedBase}/`).href);
+    }
+  } catch {
+    // ignore malformed URLs
+  }
+  return urls;
+}
+
 function toChapterItem(scan: PageScanResult, url: string): ChapterItem {
   const current = scan.manga.navigation.current;
   return {
@@ -91,6 +109,16 @@ function chapterLinkToItem(chapter: ChapterLinkCandidate): ChapterItem {
     previewStatus: 'idle',
     diagnostics: [],
   };
+}
+
+function addChapterItem(
+  accumulator: Map<string, ChapterItem>,
+  chapter: ChapterItem
+): void {
+  if (isListingPaginationUrl(chapter.url) || isListingPaginationUrl(chapter.canonicalUrl)) {
+    return;
+  }
+  accumulator.set(chapter.canonicalUrl, mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapter));
 }
 
 function mergeChapterItems(existing: ChapterItem | undefined, candidate: ChapterItem): ChapterItem {
@@ -218,7 +246,7 @@ async function walkLinearDirection(
     try {
       const scan = await scanRemotePage(currentUrl, dependencies, options);
       const item = toChapterItem(scan, currentUrl);
-      accumulator.set(item.canonicalUrl, mergeChapterItems(accumulator.get(item.canonicalUrl), item));
+      addChapterItem(accumulator, item);
       currentUrl =
         direction === 'previous'
           ? scan.manga.navigation.previous?.url
@@ -241,7 +269,11 @@ export interface DiscoverChapterOptions {
 }
 
 export function seedChaptersFromScan(scan: PageScanResult): ChapterItem[] {
-  return sortChapterItems(scan.manga.chapters.map(chapterLinkToItem));
+  return sortChapterItems(
+    scan.manga.chapters
+      .map(chapterLinkToItem)
+      .filter((chapter) => !isListingPaginationUrl(chapter.url))
+  );
 }
 
 export async function discoverChapters(
@@ -263,7 +295,7 @@ export async function discoverChapters(
   };
 
   initialScan.manga.chapters.forEach((chapter) => {
-    accumulator.set(chapter.canonicalUrl, chapterLinkToItem(chapter));
+    addChapterItem(accumulator, chapterLinkToItem(chapter));
   });
 
   const listingUrl = initialScan.manga.navigation.listing?.url;
@@ -271,10 +303,7 @@ export async function discoverChapters(
     try {
       const listingScan = await scanRemotePage(listingUrl, dependencies, fetchOptions);
       listingScan.manga.chapters.forEach((chapter) => {
-        accumulator.set(
-          chapter.canonicalUrl,
-          mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapterLinkToItem(chapter))
-        );
+        addChapterItem(accumulator, chapterLinkToItem(chapter));
       });
 
       // Some chapter lists are paginated (/page/2, /page/3...). Fetch additional listing pages.
@@ -311,6 +340,43 @@ export async function discoverChapters(
       }
     } catch {
       // Keep chapter list from initial scan when listing fetch is denied.
+    }
+  }
+
+  const numberedChapters = [...accumulator.values()].filter((chapter) => chapter.chapterNumber !== null);
+  const minChapterNumber = numberedChapters.length > 0
+    ? Math.min(...numberedChapters.map((chapter) => chapter.chapterNumber as number))
+    : null;
+  const shouldProbeGuessedListingPages = Boolean(
+    listingUrl &&
+    (minChapterNumber === null || minChapterNumber > 1) &&
+    Date.now() <= context.deadline
+  );
+
+  if (shouldProbeGuessedListingPages && listingUrl) {
+    const guessedPages = buildGuessedListingPageUrls(
+      listingUrl,
+      Math.max(2, options.maxListingPages ?? 8)
+    );
+    for (const listingPageUrl of guessedPages) {
+      if (Date.now() > context.deadline) break;
+      try {
+        const pagedScan = await scanRemotePage(listingPageUrl, dependencies, {
+          ...fetchOptions,
+          referrer: listingUrl,
+        });
+        pagedScan.manga.chapters.forEach((chapter) => {
+          addChapterItem(accumulator, chapterLinkToItem(chapter));
+        });
+        const pagedHtml = await dependencies.fetchDocument(listingPageUrl, {
+          ...fetchOptions,
+          referrer: listingUrl,
+        });
+        const pagedDoc = parseRemoteDocument(pagedHtml);
+        mergeRawChapterCandidatesFromDocument(pagedDoc, listingPageUrl, accumulator);
+      } catch {
+        // Ignore guessed listing pages that do not exist or are blocked.
+      }
     }
   }
 

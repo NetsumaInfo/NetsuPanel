@@ -140,6 +140,51 @@ describe('chapterCrawler discoverChapters', () => {
 
     expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
   });
+
+  it('drops listing pagination urls from discovered chapters and probes guessed listing pages', async () => {
+    const initialScan = createScan(
+      'https://example.com/series/chapter-3',
+      [
+        createChapterLink('https://example.com/series/page/3/', 'candidate', 3, 1),
+      ],
+      'https://example.com/series/'
+    );
+
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === 'https://example.com/series/page/2/') {
+        return `
+          <html><body>
+            <ul class="main version-chap">
+              <li class="wp-manga-chapter"><a href="https://example.com/series/chapter-2">Chapitre 2</a></li>
+              <li class="wp-manga-chapter"><a href="https://example.com/series/chapter-1">Chapitre 1</a></li>
+            </ul>
+          </body></html>
+        `;
+      }
+      return '<html><body></body></html>';
+    });
+
+    const scanPage = jest.fn(async (url: string) => {
+      if (url === 'https://example.com/series/') {
+        return createScan('https://example.com/series/', [], 'https://example.com/series/');
+      }
+      if (url === 'https://example.com/series/page/2/') {
+        return createScan('https://example.com/series/page/2/', [
+          createChapterLink('https://example.com/series/chapter-2', 'candidate', 2, 1),
+          createChapterLink('https://example.com/series/chapter-1', 'candidate', 1, 1),
+        ]);
+      }
+      return createScan(url, []);
+    });
+
+    const chapters = await discoverChapters(initialScan, {
+      fetchDocument,
+      scanPage,
+    }, { maxListingPages: 3 });
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2]);
+    expect(chapters.every((chapter) => !/\/page\/\d+/.test(chapter.url))).toBe(true);
+  });
 });
 
 describe('chapterCrawler loadChapterPreview', () => {
