@@ -17,12 +17,14 @@ declare global {
 
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
-const STABILIZE_DELAYS = [35, 60, 100];
-const LAZY_SCROLL_WAIT_MS = 40;
-const RECHECK_DELAY_MS = 120;
-const MAX_LAZY_SCROLL = 18000;
-const MAX_LAZY_STEPS = 10;
-const MAX_SCAN_DURATION_MS = 3000;
+const STABILIZE_DELAYS = [60, 120, 220, 360];
+const LAZY_SCROLL_WAIT_MS = 90;
+const LAZY_SETTLE_WAIT_MS = 180;
+const RECHECK_DELAY_MS = 180;
+const MAX_LAZY_SCROLL = 120000;
+const MAX_LAZY_STEPS = 32;
+const MAX_LAZY_PASSES = 3;
+const MAX_SCAN_DURATION_MS = 6500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,11 +49,92 @@ async function stabilizePage(): Promise<void> {
   }
 }
 
+function getScrollElement(): HTMLElement {
+  return (document.scrollingElement || document.documentElement || document.body) as HTMLElement;
+}
+
+function countPotentialChapterSignals(): number {
+  const seen = new Set<string>();
+  const chapterHintRe = /(chapter|chapitre|chap|episode|ep|scan|read|viewer|lecture)/i;
+
+  const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
+  for (const anchor of anchors) {
+    const href = anchor.href || anchor.getAttribute('href') || '';
+    const label = anchor.textContent || anchor.getAttribute('aria-label') || '';
+    if (!chapterHintRe.test(`${href} ${label}`)) continue;
+    seen.add(href.split('#')[0]);
+  }
+
+  const dataTargets = Array.from(document.querySelectorAll<HTMLElement>('[data-href], [data-url], [data-next], [data-prev]'));
+  for (const element of dataTargets) {
+    const raw =
+      element.getAttribute('data-href') ||
+      element.getAttribute('data-url') ||
+      element.getAttribute('data-next') ||
+      element.getAttribute('data-prev') ||
+      '';
+    if (!raw || !chapterHintRe.test(raw)) continue;
+    try {
+      seen.add(new URL(raw, location.href).href.split('#')[0]);
+    } catch {
+      // Ignore malformed candidates.
+    }
+  }
+
+  return seen.size;
+}
+
+function getLoadingSignals() {
+  const scrollElement = getScrollElement();
+  const images = Array.from(document.querySelectorAll('img'));
+  const loadedImages = images.filter((img) => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0).length;
+
+  return {
+    imageCount: images.length,
+    loadedImages,
+    chapterSignals: countPotentialChapterSignals(),
+    scrollHeight: scrollElement.scrollHeight,
+  };
+}
+
+async function expandLazySections(): Promise<void> {
+  const textOf = (element: Element): string =>
+    `${(element.textContent || '').trim()} ${element.getAttribute('aria-label') || ''} ${element.getAttribute('title') || ''}`.trim();
+
+  const clickables = Array.from(
+    document.querySelectorAll<HTMLElement>('button, [role="button"], [role="tab"], a[role="button"]')
+  );
+  const chapterTabRe = /\b(chapitres?|chapters?)\b/i;
+  const expandRe = /\b(load more|show more|voir plus|afficher plus|plus de chapitres|more chapters)\b/i;
+
+  for (const element of clickables) {
+    const hint = textOf(element);
+    if (!hint || !chapterTabRe.test(hint)) continue;
+
+    const ariaSelected = element.getAttribute('aria-selected');
+    const dataState = element.getAttribute('data-state');
+    const isActive = ariaSelected === 'true' || dataState === 'active';
+    if (isActive) continue;
+
+    element.click();
+    await sleep(140);
+    break;
+  }
+
+  for (const element of clickables) {
+    const hint = textOf(element);
+    if (!hint || !expandRe.test(hint)) continue;
+    element.click();
+    await sleep(160);
+  }
+}
+
 // Scroll through the page to trigger lazy-loading, then scroll back
 async function triggerLazyLoading(): Promise<void> {
   const originalScrollY = window.scrollY;
   const step = Math.max(Math.floor(window.innerHeight * 0.7), 320);
-  const maxScroll = Math.min(document.body.scrollHeight, MAX_LAZY_SCROLL);
+  const scrollElement = getScrollElement();
+  const maxScroll = Math.min(scrollElement.scrollHeight, MAX_LAZY_SCROLL);
   const maxSteps = Math.max(4, Math.min(MAX_LAZY_STEPS, Math.ceil(maxScroll / step)));
   let position = 0;
 
@@ -61,7 +144,60 @@ async function triggerLazyLoading(): Promise<void> {
     await sleep(LAZY_SCROLL_WAIT_MS);
   }
   window.scrollTo({ top: originalScrollY, behavior: 'instant' as ScrollBehavior });
-  await sleep(80);
+  await sleep(LAZY_SETTLE_WAIT_MS);
+}
+
+function shouldForceLazyHydration(page: PageIdentity): boolean {
+  const scrollElement = getScrollElement();
+  if (scrollElement.scrollHeight > Math.max(window.innerHeight * 1.75, 2400)) {
+    return true;
+  }
+
+  const lazyHintText = `${page.url} ${page.title} ${page.pathname}`.toLowerCase();
+  if (/(chapter|chapitre|episode|gallery|galerie|catalogue|manga|manhwa|comic|webtoon)/i.test(lazyHintText)) {
+    return true;
+  }
+
+  return Boolean(
+    document.querySelector(
+      [
+        'img[loading="lazy"]',
+        'img[data-src]',
+        'img[data-srcset]',
+        'img[data-nimg]',
+        '[data-nimg]',
+        '[role="tab"]',
+        '[class*="chapter"]',
+        '[class*="gallery"]',
+      ].join(', ')
+    )
+  );
+}
+
+async function hydratePageContent(page: PageIdentity, canContinue: () => boolean): Promise<void> {
+  if (!shouldForceLazyHydration(page) || !canContinue()) {
+    return;
+  }
+
+  let previousSignals = getLoadingSignals();
+
+  for (let pass = 0; pass < MAX_LAZY_PASSES && canContinue(); pass += 1) {
+    await expandLazySections();
+    await triggerLazyLoading();
+    await stabilizePage();
+
+    const nextSignals = getLoadingSignals();
+    const progressed =
+      nextSignals.imageCount > previousSignals.imageCount ||
+      nextSignals.loadedImages > previousSignals.loadedImages ||
+      nextSignals.chapterSignals > previousSignals.chapterSignals ||
+      nextSignals.scrollHeight > previousSignals.scrollHeight + 96;
+
+    previousSignals = nextSignals;
+    if (!progressed) {
+      break;
+    }
+  }
 }
 
 function mergeCandidates(
@@ -391,6 +527,8 @@ async function scanCurrentPage() {
 
   const page = getPageIdentity();
   const readerPage = looksLikeReaderPage(page);
+  await hydratePageContent(page, isWithinBudget);
+
   let collection = await collectLiveDomImages(page.url, {
     includeBackgroundCandidates: true,
     includeSvgCandidates: true,

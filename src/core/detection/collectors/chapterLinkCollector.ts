@@ -172,6 +172,70 @@ function extractOptionUrl(option: HTMLOptionElement, baseUrl: string): string | 
   return resolveUrl(rawValue, baseUrl);
 }
 
+function collectScriptChapterLinks(
+  root: ParentNode,
+  baseUrl: string,
+  currentUrl: string
+): ChapterLinkCandidate[] {
+  const scripts = Array.from(root.querySelectorAll<HTMLScriptElement>('script:not([src])'));
+  const results: ChapterLinkCandidate[] = [];
+  const seen = new Set<string>();
+  const urlRe = /["']((?:https?:\/\/|\/)[^"'\\\s<>]+(?:chapter|chapitre|episode|ep|scan)[^"'\\\s<>]*)["']/gi;
+
+  scripts.forEach((script, scriptIndex) => {
+    const text = script.textContent || '';
+    if (!CHAPTER_HINT_RE.test(text) && !LISTING_HINT_RE.test(text)) {
+      return;
+    }
+
+    for (const match of text.matchAll(urlRe)) {
+      const rawUrl = (match[1] || '').replace(/\\\//g, '/');
+      const resolvedUrl = resolveUrl(rawUrl, baseUrl);
+      if (!resolvedUrl || !sameHost(currentUrl, resolvedUrl)) {
+        continue;
+      }
+
+      const canonicalUrl = resolvedUrl.split('#')[0];
+      if (seen.has(canonicalUrl)) {
+        continue;
+      }
+      seen.add(canonicalUrl);
+
+      const contextStart = Math.max(0, (match.index || 0) - 96);
+      const contextEnd = Math.min(text.length, (match.index || 0) + rawUrl.length + 96);
+      const context = compactWhitespace(text.slice(contextStart, contextEnd));
+      const relation = relationFromHints(`${context} ${resolvedUrl}`);
+      const identity = parseChapterIdentity(context, resolvedUrl);
+      const score = computeScore(
+        identity.label,
+        currentUrl,
+        resolvedUrl,
+        relation,
+        identity.chapterNumber,
+        'script:inline-json'
+      ) + 16;
+      if (score < 12) {
+        continue;
+      }
+
+      results.push({
+        id: `chapter-script-link-${scriptIndex}-${results.length}`,
+        url: resolvedUrl,
+        canonicalUrl,
+        label: identity.label,
+        relation,
+        score,
+        chapterNumber: identity.chapterNumber,
+        volumeNumber: identity.volumeNumber,
+        containerSignature: 'script:inline-json',
+        diagnostics: [],
+      });
+    }
+  });
+
+  return results;
+}
+
 export function collectChapterLinks(
   root: ParentNode,
   baseUrl: string,
@@ -359,5 +423,5 @@ export function collectChapterLinks(
     });
   });
 
-  return results;
+  return results.concat(collectScriptChapterLinks(root, baseUrl, currentUrl));
 }

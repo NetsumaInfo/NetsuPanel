@@ -233,4 +233,30 @@ describe('chapter detection helpers', () => {
     expect(candidates.some((candidate) => candidate.relation === 'previous')).toBe(true);
     expect(candidates.some((candidate) => candidate.relation === 'next')).toBe(true);
   });
+
+  it('extracts chapter URLs from inline hydration scripts when the DOM list is lazy', () => {
+    document.body.innerHTML = `
+      <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "chapters": [
+                { "url": "/series/chapter-9" },
+                { "url": "/series/chapter-10" },
+                { "url": "/series/chapter-11" }
+              ]
+            }
+          }
+        }
+      </script>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/chapter-10',
+      'https://reader.example.com/series/chapter-10'
+    );
+
+    expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
+  });
 });

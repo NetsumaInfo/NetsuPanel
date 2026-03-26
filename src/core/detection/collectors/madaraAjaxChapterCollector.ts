@@ -41,9 +41,13 @@ export function extractMadaraPageInfo(document: Document, url: string): MadaraPa
   const pathname = (() => {
     try { return new URL(url).pathname; } catch { return url; }
   })();
+  const segments = pathname.split('/').filter(Boolean);
+  const slug = decodeURIComponent(segments[1] || '');
 
   // Listing page: /manga/slug/ or /manhwa/slug/ etc.
-  result.isMangaListingPage = /^\/(manga|manhwa|manhua|comic|webtoon|scan)\/[^/]+\/?$/i.test(pathname);
+  result.isMangaListingPage =
+    /^\/(manga|manhwa|manhua|comic|webtoon|scan)\/[^/]+\/?$/i.test(pathname) &&
+    !/(?:^|[-_ ])(?:chapter|chapitre|episode|ep|chap|ch|capitulo|capitolo|cap|raw)(?:[-_ ]*\d|\b.*\d)/i.test(slug);
   // Chapter page: /manga/slug/chapter-N/ etc.
   result.isChapterReaderPage = /\/(chapter|chapitre|episode|ch|vol|partie|chap)[-_]?\d/i.test(pathname) ||
     /\/(read|viewer)\//i.test(pathname);
