@@ -229,6 +229,17 @@ export async function loadChapterPreview(
     imageCandidates: collectRemoteImageCandidates(doc, chapterUrl),
   });
 
+  const applyPreferredReferrer = (collection: ImageCollectionResult): ImageCollectionResult => {
+    const preferredReferrer = options.referrer || chapterUrl;
+    return {
+      ...collection,
+      items: collection.items.map((item) => ({
+        ...item,
+        referrer: preferredReferrer,
+      })),
+    };
+  };
+
   // Prefer manga-specific detection (better ordering/filtering)
   // but fall back to general collection when manga finds nothing meaningful
   const mangaResult = scan.manga.currentPages;
@@ -236,15 +247,21 @@ export async function loadChapterPreview(
 
   // Check if the chapter uses a paginated reader
   const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
+  const looksLikeImageUrl = (url: string): boolean =>
+    /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i.test(url) ||
+    /\/cdn-cgi\/image\//i.test(url) ||
+    /\/_next\/image/i.test(url);
   if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
     // Crawl all pages to get all images
     const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
       dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
 
     const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
-    if (allImageUrls.length > 0) {
+    const validImageUrls = allImageUrls.filter((url) => looksLikeImageUrl(url));
+    const minimumExpected = Math.min(2, paginatedInfo.totalPages);
+    if (validImageUrls.length >= minimumExpected) {
       // Build an ImageCollectionResult from the crawled URLs
-      const paginatedItems = allImageUrls.map((url, i) => ({
+      const paginatedItems = validImageUrls.map((url, i) => ({
         id: `paginated-${i}`,
         url,
         previewUrl: url,
@@ -283,6 +300,6 @@ export async function loadChapterPreview(
     }
   }
 
-  if (mangaResult.items.length >= 2) return mangaResult;
-  return generalResult.items.length > mangaResult.items.length ? generalResult : mangaResult;
+  if (mangaResult.items.length >= 2) return applyPreferredReferrer(mangaResult);
+  return applyPreferredReferrer(generalResult.items.length > mangaResult.items.length ? generalResult : mangaResult);
 }

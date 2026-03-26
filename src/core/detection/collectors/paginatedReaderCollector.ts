@@ -57,6 +57,26 @@ const PAGINATED_IMAGE_SELECTORS = [
 const PAGINATED_NAV_RE = /\b(\d+)\s*[\/\-]\s*(\d+)\b/;
 const PAGINATED_PAGE_SELECT_RE = /page|p\.|pg\./i;
 
+function isLikelyImageResourceUrl(input: string): boolean {
+  if (!input) return false;
+  if (/\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i.test(input)) return true;
+
+  try {
+    const parsed = new URL(input);
+    if (/\/cdn-cgi\/image\//i.test(parsed.pathname)) return true;
+    if (/_next\/image/i.test(parsed.pathname)) return true;
+
+    const nested = parsed.searchParams.get('url') || parsed.searchParams.get('src');
+    if (nested && /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i.test(decodeURIComponent(nested))) {
+      return true;
+    }
+  } catch {
+    // ignore URL parse errors
+  }
+
+  return false;
+}
+
 /** Extract page info from a select element */
 function extractFromPageSelect(doc: Document, baseUrl: string): Partial<PaginatedReaderInfo> {
   const selects = Array.from(doc.querySelectorAll<HTMLSelectElement>(
@@ -74,6 +94,12 @@ function extractFromPageSelect(doc: Document, baseUrl: string): Partial<Paginate
     for (const option of options) {
       const value = option.value || option.getAttribute('data-redirect') || '';
       if (!value || value.startsWith('#') || value.startsWith('javascript')) continue;
+      const looksLikeUrl =
+        /^https?:\/\//i.test(value) ||
+        value.startsWith('/') ||
+        value.startsWith('?') ||
+        /[/?=&]/.test(value);
+      if (!looksLikeUrl) continue;
 
       try {
         const resolved = new URL(value, baseUrl).href;
@@ -223,7 +249,11 @@ function extractCurrentPageImage(doc: Document, baseUrl: string): string | null 
     }
 
     try {
-      return new URL(src, baseUrl).href;
+      const resolved = new URL(src, baseUrl).href;
+      if (!isLikelyImageResourceUrl(resolved)) {
+        continue;
+      }
+      return resolved;
     } catch { /* skip */ }
   }
 
@@ -311,18 +341,20 @@ export async function crawlPaginatedChapter(
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const imgUrl = extractCurrentPageImage(doc, pageUrl);
-        if (imgUrl) images.push(imgUrl);
+        if (imgUrl && isLikelyImageResourceUrl(imgUrl)) images.push(imgUrl);
       } catch {
         // Skip failed pages
       }
     }
-    return images;
+    return [...new Set(images)];
   }
 
   // Strategy 2: Follow next page links (linear crawl)
   // Add current page image first
   if (pageInfo.currentImageUrl) {
-    images.push(pageInfo.currentImageUrl);
+    if (isLikelyImageResourceUrl(pageInfo.currentImageUrl)) {
+      images.push(pageInfo.currentImageUrl);
+    }
     visited.add(readerUrl);
   }
 
@@ -338,7 +370,7 @@ export async function crawlPaginatedChapter(
       const doc = parser.parseFromString(html, 'text/html');
 
       const imgUrl = extractCurrentPageImage(doc, currentUrl);
-      if (imgUrl) images.push(imgUrl);
+      if (imgUrl && isLikelyImageResourceUrl(imgUrl)) images.push(imgUrl);
 
       const nav = extractPageNavigation(doc, currentUrl);
       currentUrl = nav.nextPageUrl;
@@ -348,5 +380,5 @@ export async function crawlPaginatedChapter(
     }
   }
 
-  return images;
+  return [...new Set(images)];
 }
