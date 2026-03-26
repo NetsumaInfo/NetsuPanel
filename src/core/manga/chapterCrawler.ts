@@ -128,6 +128,56 @@ interface LinearWalkContext {
   deadline: number;
 }
 
+function extractListingPaginationUrls(document: Document, listingUrl: string): string[] {
+  let parsedListing: URL;
+  try {
+    parsedListing = new URL(listingUrl);
+  } catch {
+    return [];
+  }
+
+  const anchors = Array.from(
+    document.querySelectorAll<HTMLAnchorElement>(
+      [
+        '.pagination a[href]',
+        '.wp-pagenavi a[href]',
+        '.page-numbers a[href]',
+        'a.page-numbers[href]',
+        '.select-pagination a[href]',
+        '.chapter-pagination a[href]',
+        '.listing-chapters_wrap a[href*="/page/"]',
+        '.main.version-chap a[href*="/page/"]',
+      ].join(', ')
+    )
+  );
+
+  const seen = new Set<string>();
+  const results: Array<{ url: string; page: number }> = [];
+
+  for (const anchor of anchors) {
+    const href = anchor.getAttribute('href') || '';
+    if (!href || href.startsWith('#') || href.startsWith('javascript')) continue;
+
+    let resolved: string;
+    try {
+      const parsed = new URL(href, listingUrl);
+      if (parsed.host !== parsedListing.host) continue;
+      const pageMatch = parsed.pathname.match(/\/page\/(\d+)(?:\/|$)/i);
+      if (!pageMatch) continue;
+      resolved = parsed.href;
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      results.push({ url: resolved, page: Number(pageMatch[1]) });
+    } catch {
+      // ignore malformed URLs
+    }
+  }
+
+  return results
+    .sort((left, right) => left.page - right.page)
+    .map((entry) => entry.url);
+}
+
 async function walkLinearDirection(
   startUrl: string | undefined,
   direction: 'previous' | 'next',
@@ -164,6 +214,7 @@ export interface DiscoverChapterOptions {
   maxLinearSteps?: number;
   maxDurationMs?: number;
   includeListingFetch?: boolean;
+  maxListingPages?: number;
 }
 
 export function seedChaptersFromScan(scan: PageScanResult): ChapterItem[] {
@@ -202,6 +253,32 @@ export async function discoverChapters(
           mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapterLinkToItem(chapter))
         );
       });
+
+      // Some chapter lists are paginated (/page/2, /page/3...). Fetch additional listing pages.
+      const listingHtml = await dependencies.fetchDocument(listingUrl, fetchOptions);
+      const listingDoc = parseRemoteDocument(listingHtml);
+      const listingPages = extractListingPaginationUrls(listingDoc, listingUrl).slice(
+        0,
+        Math.max(0, options.maxListingPages ?? 8)
+      );
+
+      for (const listingPageUrl of listingPages) {
+        if (Date.now() > context.deadline) break;
+        try {
+          const pagedScan = await scanRemotePage(listingPageUrl, dependencies, {
+            ...fetchOptions,
+            referrer: listingUrl,
+          });
+          pagedScan.manga.chapters.forEach((chapter) => {
+            accumulator.set(
+              chapter.canonicalUrl,
+              mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapterLinkToItem(chapter))
+            );
+          });
+        } catch {
+          // keep partial chapter discovery
+        }
+      }
     } catch {
       // Keep chapter list from initial scan when listing fetch is denied.
     }
@@ -230,12 +307,12 @@ export async function loadChapterPreview(
   });
 
   const applyPreferredReferrer = (collection: ImageCollectionResult): ImageCollectionResult => {
-    const preferredReferrer = options.referrer || chapterUrl;
+    const preferredReferrer = chapterUrl;
     return {
       ...collection,
       items: collection.items.map((item) => ({
         ...item,
-        referrer: preferredReferrer,
+        referrer: item.referrer || preferredReferrer,
       })),
     };
   };

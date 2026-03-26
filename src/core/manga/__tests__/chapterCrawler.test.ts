@@ -70,6 +70,46 @@ describe('chapterCrawler discoverChapters', () => {
     ]);
     expect(fetchDocument).toHaveBeenCalledWith('https://example.com/listing', {});
   });
+
+  it('fetches paginated listing pages to recover older chapters (including chapter 1)', async () => {
+    const current = createChapterLink('https://example.com/series/chapter-3', 'current', 3, 1);
+    const initialScan = createScan(
+      'https://example.com/series/chapter-3',
+      [current],
+      'https://example.com/series/'
+    );
+
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === 'https://example.com/series/') {
+        return `
+          <html><body>
+            <div class="main version-chap">
+              <a href="https://example.com/series/chapter-3">Chapitre 3</a>
+              <a href="https://example.com/series/chapter-2">Chapitre 2</a>
+            </div>
+            <div class="pagination">
+              <a href="https://example.com/series/page/2/">2</a>
+            </div>
+          </body></html>
+        `;
+      }
+      if (url === 'https://example.com/series/page/2/') {
+        return `
+          <html><body>
+            <div class="main version-chap">
+              <a href="https://example.com/series/chapter-1">Chapitre 1</a>
+            </div>
+          </body></html>
+        `;
+      }
+      return '<html><body></body></html>';
+    });
+
+    const chapters = await discoverChapters(initialScan, { fetchDocument }, { maxListingPages: 3 });
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
+    expect(fetchDocument).toHaveBeenCalledWith('https://example.com/series/page/2/', expect.anything());
+  });
 });
 
 describe('chapterCrawler loadChapterPreview', () => {
