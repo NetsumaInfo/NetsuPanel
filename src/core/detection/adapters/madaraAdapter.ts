@@ -307,6 +307,23 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
     if (candidate) results.push(candidate);
   });
 
+  // Astral-style "read first chapter" CTA can point to chapter 1 even when the listing cluster misses it.
+  const firstChapterCtaAnchors = Array.from(
+    (document as Document).querySelectorAll<HTMLAnchorElement>('a[href], button[onclick]')
+  ).filter((anchor) => /(?:lire\s+le\s+premier\s+chapitre|read\s+the\s+first\s+chapter|premier\s+chapitre)/i.test(
+    compactWhitespace(anchor.textContent || anchor.getAttribute('aria-label') || anchor.getAttribute('title') || '')
+  ));
+
+  firstChapterCtaAnchors.forEach((anchor, index) => {
+    const candidate = createMadaraChapterCandidate(anchor, currentUrl, index, 'candidate', 'madara:first-chapter-cta', 99);
+    if (!candidate) return;
+    results.push({
+      ...candidate,
+      label: candidate.label || 'Chapitre 1',
+      chapterNumber: candidate.chapterNumber ?? 1,
+    });
+  });
+
   const previousAnchor = (document as Document).querySelector<HTMLAnchorElement>(
     'a.prev_page, .nav-previous a, .chapter-nav a.prev, .select-pagination a.prev, a[rel="prev"], .btn-prev-chapter, .prev-chapter'
   );

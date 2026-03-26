@@ -24,6 +24,7 @@ export function useNetsuController() {
   const waifuRuntimeRef = useRef<Waifu2xRuntime>(new Waifu2xRuntime());
   const previewObjectUrlRef = useRef<string | null>(null);
   const chapterPreviewTasksRef = useRef<Map<string, ReturnType<typeof fetchChapterPreview>>>(new Map());
+  const remoteScanTasksRef = useRef<Map<string, ReturnType<typeof scanRemotePage>>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -49,11 +50,20 @@ export function useNetsuController() {
             referrer: options.referrer || source.url,
             tabId,
           });
-        const scanPageForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) =>
-          scanRemotePage(url, {
-            referrer: options.referrer || source.url,
+        const scanPageForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) => {
+          const referrer = options.referrer || source.url;
+          const cacheKey = `${url}::${referrer}::${tabId}`;
+          const existing = remoteScanTasksRef.current.get(cacheKey);
+          if (existing) {
+            return existing as ReturnType<typeof scanRemotePage>;
+          }
+          const task = scanRemotePage(url, {
+            referrer,
             tabId,
           });
+          remoteScanTasksRef.current.set(cacheKey, task);
+          return task;
+        };
 
         const chapters = seedChaptersFromScan(scan);
         if (!cancelled) {

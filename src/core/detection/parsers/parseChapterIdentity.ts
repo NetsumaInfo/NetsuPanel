@@ -63,6 +63,9 @@ const SPECIAL_LABEL_MAP: Record<string, number> = {
 
 function specialLabelToNumber(text: string): number | null {
   const lower = text.trim().toLowerCase();
+  if (/\b(?:first|premier)\s+chapter\b|\bpremier\s+chapitre\b|\blire\s+le\s+premier\s+chapitre\b/i.test(lower)) {
+    return 1;
+  }
   for (const [key, val] of Object.entries(SPECIAL_LABEL_MAP)) {
     if (lower.includes(key)) return val;
   }

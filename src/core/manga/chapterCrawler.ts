@@ -222,10 +222,7 @@ function mergeRawChapterCandidatesFromDocument(
     if (candidate.chapterNumber === null && !/(chapter|chapitre|episode|ep|ch\.?)/i.test(candidate.label)) {
       continue;
     }
-    accumulator.set(
-      candidate.canonicalUrl,
-      mergeChapterItems(accumulator.get(candidate.canonicalUrl), chapterLinkToItem(candidate))
-    );
+    addChapterItem(accumulator, chapterLinkToItem(candidate));
   }
 }
 
@@ -282,6 +279,7 @@ export async function discoverChapters(
   options: DiscoverChapterOptions = {}
 ): Promise<ChapterItem[]> {
   const accumulator = new Map<string, ChapterItem>();
+  const remoteScanCache = new Map<string, Promise<PageScanResult>>();
   const fetchOptions: { referrer?: string; tabId?: number } = {};
   if (options.referrer) {
     fetchOptions.referrer = options.referrer;
@@ -294,6 +292,15 @@ export async function discoverChapters(
     deadline: Date.now() + Math.max(500, options.maxDurationMs ?? DEFAULT_DISCOVERY_TIME_BUDGET_MS),
   };
 
+  const getRemoteScan = (url: string, options: { referrer?: string; tabId?: number } = {}) => {
+    const cacheKey = `${url}::${options.referrer || ''}::${options.tabId ?? ''}`;
+    const existing = remoteScanCache.get(cacheKey);
+    if (existing) return existing;
+    const task = scanRemotePage(url, dependencies, options);
+    remoteScanCache.set(cacheKey, task);
+    return task;
+  };
+
   initialScan.manga.chapters.forEach((chapter) => {
     addChapterItem(accumulator, chapterLinkToItem(chapter));
   });
@@ -301,7 +308,7 @@ export async function discoverChapters(
   const listingUrl = initialScan.manga.navigation.listing?.url;
   if ((options.includeListingFetch ?? true) && listingUrl && Date.now() <= context.deadline) {
     try {
-      const listingScan = await scanRemotePage(listingUrl, dependencies, fetchOptions);
+      const listingScan = await getRemoteScan(listingUrl, fetchOptions);
       listingScan.manga.chapters.forEach((chapter) => {
         addChapterItem(accumulator, chapterLinkToItem(chapter));
       });
@@ -318,15 +325,12 @@ export async function discoverChapters(
       for (const listingPageUrl of listingPages) {
         if (Date.now() > context.deadline) break;
         try {
-          const pagedScan = await scanRemotePage(listingPageUrl, dependencies, {
+          const pagedScan = await getRemoteScan(listingPageUrl, {
             ...fetchOptions,
             referrer: listingUrl,
           });
           pagedScan.manga.chapters.forEach((chapter) => {
-            accumulator.set(
-              chapter.canonicalUrl,
-              mergeChapterItems(accumulator.get(chapter.canonicalUrl), chapterLinkToItem(chapter))
-            );
+            addChapterItem(accumulator, chapterLinkToItem(chapter));
           });
           const pagedHtml = await dependencies.fetchDocument(listingPageUrl, {
             ...fetchOptions,
@@ -361,7 +365,7 @@ export async function discoverChapters(
     for (const listingPageUrl of guessedPages) {
       if (Date.now() > context.deadline) break;
       try {
-        const pagedScan = await scanRemotePage(listingPageUrl, dependencies, {
+        const pagedScan = await getRemoteScan(listingPageUrl, {
           ...fetchOptions,
           referrer: listingUrl,
         });
