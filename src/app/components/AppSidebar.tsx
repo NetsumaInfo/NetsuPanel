@@ -91,13 +91,6 @@ export function AppSidebar({
       <div className="rounded-[18px] border border-border bg-white p-3 shadow-sm">
         <div className="grid gap-2">
           <div className="grid gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Mode</span>
-            <ModeSwitch value={mode} onChange={onModeChange} />
-          </div>
-
-          <div className="h-px bg-border/70" />
-
-          <div className="grid gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Export</span>
             <CompactSelect
               value={imageFormat}

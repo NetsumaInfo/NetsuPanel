@@ -12,10 +12,15 @@ export function resolveUrl(input: string, baseUrl?: string): string | null {
   if (!input) return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
+  // Reject non-fetchable schemes immediately (causes crash in page-world fetch)
+  if (/^(javascript|mailto|tel|sms|vbscript|data-url):/i.test(trimmed)) return null;
   if (trimmed.startsWith('data:')) return trimmed;
   if (trimmed.startsWith('blob:')) return trimmed;
   const parsed = safeUrl(trimmed, baseUrl);
-  return parsed ? parsed.href : null;
+  if (!parsed) return null;
+  // Only allow http/https for resolved remote URLs
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'data:' && parsed.protocol !== 'blob:') return null;
+  return parsed.href;
 }
 
 export function toQuerylessUrl(input: string): string {

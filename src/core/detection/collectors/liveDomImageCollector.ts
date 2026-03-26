@@ -99,6 +99,17 @@ function previewFromImage(image: HTMLImageElement): string {
   }
 }
 
+// Cloudflare Mirage / WP Rocket replace src with a data:image/svg+xml placeholder
+function isPlaceholderSrc(src: string): boolean {
+  if (!src) return true;
+  if (src.startsWith('data:image/svg+xml')) return true;
+  if (src.startsWith('data:image/gif;base64,R0lGOD')) return true; // classic 1x1 GIF transparent
+  if (src.includes('data:image/png;base64,iVBORw0KGgoAAAANS')) return true; // 1x1 PNG transparent
+  // Cloudflare Mirage placeholder URL pattern
+  if (/\/cdn-cgi\/mirage\/|rocket-loader|cloudflare-static/i.test(src)) return true;
+  return false;
+}
+
 function buildImageCandidate(
   image: HTMLImageElement,
   domIndex: number,
@@ -107,14 +118,23 @@ function buildImageCandidate(
 ): RawImageCandidate | null {
   const descriptors = readImageSourceDescriptors(image);
   // Pick the best resolved URL: prefer data-src family (lazy-load source) over loaded src
+  // Filter ensures resolved is non-null; cast to help TypeScript narrow the type.
   const resolved = descriptors
     .map((descriptor) => ({
       ...descriptor,
-      resolved: resolveUrl(descriptor.value, baseUrl),
+      resolved: resolveUrl(descriptor.value, baseUrl) as string,
     }))
-    .filter((descriptor) => descriptor.resolved);
-  // Prefer the first data-attribute source (actual high-res), fall back to current/src
-  const selected = resolved.find((d) => d.sourceKind.startsWith('data-')) || resolved[0];
+    .filter((descriptor) => Boolean(descriptor.resolved));
+
+  // Check if current src is a Cloudflare placeholder — if so, skip src/currentSrc
+  const currentSrcValue = image.currentSrc || image.src || '';
+  const srcIsPlaceholder = isPlaceholderSrc(currentSrcValue);
+
+  // Prefer the first data-attribute source (actual high-res)
+  // If current src is a Cloudflare placeholder, skip src/currentSrc entries
+  const dataAttrCandidate = resolved.find((d) => d.sourceKind.startsWith('data-') && !isPlaceholderSrc(d.resolved));
+  const nonPlaceholderFallback = resolved.find((d) => !isPlaceholderSrc(d.resolved));
+  const selected = dataAttrCandidate || (srcIsPlaceholder ? null : nonPlaceholderFallback) || nonPlaceholderFallback;
   if (!selected?.resolved) return null;
 
   const rect = image.getBoundingClientRect();
@@ -133,7 +153,7 @@ function buildImageCandidate(
   return {
     id,
     url: selected.resolved,
-    previewUrl: previewFromImage(image) || selected.resolved,
+    previewUrl: isPlaceholderSrc(selected.resolved) ? '' : (previewFromImage(image) || selected.resolved),
     captureStrategy,
     sourceKind: selected.sourceKind,
     origin: 'live-dom',
@@ -368,6 +388,57 @@ function collectCssStyleTagCandidates(baseUrl: string, startIndex: number): RawI
   return results;
 }
 
+/**
+ * Collect images hidden inside <noscript> tags.
+ * Cloudflare Mirage and some WP lazy-loaders place the real <img> inside <noscript>.
+ */
+function collectNoscriptCandidates(baseUrl: string, startIndex: number): RawImageCandidate[] {
+  const results: RawImageCandidate[] = [];
+  const noscripts = [...document.querySelectorAll<HTMLElement>('noscript')];
+
+  noscripts.forEach((ns, index) => {
+    const html = ns.textContent || ns.innerHTML || '';
+    if (!html.includes('<img')) return;
+
+    // Parse the noscript content to extract img src
+    const srcMatch = html.match(/src=["']([^"']+)["']/i);
+    const dataSrcMatch = html.match(/data-src=["']([^"']+)["']/i);
+    const raw = dataSrcMatch?.[1] || srcMatch?.[1] || '';
+    if (!raw) return;
+
+    const resolved = resolveUrl(raw, baseUrl);
+    if (!resolved || resolved.startsWith('data:')) return;
+
+    // Extract width/height hints from noscript html
+    const widthMatch = html.match(/(?:width|data-width)=["']?(\d+)["']?/i);
+    const heightMatch = html.match(/(?:height|data-height)=["']?(\d+)["']?/i);
+    const altMatch = html.match(/alt=["']([^"']*)["']/i);
+    const width = widthMatch ? Number(widthMatch[1]) : 0;
+    const height = heightMatch ? Number(heightMatch[1]) : 0;
+
+    results.push({
+      id: `noscript-${startIndex + index}`,
+      url: resolved,
+      previewUrl: resolved,
+      captureStrategy: 'network',
+      sourceKind: 'noscript-img',
+      origin: 'live-dom',
+      width,
+      height,
+      domIndex: startIndex + index,
+      top: 0,
+      left: 0,
+      altText: altMatch?.[1] || '',
+      titleText: '',
+      containerSignature: buildContainerSignature(ns),
+      visible: true,
+      diagnostics: [],
+    });
+  });
+
+  return results;
+}
+
 export async function collectLiveDomImages(
   baseUrl: string,
   options: LiveDomCollectionOptions = {}
@@ -404,6 +475,10 @@ export async function collectLiveDomImages(
     ? collectCssStyleTagCandidates(baseUrl, cssOffset)
     : [];
 
+  // Noscript candidates: Cloudflare Mirage hides real images in <noscript>
+  const noscriptOffset = cssOffset + cssCandidates.length;
+  const noscriptCandidates = collectNoscriptCandidates(baseUrl, noscriptOffset);
+
   // Multi-strategy: JSON embedded + inline scripts
   const jsonCandidates = settings.includeScriptCandidates ? collectJsonEmbeddedImages(document, baseUrl) : [];
   const scriptCandidates = settings.includeScriptCandidates ? collectInlineScriptImages(document, baseUrl) : [];
@@ -415,6 +490,7 @@ export async function collectLiveDomImages(
       svgCandidates,
       mediaCandidates,
       cssCandidates,
+      noscriptCandidates,
       jsonCandidates,
       scriptCandidates
     ),

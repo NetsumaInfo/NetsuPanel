@@ -25,48 +25,49 @@ export function useNetsuController() {
       try {
         const tabId = await resolveBootstrapTabId();
         if (!tabId) {
-          throw new Error('Impossible de déterminer l’onglet source. Ouvre une page web normale puis relance l’extension.');
+          throw new Error("Impossible de determiner l'onglet source. Ouvre une page web normale puis relance l'extension.");
         }
 
         dispatch({ type: 'bootstrap-start', tabId });
-        dispatch({ type: 'set-loading-message', message: 'Lecture du contexte de la page…' });
-        const source = await getSourceContext(tabId);
+        dispatch({ type: 'set-loading-message', message: 'Analyse en cours…' });
+
+        // Parallelize: fetch source context and scan the page simultaneously
+        const [source, scan] = await Promise.all([
+          getSourceContext(tabId),
+          scanSourceTab(tabId),
+        ]);
+
         const fetchDocumentForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) =>
           fetchDocument(url, {
             referrer: options.referrer || source.url,
             tabId,
           });
-        dispatch({ type: 'set-loading-message', message: 'Analyse de la page en cours…' });
-        const scan = await scanSourceTab(tabId);
+
         const chapters = seedChaptersFromScan(scan);
         if (!cancelled) {
           dispatch({ type: 'bootstrap-success', source, scan, chapters });
         }
 
-        const hasNavigationHints = Boolean(
-          scan.manga.navigation.listing || scan.manga.navigation.previous || scan.manga.navigation.next
-        );
-        if (hasNavigationHints || chapters.length <= 3) {
-          void (async () => {
-            try {
-              const discovered = await discoverChapters(
-                scan,
-                { fetchDocument: fetchDocumentForSource },
-                {
-                  referrer: source.url,
-                  tabId,
-                  maxLinearSteps: 80,
-                  maxDurationMs: 8_500,
-                }
-              );
-              if (!cancelled && discovered.length > 0) {
-                dispatch({ type: 'set-chapters', chapters: discovered });
+        // Always discover chapters asynchronously (non-blocking)
+        void (async () => {
+          try {
+            const discovered = await discoverChapters(
+              scan,
+              { fetchDocument: fetchDocumentForSource },
+              {
+                referrer: source.url,
+                tabId,
+                maxLinearSteps: 80,
+                maxDurationMs: 8_500,
               }
-            } catch {
-              // Non bloquant: on conserve les chapitres initiaux déjà détectés.
+            );
+            if (!cancelled && discovered.length > 0) {
+              dispatch({ type: 'set-chapters', chapters: discovered });
             }
-          })();
-        }
+          } catch {
+            // Non bloquant: on conserve les chapitres initiaux déjà détectés.
+          }
+        })();
       } catch (error) {
         if (!cancelled) {
           dispatch({

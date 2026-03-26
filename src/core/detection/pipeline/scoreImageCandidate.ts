@@ -73,6 +73,11 @@ export function scoreImageCandidate(input: ScoreInput): number {
     score += 14;
   }
 
+  // Cloudflare Mirage / WP lazy-load: noscript images and data-cfsrc are real content images
+  if (input.sourceKind === 'noscript-img' || input.sourceKind === 'data-cfsrc') {
+    score += 14;
+  }
+
   if (isLikelyDecorative(input.url)) score -= 36;
 
   return clamp(score, 0, 100);

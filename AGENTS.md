@@ -55,8 +55,13 @@
 5. Auditer React:
    - `npx -y react-doctor@latest . --verbose --diff`
 6. Après correction React Doctor:
-   - relancer `npm run typecheck`
-   - relancer `npm test`
+    - relancer `npm run typecheck`
+    - relancer `npm test`
+7. À la fin de chaque modification, lancer obligatoirement le build Chrome:
+   - `npm run start:chrome`
+   - ne pas livrer une modification sans build Chrome réussi
+   - à chaque fois, afficher clairement le résultat du build au lieu de le supposer
+   - si une série de changements est en cours, relancer le build après chaque étape significative
 
 ## Checklist qualité avant livraison
 - Le clic sur l’icône extension ouvre `app.html`, pas une popup legacy.
@@ -88,4 +93,4 @@
 - TRES IMPORTANT: toujours travailler, commit et push sur la branche `codex` par défaut, sauf demande explicite contraire de l'utilisateur.
 - TRES IMPORTANT: pendant le travail sur `codex`, faire un commit à chaque étape significative. Ne pas accumuler de gros changements non commités.
 - Ne pas commit sur `Beta` automatiquement.
-- Quand l'utilisateur le demande explicitement, alors commit les changements dans la branche `Beta`.
+- Quand l'utilisateur le demande explicitement, alors commit les changements dans la branche `Beta` ou autre branche.

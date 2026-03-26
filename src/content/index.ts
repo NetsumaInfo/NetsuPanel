@@ -16,12 +16,12 @@ declare global {
 
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
-const STABILIZE_DELAYS = [35, 55, 80];
-const LAZY_SCROLL_WAIT_MS = 28;
-const RECHECK_DELAY_MS = 80;
-const MAX_LAZY_SCROLL = 12000;
-const MAX_LAZY_STEPS = 7;
-const MAX_SCAN_DURATION_MS = 2200;
+const STABILIZE_DELAYS = [35, 60, 100];
+const LAZY_SCROLL_WAIT_MS = 40;
+const RECHECK_DELAY_MS = 120;
+const MAX_LAZY_SCROLL = 18000;
+const MAX_LAZY_STEPS = 10;
+const MAX_SCAN_DURATION_MS = 3000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,7 +89,10 @@ function isLowCoverage(candidates: RawImageCandidate[]): boolean {
       candidate.height > 0
   );
 
-  return candidates.length < 8 || dimensioned.length < 4 || liveDomLoaded.length < 3;
+  // Also count noscript candidates as good coverage (Cloudflare hides images here)
+  const noscriptLoaded = candidates.filter((candidate) => candidate.sourceKind === 'noscript-img');
+
+  return candidates.length < 8 || (dimensioned.length < 4 && noscriptLoaded.length < 3) || liveDomLoaded.length < 3;
 }
 
 function looksLikeReaderPage(page: PageIdentity): boolean {
@@ -97,6 +100,13 @@ function looksLikeReaderPage(page: PageIdentity): boolean {
   if (/(chapter|chapitre|episode|viewer|webtoon|scan|read|reader|manga|manhwa|manhua|comic)/i.test(hintText)) {
     return true;
   }
+
+  // Check for noscript + img presence (Cloudflare Mirage lazy-load pattern)
+  const hasNoscriptImages = document.querySelectorAll('noscript').length > 0 &&
+    Array.from(document.querySelectorAll('noscript')).some(
+      (ns) => (ns.textContent || '').includes('<img')
+    );
+  if (hasNoscriptImages) return true;
 
   return Boolean(
     document.querySelector(

@@ -190,6 +190,8 @@ export function App() {
               chapterCount={chapterCount}
               generalCount={generalCount}
               mangaPageCount={scan.manga.currentPages.items.length}
+              mode={state.mode}
+              onModeChange={handleModeChange}
             />
 
             {!showDesktopSidebar && (

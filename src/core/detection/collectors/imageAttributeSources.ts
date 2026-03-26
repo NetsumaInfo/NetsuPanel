@@ -1,11 +1,35 @@
 const IMAGE_ATTRIBUTES = [
+  // Cloudflare Rocket Loader / Mirage - replaces src with data-cfsrc
+  ['data-cfsrc', 'data-cfsrc'],
+  // Common lazy-load data attributes (highest priority = true image)
   ['data-src', 'data-src'],
   ['data-lazy-src', 'data-lazy-src'],
   ['data-original', 'data-original'],
   ['data-url', 'data-url'],
-  ['data-cfsrc', 'data-cfsrc'],
   ['data-echo', 'data-echo'],
   ['data-srcset', 'data-srcset'],
+  // Cloudflare + WordPress lazy-load
+  ['data-wpfc-original-src', 'data-wpfc-original-src'],
+  ['data-wpfc-original-srcset', 'data-wpfc-original-srcset'],
+  ['data-wpel-url', 'data-wpel-url'],
+  // Additional lazy-load attributes used by various sites/manga readers
+  ['data-bg', 'data-bg'],
+  ['data-background', 'data-background'],
+  ['data-lazy', 'data-lazy'],
+  ['data-lazy-original', 'data-lazy-original'],
+  ['data-original-src', 'data-original-src'],
+  ['data-retina-src', 'data-retina-src'],
+  ['data-full', 'data-full'],
+  ['data-hi-res', 'data-hi-res'],
+  ['data-zoom-src', 'data-zoom-src'],
+  ['data-img', 'data-img'],
+  ['data-image', 'data-image'],
+  ['data-large', 'data-large'],
+  ['loading-src', 'loading-src'],
+  // Madara / WP-Manga specific
+  ['data-pagespeed-lazy-src', 'data-pagespeed-lazy-src'],
+  ['data-pagespeed-high-res-src', 'data-pagespeed-high-res-src'],
+  // Standard attributes (checked last so lazy attrs take priority)
   ['srcset', 'img-srcset'],
   ['currentSrc', 'img-current-src'],
   ['src', 'img-src'],
