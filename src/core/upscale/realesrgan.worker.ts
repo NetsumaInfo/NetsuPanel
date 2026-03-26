@@ -80,12 +80,20 @@ function patchWebGpuRequestAdapter(): void {
 
   const originalRequestAdapter = gpu.requestAdapter.bind(gpu) as (options?: unknown) => Promise<any>;
   gpu.requestAdapter = async (options?: Record<string, unknown>) => {
-    const nextOptions = IS_WINDOWS
-      ? (typeof options === 'object' && options ? { ...options } : undefined)
-      : {
-          ...(typeof options === 'object' && options ? options : {}),
-          powerPreference: 'high-performance',
-        };
+    let nextOptions =
+      typeof options === 'object' && options
+        ? { ...options }
+        : undefined;
+    if (IS_WINDOWS) {
+      if (nextOptions && 'powerPreference' in nextOptions) {
+        delete nextOptions.powerPreference;
+      }
+    } else {
+      nextOptions = {
+        ...(nextOptions || {}),
+        powerPreference: 'high-performance',
+      };
+    }
     try {
       return await originalRequestAdapter(nextOptions);
     } catch {
