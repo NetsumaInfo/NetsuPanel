@@ -155,11 +155,11 @@ export function useNetsuController() {
                   {
                     fetchDocument: (url, options = {}) =>
                       fetchDocument(url, {
-                        referrer: options.referrer || chapter.url || source.url,
+                        referrer: options.referrer || source.url,
                         tabId: source.id,
                       }),
                   },
-                  { referrer: chapter.url || source.url, tabId: source.id }
+                  { referrer: source.url, tabId: source.id }
                 );
           dispatch({
             type: 'set-chapter-preview',

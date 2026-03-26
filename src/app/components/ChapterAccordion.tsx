@@ -148,7 +148,7 @@ export function ChapterAccordion({
                       <SafeImage
                         src={item.previewUrl || item.url}
                         alt={`Page ${i + 1}`}
-                        referrer={chapter.url}
+                        referrer={item.referrer || chapter.url}
                         captureTabId={sourceTabId}
                         captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
                         className="page-thumb transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]"

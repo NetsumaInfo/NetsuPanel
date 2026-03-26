@@ -7,6 +7,8 @@ import type {
 } from '@shared/types';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
 import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
+import { collectInlineScriptImages } from '@core/detection/collectors/inlineScriptCollector';
+import { collectJsonEmbeddedImages } from '@core/detection/collectors/jsonEmbeddedCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
 
 export interface ChapterCrawlerDependencies {
@@ -28,6 +30,24 @@ function buildPageIdentity(url: string, document: Document): PageIdentity {
     host: parsed.host,
     pathname: parsed.pathname,
   };
+}
+
+function collectRemoteImageCandidates(document: Document, baseUrl: string) {
+  const merged = [
+    ...collectStaticDocumentImages(document, baseUrl),
+    ...collectJsonEmbeddedImages(document, baseUrl),
+    ...collectInlineScriptImages(document, baseUrl),
+  ];
+
+  const deduped = new Map<string, (typeof merged)[number]>();
+  for (const candidate of merged) {
+    const key = candidate.url.split('#')[0];
+    if (!deduped.has(key)) {
+      deduped.set(key, candidate);
+    }
+  }
+
+  return [...deduped.values()];
 }
 
 function toChapterItem(scan: PageScanResult, url: string): ChapterItem {
@@ -89,7 +109,7 @@ async function scanRemotePage(
     document,
     page: buildPageIdentity(url, document),
     origin: 'static-html',
-    imageCandidates: collectStaticDocumentImages(document, url),
+    imageCandidates: collectRemoteImageCandidates(document, url),
   });
 }
 
@@ -196,7 +216,7 @@ export async function loadChapterPreview(
     document: doc,
     page: buildPageIdentity(chapterUrl, doc),
     origin: 'static-html',
-    imageCandidates: collectStaticDocumentImages(doc, chapterUrl),
+    imageCandidates: collectRemoteImageCandidates(doc, chapterUrl),
   });
 
   // Prefer manga-specific detection (better ordering/filtering)

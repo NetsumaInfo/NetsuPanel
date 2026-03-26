@@ -1,5 +1,5 @@
 import type { ChapterLinkCandidate, ImageCollectionResult, PageScanResult } from '@shared/types';
-import { discoverChapters } from '@core/manga/chapterCrawler';
+import { discoverChapters, loadChapterPreview } from '@core/manga/chapterCrawler';
 
 const emptyCollection: ImageCollectionResult = {
   items: [],
@@ -72,3 +72,31 @@ describe('chapterCrawler discoverChapters', () => {
   });
 });
 
+describe('chapterCrawler loadChapterPreview', () => {
+  it('extracts images from embedded JSON/script when chapter HTML has no img tags', async () => {
+    const chapterUrl = 'https://reader.example.com/series/chapter-2';
+    const fetchDocument = jest.fn().mockResolvedValue(`
+      <html>
+        <head><title>Series Chapter 2</title></head>
+        <body>
+          <script type="application/json">
+            {
+              "pages": [
+                "https://cdn.example.com/series/chapter-2/page-001.jpg",
+                "https://cdn.example.com/series/chapter-2/page-002.jpg"
+              ]
+            }
+          </script>
+        </body>
+      </html>
+    `);
+
+    const preview = await loadChapterPreview(chapterUrl, { fetchDocument }, { referrer: 'https://reader.example.com/series/' });
+
+    expect(preview.items.length).toBeGreaterThanOrEqual(2);
+    expect(preview.items.map((item) => item.url)).toEqual([
+      'https://cdn.example.com/series/chapter-2/page-001.jpg',
+      'https://cdn.example.com/series/chapter-2/page-002.jpg',
+    ]);
+  });
+});
