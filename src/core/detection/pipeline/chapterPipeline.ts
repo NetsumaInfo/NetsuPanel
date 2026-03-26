@@ -6,6 +6,33 @@ import type {
 } from '@shared/types';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 
+const GENERIC_SERIES_SEGMENTS = new Set([
+  'chapter',
+  'chapitre',
+  'chap',
+  'ch',
+  'episode',
+  'ep',
+  'viewer',
+  'reader',
+  'read',
+  'detail',
+  'manga',
+  'manhwa',
+  'manhua',
+  'comic',
+  'comics',
+  'series',
+  'title',
+  'titles',
+  'catalogue',
+  'scan',
+  'scans',
+  'raw',
+  'vf',
+  'vo',
+]);
+
 function dedupeChapterCandidates(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
   const byUrl = new Map<string, ChapterLinkCandidate>();
   for (const candidate of candidates) {
@@ -101,6 +128,73 @@ function buildCurrentCandidate(page: PageIdentity): ChapterLinkCandidate {
   };
 }
 
+function normalizeSeriesSegment(segment: string): string {
+  return segment
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[-_]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function extractSeriesSlug(url: string): string | null {
+  let segments: string[] = [];
+  try {
+    segments = new URL(url).pathname
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => normalizeSeriesSegment(decodeURIComponent(segment)));
+  } catch {
+    return null;
+  }
+
+  while (segments.length > 0) {
+    const last = segments[segments.length - 1];
+    if (!last) {
+      segments.pop();
+      continue;
+    }
+
+    if (GENERIC_SERIES_SEGMENTS.has(last) || /^\d+(?:\.\d+)?$/.test(last)) {
+      segments.pop();
+      continue;
+    }
+
+    const stripped = normalizeSeriesSegment(
+      last
+        .replace(/(?:^|[-_])(chapter|chapitre|chap|ch|episode|ep|scan|raw)(?:[-_]\d+(?:\.\d+)?)?$/i, '')
+        .replace(/(?:[-_]\d+(?:\.\d+)?)$/, '')
+    );
+
+    if (stripped && !GENERIC_SERIES_SEGMENTS.has(stripped)) {
+      return stripped;
+    }
+
+    segments.pop();
+  }
+
+  return null;
+}
+
+function scopeCandidatesToCurrentSeries(
+  page: PageIdentity,
+  candidates: ChapterLinkCandidate[]
+): ChapterLinkCandidate[] {
+  const currentSeriesSlug = extractSeriesSlug(page.url);
+  if (!currentSeriesSlug) return candidates;
+
+  const matched = candidates.filter((candidate) => {
+    const candidateSeriesSlug = extractSeriesSlug(candidate.url);
+    return candidateSeriesSlug === null || candidateSeriesSlug === currentSeriesSlug;
+  });
+
+  const matchedNumberedCount = matched.filter((candidate) => candidate.chapterNumber !== null).length;
+  if (matched.length >= 2 || matchedNumberedCount >= 1) {
+    return matched;
+  }
+
+  return candidates;
+}
+
 function pickBestChapterCluster(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
   const groups = new Map<string, ChapterLinkCandidate[]>();
   for (const candidate of candidates) {
@@ -143,21 +237,22 @@ export function buildMangaLinkMap(
 ): Pick<MangaScanResult, 'chapters' | 'navigation' | 'diagnostics'> {
   const diagnostics: DetectionDiagnostic[] = [];
   const deduped = dedupeChapterCandidates(chapterCandidates);
+  const scoped = scopeCandidatesToCurrentSeries(page, deduped);
   const current = buildCurrentCandidate(page);
 
   const cluster = pickBestChapterSet(
-    deduped.filter((candidate) => candidate.relation === 'candidate')
+    scoped.filter((candidate) => candidate.relation === 'candidate')
   );
   const includeCurrentInChapters =
     pageLooksLikeReader(page) ||
-    deduped.some((candidate) => candidate.relation === 'current' && candidate.canonicalUrl === current.canonicalUrl);
+    scoped.some((candidate) => candidate.relation === 'current' && candidate.canonicalUrl === current.canonicalUrl);
 
   const chapters = sortChapterCandidates(
     dedupeChapterCandidates(
       [
         ...(includeCurrentInChapters ? [current] : []),
         ...cluster,
-        ...deduped.filter((candidate) => candidate.relation !== 'candidate' && candidate.relation !== 'listing'),
+        ...scoped.filter((candidate) => candidate.relation !== 'candidate' && candidate.relation !== 'listing'),
       ]
         .filter(Boolean)
         .filter((candidate) => candidate.score >= 8)
@@ -172,10 +267,10 @@ export function buildMangaLinkMap(
     });
   }
 
-  const explicitPrevious = bestNavigationCandidate(deduped, 'previous');
-  const explicitNext = bestNavigationCandidate(deduped, 'next');
-  const previous = explicitPrevious || inferNavigationByChapterNumber(deduped, current, 'previous');
-  const next = explicitNext || inferNavigationByChapterNumber(deduped, current, 'next');
+  const explicitPrevious = bestNavigationCandidate(scoped, 'previous');
+  const explicitNext = bestNavigationCandidate(scoped, 'next');
+  const previous = explicitPrevious || inferNavigationByChapterNumber(scoped, current, 'previous');
+  const next = explicitNext || inferNavigationByChapterNumber(scoped, current, 'next');
 
   if (!explicitPrevious && previous) {
     diagnostics.push({
@@ -199,7 +294,7 @@ export function buildMangaLinkMap(
       current,
       previous,
       next,
-      listing: bestNavigationCandidate(deduped, 'listing'),
+      listing: bestNavigationCandidate(scoped, 'listing'),
     },
     diagnostics,
   };

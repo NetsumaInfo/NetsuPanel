@@ -123,6 +123,49 @@ describe('buildMangaLinkMap', () => {
 
     expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([8, 9, 10, 11, 12]);
   });
+
+  it('filters chapter candidates that belong to other series on the same host', () => {
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://manhuaus.com/manga/becoming-the-cheon-clans-mad-dog/chapter-10/',
+        title: "Becoming the Cheon Clan's Mad Dog Chapter 10",
+        host: 'manhuaus.com',
+        pathname: '/manga/becoming-the-cheon-clans-mad-dog/chapter-10/',
+      },
+      [
+        {
+          ...createChapterCandidate('same-9', 'Chapter 9', 9),
+          url: 'https://manhuaus.com/manga/becoming-the-cheon-clans-mad-dog/chapter-9/',
+          canonicalUrl: 'https://manhuaus.com/manga/becoming-the-cheon-clans-mad-dog/chapter-9/',
+          containerSignature: 'madara:chapter-list',
+          score: 90,
+        },
+        {
+          ...createChapterCandidate('same-11', 'Chapter 11', 11),
+          url: 'https://manhuaus.com/manga/becoming-the-cheon-clans-mad-dog/chapter-11/',
+          canonicalUrl: 'https://manhuaus.com/manga/becoming-the-cheon-clans-mad-dog/chapter-11/',
+          containerSignature: 'madara:chapter-list',
+          score: 90,
+        },
+        {
+          ...createChapterCandidate('other-304', 'Chapter 304', 304),
+          url: 'https://manhuaus.com/manga/logging-10000-years-into-the-future/chapter-304/',
+          canonicalUrl: 'https://manhuaus.com/manga/logging-10000-years-into-the-future/chapter-304/',
+          containerSignature: 'madara:chapter-list',
+          score: 90,
+        },
+        {
+          ...createChapterCandidate('other-512', 'Chapter 512', 512),
+          url: 'https://manhuaus.com/manga/the-eternal-supreme/chapter-512/',
+          canonicalUrl: 'https://manhuaus.com/manga/the-eternal-supreme/chapter-512/',
+          containerSignature: 'madara:chapter-list',
+          score: 90,
+        },
+      ]
+    );
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([9, 10, 11]);
+  });
 });
 
 describe('chapter detection helpers', () => {
