@@ -45,7 +45,7 @@ const CHAPTER_PATH_PATTERNS = [
 ] as const;
 
 /** Markers that indicate a "reader-type" path (makes bare numerics more reliable) */
-const READER_PATH_RE = /(viewer|episode|chapter|chapitre|read|scan|detail|ch)/i;
+const READER_PATH_RE = /(?:^|\/)(?:viewer|episode|chapter|chapitre|read|scan|detail)(?:$|[/?#_-])/i;
 
 // ────────────────────────────────────────────────────────────
 // NetsuShelf-inspired: prologue / epilogue / special episode labels

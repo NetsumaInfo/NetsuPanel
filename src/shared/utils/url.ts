@@ -42,3 +42,36 @@ export function sameHost(a: string, b: string): boolean {
   const right = safeUrl(b);
   return Boolean(left && right && left.host === right.host);
 }
+
+function decodeHttpCandidate(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    if (/^https?:\/\//i.test(decoded)) return decoded;
+  } catch {
+    // ignore decode errors
+  }
+  return /^https?:\/\//i.test(value) ? value : null;
+}
+
+export function unwrapProxiedImageUrl(input: string): string {
+  const parsed = safeUrl(input);
+  if (!parsed) return input;
+
+  const fromSearch =
+    decodeHttpCandidate(parsed.searchParams.get('url')) ||
+    decodeHttpCandidate(parsed.searchParams.get('src'));
+  if (fromSearch) return fromSearch;
+
+  const cloudflareMatch = parsed.pathname.match(/\/cdn-cgi\/image\/[^/]+\/(https?:\/\/.+)$/i);
+  if (cloudflareMatch?.[1]) {
+    return decodeHttpCandidate(cloudflareMatch[1]) || input;
+  }
+
+  const wordpressProxyHost = /^i\d+\.wp\.com$/i.test(parsed.hostname);
+  if (wordpressProxyHost) {
+    return `${parsed.protocol}//${parsed.pathname.replace(/^\/+/, '')}${parsed.search}${parsed.hash}`;
+  }
+
+  return parsed.href;
+}

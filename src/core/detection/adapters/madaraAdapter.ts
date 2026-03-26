@@ -7,7 +7,7 @@ import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdenti
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
-import { resolveUrl } from '@shared/utils/url';
+import { resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
@@ -171,16 +171,7 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
 }
 
 function stripWordPressProxy(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const source = parsed.searchParams.get('src');
-    if (source && /^https?:\/\//i.test(source)) {
-      return source;
-    }
-    return parsed.href.replace(/\/\/i\d+\.wp\.com\//i, '//');
-  } catch {
-    return url;
-  }
+  return unwrapProxiedImageUrl(url);
 }
 
 function createMadaraChapterCandidate(
@@ -356,10 +347,15 @@ function scanMadara(input: ScanAdapterInput): MangaScanResult {
   const paginatedInfo = detectPaginatedReader(input.document as Document, input.page.url);
 
   // For chapter reader pages: use ts_reader or DOM images
-  const chapterCandidates = [
+  const madaraSpecificCandidates = [
     ...collectMadaraChapterCandidates(input.document, input.page.url),
     ...collectMadaraAjaxChaptersFromPage(input.document, input.page.url),
-    ...collectChapterLinks(input.document, input.page.url, input.page.url),
+  ];
+  const chapterCandidates = [
+    ...madaraSpecificCandidates,
+    ...(madaraSpecificCandidates.length >= 3
+      ? []
+      : collectChapterLinks(input.document, input.page.url, input.page.url)),
   ];
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 

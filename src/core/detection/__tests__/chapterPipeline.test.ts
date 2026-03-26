@@ -209,6 +209,7 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('Prologue', 'https://reader.example.com/series/prologue').chapterNumber).toBe(0);
     expect(parseChapterIdentity('Volume 3 Chapter 12', 'https://reader.example.com/series/chapter-12').volumeNumber).toBe(3);
     expect(parseChapterIdentity('', 'https://reader.example.com/read?ep_no=27').chapterNumber).toBe(27);
+    expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd').chapterNumber).toBe(null);
   });
 
   it('injects chapter 1 only when chapter list starts at 2 and current page is missing', () => {

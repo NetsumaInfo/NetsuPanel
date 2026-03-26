@@ -5,6 +5,7 @@ import type {
   PageIdentity,
   PageScanResult,
 } from '@shared/types';
+import { unwrapProxiedImageUrl } from '@shared/utils/url';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
 import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
 import { collectInlineScriptImages } from '@core/detection/collectors/inlineScriptCollector';
@@ -39,8 +40,17 @@ function collectRemoteImageCandidates(document: Document, baseUrl: string) {
     ...collectInlineScriptImages(document, baseUrl),
   ];
 
+  const normalized = merged.map((candidate) => {
+    const nextUrl = unwrapProxiedImageUrl(candidate.url);
+    return {
+      ...candidate,
+      url: nextUrl,
+      previewUrl: candidate.previewUrl ? unwrapProxiedImageUrl(candidate.previewUrl) : nextUrl,
+    };
+  });
+
   const deduped = new Map<string, (typeof merged)[number]>();
-  for (const candidate of merged) {
+  for (const candidate of normalized) {
     const key = candidate.url.split('#')[0];
     if (!deduped.has(key)) {
       deduped.set(key, candidate);
