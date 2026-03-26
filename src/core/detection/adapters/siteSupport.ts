@@ -73,10 +73,10 @@ const SITE_SUPPORT_RULES: SiteSupportRule[] = [
     note: 'Ces sites requirent une authentification. Certaines fonctionnalités peuvent être limitées.',
   },
   {
-    status: 'experimental',
-    family: 'Kakao / Korean Platform',
+    status: 'unsupported',
+    family: 'Locked Reader',
     domains: ['page.kakao.com'],
-    note: 'Plateforme coréenne avec DRM. Nécessite un compte et peut avoir des restrictions.',
+    note: 'Kakao (DRM) : nécessite un compte et peut avoir des restrictions.',
   },
   {
     status: 'unsupported',

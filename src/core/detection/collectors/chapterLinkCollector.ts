@@ -3,16 +3,24 @@ import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/stri
 import { resolveUrl, sameHost } from '@shared/utils/url';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 
+/**
+ * Primary keyword regex to detect chapter links.
+ * Expanded from manga patterns to include light novel / web novel vocabulary
+ * (inspired by NetsuShelf's DefaultParser).
+ */
 const CHAPTER_HINT_RE =
-  /(?:^|\b)(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|part|vol\.?|capitulo|capitolo|scan|회|话|話)\b/i;
+  /(?:^|\b)(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|part|vol\.?|tome|book|arc|prologue|epilogue|interlude|bonus|extra|afterword|capitulo|capitolo|scan|회|话|話)\b/i;
+
 const LISTING_HINT_RE =
-  /(all chapters|chapter list|chapters|volumes|table of contents|toc|manga info|liste des chapitres|chapters list|all episodes)/i;
+  /(all chapters|chapter list|chapters|volumes|table of contents|toc|manga info|liste des chapitres|chapters list|all episodes|novel index|fiction chapters|story chapters|arc list|book index)/i;
+
 const LISTING_PATH_RE =
-  /(?:all-chapters|chapter-list|chapters|volumes|manga-info|table-of-contents|toc|chapters-list|manga\/[^/]+\/?$)(?:$|[/?#_-])/i;
+  /(?:all-chapters|chapter-list|chapters|volumes|manga-info|table-of-contents|toc|chapters-list|manga\/[^/]+\/?$|novel\/[^/]+\/?$|fiction\/[^/]+\/?$|story\/[^/]+\/?$)(?:$|[/?#_-])/i;
+
 const PREVIOUS_HINT_RE = /(prev|previous|older|back|precedent|pr[eé]c[eé]dent|<<|‹|←)/i;
 const NEXT_HINT_RE = /(next|newer|forward|suivant|>>|›|→)/i;
-const BAD_LINK_RE = /(?:login|signup|register|discord|facebook|twitter|instagram|privacy|terms|about|contact|dmca)/i;
-const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan)/i;
+const BAD_LINK_RE = /(?:login|signup|register|discord|facebook|twitter|instagram|privacy|terms|about|contact|dmca|patreon|donate|kofi|support)/i;
+const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan|fiction|novel|story)/i;
 const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {

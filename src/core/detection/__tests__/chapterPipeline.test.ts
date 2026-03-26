@@ -1,4 +1,7 @@
-import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
+import {
+  buildMangaLinkMap,
+  ensurePotentialChapterOneIsIncluded,
+} from '@core/detection/pipeline/chapterPipeline';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
 import type { ChapterLinkCandidate, PageIdentity } from '@shared/types';
@@ -166,6 +169,33 @@ describe('buildMangaLinkMap', () => {
 
     expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([9, 10, 11]);
   });
+
+  it('keeps same-series chapters for /chapter/{n}/{slug} URL layouts', () => {
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://www.royalroad.com/fiction/123/story/chapter/100/current',
+        title: 'Story Chapter 100',
+        host: 'www.royalroad.com',
+        pathname: '/fiction/123/story/chapter/100/current',
+      },
+      [
+        {
+          ...createChapterCandidate('ch99', 'Chapter 99', 99),
+          url: 'https://www.royalroad.com/fiction/123/story/chapter/99/prev',
+          canonicalUrl: 'https://www.royalroad.com/fiction/123/story/chapter/99/prev',
+          containerSignature: 'ln:.chapter-row',
+        },
+        {
+          ...createChapterCandidate('ch101', 'Chapter 101', 101),
+          url: 'https://www.royalroad.com/fiction/123/story/chapter/101/next',
+          canonicalUrl: 'https://www.royalroad.com/fiction/123/story/chapter/101/next',
+          containerSignature: 'ln:.chapter-row',
+        },
+      ]
+    );
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([99, 100, 101]);
+  });
 });
 
 describe('chapter detection helpers', () => {
@@ -175,6 +205,51 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('', 'https://reader.example.com/title/ep-87').chapterNumber).toBe(87);
     expect(parseChapterIdentity('', 'https://reader.example.com/webtoon/detail?titleId=77&no=19').chapterNumber).toBe(19);
     expect(parseChapterIdentity('', 'https://reader.example.com/series/list?title_no=2154').chapterNumber).toBe(null);
+    expect(parseChapterIdentity('42. The Hero Returns', 'https://reader.example.com/opaque').chapterNumber).toBe(42);
+    expect(parseChapterIdentity('Prologue', 'https://reader.example.com/series/prologue').chapterNumber).toBe(0);
+    expect(parseChapterIdentity('Volume 3 Chapter 12', 'https://reader.example.com/series/chapter-12').volumeNumber).toBe(3);
+    expect(parseChapterIdentity('', 'https://reader.example.com/read?ep_no=27').chapterNumber).toBe(27);
+  });
+
+  it('injects chapter 1 only when chapter list starts at 2 and current page is missing', () => {
+    const chapters = [
+      createChapterCandidate('ch2', 'Chapter 2', 2),
+      createChapterCandidate('ch3', 'Chapter 3', 3),
+    ];
+
+    const result = ensurePotentialChapterOneIsIncluded(
+      {
+        ...page,
+        url: 'https://reader.example.com/title/chapter-1',
+        pathname: '/title/chapter-1',
+      },
+      chapters
+    );
+
+    expect(result[0]?.chapterNumber).toBe(1);
+    expect(result[0]?.url).toBe('https://reader.example.com/title/chapter-1');
+  });
+
+  it('does not inject chapter 1 when current URL already exists in the chapter list', () => {
+    const chapters = [
+      {
+        ...createChapterCandidate('current', 'Chapter 1', 1, 'current'),
+        url: 'https://reader.example.com/title/chapter-1/',
+        canonicalUrl: 'https://reader.example.com/title/chapter-1/',
+      },
+      createChapterCandidate('ch2', 'Chapter 2', 2),
+    ];
+
+    const result = ensurePotentialChapterOneIsIncluded(
+      {
+        ...page,
+        url: 'http://reader.example.com/title/chapter-1#top',
+        pathname: '/title/chapter-1',
+      },
+      chapters
+    );
+
+    expect(result.filter((chapter) => chapter.chapterNumber === 1)).toHaveLength(1);
   });
 
   it('rejects common navigation and footer links from chapter collection', () => {

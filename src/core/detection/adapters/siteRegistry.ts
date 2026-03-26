@@ -21,6 +21,7 @@ import { speedbinbAdapter } from './speedbinbAdapter';
 import { asuracomicAdapter } from './asuracomicAdapter';
 import { mangagoAdapter } from './mangagoAdapter';
 import { bilibiliAdapter } from './bilibiliAdapter';
+import { lightNovelAdapter } from './lightNovelAdapter';
 import { genericSiteAdapter } from './genericSiteAdapter';
 
 /**
@@ -38,6 +39,7 @@ const ADAPTERS: SiteAdapter[] = [
   madaraAdapter,            // Madara / WP-Manga with ts_reader and page-break
   mangastreamAdapter,       // MangaStream / ThemeSia-like readers
   wordpressMangaAdapter,    // Tous les sites WP-Manga/Madara (ts_reader.run)
+  lightNovelAdapter,        // Light novels / web novels (Royal Road, WuxiaWorld, Webnovel...)
   genericSiteAdapter,       // Fallback générique
 ];
 

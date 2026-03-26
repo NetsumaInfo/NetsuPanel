@@ -4,7 +4,133 @@ import type {
   MangaScanResult,
   PageIdentity,
 } from '@shared/types';
-import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+import { normalizeUrlForCompare, parseChapterIdentity } from '@core/detection/parsers/parseChapterIdentity';
+
+// ────────────────────────────────────────────────────────────
+// NetsuShelf-inspired: Volume/Arc grouping
+// ────────────────────────────────────────────────────────────
+
+export interface ChapterGroup {
+  type: 'volume' | 'book' | 'arc' | 'part' | 'season' | 'section' | 'tome' | 'range' | null;
+  index: string | null;
+  label: string | null;
+  chapters: ChapterLinkCandidate[];
+}
+
+const GROUP_TYPE_ALIASES: Record<string, string> = {
+  vol: 'volume',
+  volume: 'volume',
+  v: 'volume',
+  book: 'book',
+  bk: 'book',
+  arc: 'arc',
+  part: 'part',
+  season: 'season',
+  section: 'section',
+  tome: 'tome',
+  tom: 'tome',
+  livre: 'book',
+};
+
+export function normalizeGroupType(raw: string): ChapterGroup['type'] {
+  if (!raw) return null;
+  const normalized = GROUP_TYPE_ALIASES[raw.toLowerCase().trim()];
+  return (normalized as ChapterGroup['type']) ?? null;
+}
+
+export function groupChaptersByVolume(chapters: ChapterLinkCandidate[]): ChapterGroup[] {
+  const groups: ChapterGroup[] = [];
+  let currentGroup: ChapterGroup = { type: null, index: null, label: null, chapters: [] };
+
+  for (const chapter of chapters) {
+    const volMatch = (chapter.label || '').match(
+      /^(?:(volume|vol|book|bk|tome|arc|part|season)[\.\s]*(\w+))[:\s-]*/i
+    );
+    if (volMatch) {
+      if (currentGroup.chapters.length > 0) {
+        groups.push(currentGroup);
+      }
+      const groupType = normalizeGroupType(volMatch[1]);
+      currentGroup = {
+        type: groupType,
+        index: volMatch[2] || null,
+        label: `${volMatch[1]} ${volMatch[2]}`.trim(),
+        chapters: [chapter],
+      };
+    } else {
+      const chapterVolumeIndex = chapter.volumeNumber === null ? null : String(chapter.volumeNumber);
+      if (chapterVolumeIndex !== null && chapterVolumeIndex !== currentGroup.index) {
+        if (currentGroup.chapters.length > 0) {
+          groups.push(currentGroup);
+        }
+        currentGroup = {
+          type: 'volume',
+          index: chapterVolumeIndex,
+          label: `Volume ${chapter.volumeNumber}`,
+          chapters: [chapter],
+        };
+        continue;
+      }
+
+      currentGroup.chapters.push(chapter);
+    }
+  }
+
+  if (currentGroup.chapters.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups;
+}
+
+function normalizeForCompare(url: string): string {
+  try {
+    return normalizeUrlForCompare(new URL(url).toString());
+  } catch {
+    return normalizeUrlForCompare(url);
+  }
+}
+
+export function ensurePotentialChapterOneIsIncluded(
+  page: PageIdentity,
+  chapters: ChapterLinkCandidate[]
+): ChapterLinkCandidate[] {
+  if (chapters.length === 0) return chapters;
+
+  const pageNorm = normalizeForCompare(page.url);
+  const alreadyHasCurrentPage = chapters.some((chapter) => normalizeForCompare(chapter.url) === pageNorm);
+
+  if (alreadyHasCurrentPage) return chapters;
+
+  // Find minimum chapter number in the list (skip nulls)
+  const numbers = chapters
+    .map((chapter) => chapter.chapterNumber)
+    .filter((value): value is number => value !== null);
+
+  if (numbers.length === 0) return chapters;
+
+  const minChapterNumber = Math.min(...numbers);
+
+  // NetsuShelf: only prepend if starting at 2 (strong heuristic)
+  if (minChapterNumber !== 2) return chapters;
+
+  // Build a chapter-1 candidate from the current page
+  const identity = parseChapterIdentity(page.title, page.url);
+  const chapterOne: ChapterLinkCandidate = {
+    id: 'ln-chapter-one-inferred',
+    url: page.url,
+    canonicalUrl: page.url.split('#')[0],
+    label: identity.label || page.title || 'Chapter 1',
+    relation: 'current',
+    score: 100,
+    chapterNumber: 1,
+    volumeNumber: identity.volumeNumber,
+    containerSignature: 'ln:chapter-one-inferred',
+    diagnostics: [],
+  };
+
+  return [chapterOne, ...chapters];
+}
 
 const GENERIC_SERIES_SEGMENTS = new Set([
   'chapter',
@@ -145,6 +271,20 @@ function extractSeriesSlug(url: string): string | null {
       .map((segment) => normalizeSeriesSegment(decodeURIComponent(segment)));
   } catch {
     return null;
+  }
+
+  const chapterMarkerIndex = segments.findIndex((segment) =>
+    /^(chapter|chapitre|chap|ch|episode|ep)(?:[-_]\d+(?:\.\d+)?)?$/.test(segment)
+  );
+  if (chapterMarkerIndex > 0) {
+    for (let i = chapterMarkerIndex - 1; i >= 0; i -= 1) {
+      const candidate = segments[i];
+      if (!candidate) continue;
+      if (GENERIC_SERIES_SEGMENTS.has(candidate) || /^\d+(?:\.\d+)?$/.test(candidate)) {
+        continue;
+      }
+      return candidate;
+    }
   }
 
   while (segments.length > 0) {
