@@ -151,6 +151,7 @@ export function ChapterAccordion({
                         referrer={item.referrer || chapter.url}
                         captureTabId={sourceTabId}
                         captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
+                        resolveMode={item.origin === 'live-dom' ? 'auto' : 'network-first'}
                         className="page-thumb transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]"
                       />
                       <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-2xs text-white">

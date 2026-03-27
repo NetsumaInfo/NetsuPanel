@@ -197,6 +197,7 @@ export function ImageViewerModal({
     referrer,
     captureTabId: sourceTabId,
     captureCandidateId: currentItem.origin === 'live-dom' ? currentItem.id : undefined,
+    resolveMode: (currentItem.origin === 'live-dom' ? 'auto' : 'network-first') as 'auto' | 'network-first',
     className: 'h-full w-full object-contain select-none',
   };
 

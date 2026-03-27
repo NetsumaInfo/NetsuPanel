@@ -55,4 +55,35 @@ describe('SafeImage', () => {
 
     expect(fetchBinary).not.toHaveBeenCalled();
   });
+
+  test('supports network-first mode for protected chapter previews', async () => {
+    (fetchBinary as jest.Mock).mockResolvedValue({
+      bytes: new Uint8Array([5, 6, 7, 8]).buffer,
+      mime: 'image/jpeg',
+      finalUrl: 'https://cdn.example.com/chapter-2/page-002.jpg',
+    });
+
+    render(
+      <SafeImage
+        src="https://cdn.example.com/chapter-2/page-002.jpg"
+        alt="Page 2"
+        referrer="https://reader.example.com/series/chapter-2"
+        captureTabId={12}
+        resolveMode="network-first"
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchBinary).toHaveBeenCalledWith('https://cdn.example.com/chapter-2/page-002.jpg', {
+        referrer: 'https://reader.example.com/series/chapter-2',
+        tabId: 12,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByAltText('Page 2')).toHaveAttribute('src', 'blob:captured-cover');
+    });
+
+    expect(captureImage).not.toHaveBeenCalled();
+  });
 });

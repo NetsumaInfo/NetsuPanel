@@ -9,6 +9,7 @@ interface SafeImageProps {
   referrer?: string;
   captureTabId?: number;
   captureCandidateId?: string;
+  resolveMode?: 'auto' | 'network-first' | 'capture-first';
 }
 
 interface SafeImageState {
@@ -172,6 +173,7 @@ export function SafeImage({
   referrer,
   captureTabId,
   captureCandidateId,
+  resolveMode = 'auto',
 }: SafeImageProps) {
   const [state, dispatchState] = useReducer(safeImageReducer, initialSafeImageState);
   const requestTokenRef = useRef(0);
@@ -179,7 +181,8 @@ export function SafeImage({
   const networkAttemptedRef = useRef(false);
   const sourceKey = buildSourceKey(src, referrer, captureTabId, captureCandidateId);
   const preferNetworkFallback = isGifLikeSource(src);
-  const preferCaptureFirst = shouldPreferCaptureFirst(src, captureTabId, captureCandidateId);
+  const preferCaptureFirst = resolveMode === 'capture-first' || shouldPreferCaptureFirst(src, captureTabId, captureCandidateId);
+  const preferNetworkFirst = resolveMode === 'network-first' && isNetworkUrl(src);
 
   useEffect(() => {
     requestTokenRef.current += 1;
@@ -194,12 +197,15 @@ export function SafeImage({
     }
 
     const networkKey = buildCacheKey(src, referrer);
+    const cachedNetwork = getCachedObjectUrl(networkKey);
     dispatchState({
       type: 'sync-source',
       sourceKey,
-      resolvedSrc: getCachedObjectUrl(networkKey) || (isSafeRenderableImageSrc(src) ? src : ''),
+      resolvedSrc:
+        cachedNetwork ||
+        (preferNetworkFirst ? '' : (isSafeRenderableImageSrc(src) ? src : '')),
     });
-  }, [captureCandidateId, captureTabId, preferNetworkFallback, referrer, sourceKey, src]);
+  }, [captureCandidateId, captureTabId, preferNetworkFallback, preferNetworkFirst, referrer, sourceKey, src]);
 
   const fetchFromCapture = useCallback(async (): Promise<boolean> => {
     if (!captureTabId || !captureCandidateId) return false;
@@ -314,24 +320,40 @@ export function SafeImage({
   ]);
 
   useEffect(() => {
-    if (!preferCaptureFirst || captureAttemptedRef.current) {
+    if ((!preferCaptureFirst && !preferNetworkFirst) || captureAttemptedRef.current || networkAttemptedRef.current) {
       return;
     }
 
     const token = requestTokenRef.current;
     const loadPreferredSource = async () => {
+      if (preferNetworkFirst) {
+        const fetched = await fetchFromNetwork();
+        if (fetched || requestTokenRef.current !== token) {
+          return;
+        }
+        if (!preferCaptureFirst || captureAttemptedRef.current) {
+          dispatchState({ type: 'failed', sourceKey });
+          return;
+        }
+      }
+
       const captured = await fetchFromCapture();
       if (captured || requestTokenRef.current !== token) {
         return;
       }
 
       if (!networkAttemptedRef.current) {
-        await fetchFromNetwork();
+        const fetched = await fetchFromNetwork();
+        if (fetched || requestTokenRef.current !== token) {
+          return;
+        }
       }
+
+      dispatchState({ type: 'failed', sourceKey });
     };
 
     void loadPreferredSource();
-  }, [fetchFromCapture, fetchFromNetwork, preferCaptureFirst]);
+  }, [fetchFromCapture, fetchFromNetwork, preferCaptureFirst, preferNetworkFirst, sourceKey]);
 
   const title = captureCandidateId ? `${src}\n[candidate=${captureCandidateId}]` : src;
 
@@ -350,9 +372,9 @@ export function SafeImage({
     return (
       <div
         className={`flex items-center justify-center bg-border/40 text-2xs text-muted ${className ?? ''}`}
-        title={`${title}\n[blocked unsafe image source]`}
+        title={loadingFallback ? `${title}\n[loading protected image]` : `${title}\n[blocked unsafe image source]`}
       >
-        ✗
+        {loadingFallback ? '…' : '✗'}
       </div>
     );
   }
