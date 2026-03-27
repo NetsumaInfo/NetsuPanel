@@ -7,6 +7,8 @@ import { normalizeHttpUrl, sanitizeRequestHeaders } from '@shared/utils/resource
 import { fetchBinaryResource, fetchDocumentHtml } from './fetch';
 
 const LAST_SOURCE_TAB_ID_KEY = 'lastSourceTabId';
+const APP_PAGE_PATH = 'app.html';
+const remoteScanTaskRegistry = new Map<string, Promise<unknown>>();
 
 interface PageWorldBinaryResult {
   ok: boolean;
@@ -98,6 +100,65 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
       target: { tabId },
       world: 'MAIN',
       func: async () => {
+        const PLACEHOLDER_RE = /^data:image\/svg\+xml|^data:image\/gif;base64,R0lGOD|cloudflare-static|\/cdn-cgi\/mirage\/|rocket-loader/i;
+        const SOURCE_ATTRS = [
+          'data-cfsrc',
+          'data-src',
+          'data-lazy-src',
+          'data-original',
+          'data-url',
+          'data-wpfc-original-src',
+          'data-lazy',
+          'data-lazy-original',
+          'data-original-src',
+          'data-full',
+          'data-hi-res',
+          'data-image',
+          'data-pagespeed-lazy-src',
+          'src',
+        ];
+
+        const chooseImageSource = (image: HTMLImageElement): string | null => {
+          for (const attribute of SOURCE_ATTRS) {
+            const raw = image.getAttribute(attribute) || '';
+            if (!raw || PLACEHOLDER_RE.test(raw)) continue;
+            return raw;
+          }
+          return null;
+        };
+
+        const loadImage = async (image: HTMLImageElement): Promise<void> => {
+          image.loading = 'eager';
+          image.decoding = 'async';
+          const nextSrc = chooseImageSource(image);
+          const currentSrc = image.currentSrc || image.src || '';
+
+          if ((!currentSrc || PLACEHOLDER_RE.test(currentSrc) || image.naturalWidth === 0) && nextSrc && nextSrc !== currentSrc) {
+            image.src = nextSrc;
+          }
+
+          if (image.complete && image.naturalWidth > 0) {
+            return;
+          }
+
+          await Promise.race([
+            image.decode().catch(() => undefined),
+            new Promise<void>((resolve) => {
+              const finalize = () => {
+                image.removeEventListener('load', finalize);
+                image.removeEventListener('error', finalize);
+                resolve();
+              };
+              image.addEventListener('load', finalize, { once: true });
+              image.addEventListener('error', finalize, { once: true });
+              setTimeout(finalize, 1500);
+            }),
+          ]);
+        };
+
+        const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
+        await Promise.allSettled(images.slice(0, 80).map((image) => loadImage(image)));
+
         const totalHeight = Math.max(
           document.body?.scrollHeight || 0,
           document.documentElement?.scrollHeight || 0
@@ -111,6 +172,7 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
         }
         window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
         await new Promise((resolve) => setTimeout(resolve, 300));
+        await Promise.allSettled(images.slice(0, 80).map((image) => loadImage(image)));
       },
     });
   } catch {
@@ -119,6 +181,13 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
 }
 
 async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): Promise<unknown> {
+  const taskKey = `${sourceTabId ?? 0}:${url}`;
+  const existingTask = remoteScanTaskRegistry.get(taskKey);
+  if (existingTask) {
+    return existingTask;
+  }
+
+  const task = (async () => {
   let createdTabId: number | undefined;
   try {
     const createOptions: {
@@ -166,6 +235,14 @@ async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): 
         // Ignore cleanup errors for temporary tabs.
       }
     }
+  }
+  })();
+
+  remoteScanTaskRegistry.set(taskKey, task);
+  try {
+    return await task;
+  } finally {
+    remoteScanTaskRegistry.delete(taskKey);
   }
 }
 
@@ -337,7 +414,22 @@ function serializeBinaryResource(resource: { bytes: ArrayBuffer; mime: string; f
 async function openAppTab(sourceTabId: number): Promise<void> {
   await browser.storage.local.set({ [LAST_SOURCE_TAB_ID_KEY]: sourceTabId });
   const appUrl = browser.runtime.getURL(`app.html?tabId=${sourceTabId}`);
-  await browser.tabs.create({ url: appUrl });
+  const baseAppUrl = browser.runtime.getURL(APP_PAGE_PATH);
+  const existingTabs = await browser.tabs.query({});
+  const existingAppTab = existingTabs.find(
+    (tab: { id?: number; url?: string; windowId?: number }) =>
+      typeof tab.id === 'number' && typeof tab.url === 'string' && tab.url.startsWith(baseAppUrl)
+  );
+
+  if (existingAppTab?.id) {
+    await browser.tabs.update(existingAppTab.id, { url: appUrl, active: true });
+    if (typeof existingAppTab.windowId === 'number') {
+      await browser.windows.update(existingAppTab.windowId, { focused: true });
+    }
+    return;
+  }
+
+  await browser.tabs.create({ url: appUrl, active: true });
 }
 
 browser.action.onClicked.addListener(async (tab: { id?: number }) => {

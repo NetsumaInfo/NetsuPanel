@@ -49,8 +49,77 @@ async function stabilizePage(): Promise<void> {
   }
 }
 
+function pickLazyImageSource(image: HTMLImageElement): string | null {
+  const sourceAttributes = [
+    'data-cfsrc',
+    'data-src',
+    'data-lazy-src',
+    'data-original',
+    'data-url',
+    'data-wpfc-original-src',
+    'data-lazy',
+    'data-lazy-original',
+    'data-original-src',
+    'data-full',
+    'data-hi-res',
+    'data-image',
+    'data-pagespeed-lazy-src',
+  ];
+
+  for (const attribute of sourceAttributes) {
+    const value = image.getAttribute(attribute) || '';
+    if (!value || isPlaceholderSrc(value)) continue;
+    return value;
+  }
+
+  return null;
+}
+
+async function eagerlyHydrateImages(): Promise<void> {
+  const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
+
+  await Promise.allSettled(
+    images.slice(0, 120).map(async (image) => {
+      image.loading = 'eager';
+      image.decoding = 'async';
+
+      const currentSrc = image.currentSrc || image.src || '';
+      const preferredSrc = pickLazyImageSource(image);
+      if ((!currentSrc || isPlaceholderSrc(currentSrc) || image.naturalWidth === 0) && preferredSrc && preferredSrc !== currentSrc) {
+        image.src = preferredSrc;
+      }
+
+      if (image.complete && image.naturalWidth > 0) {
+        return;
+      }
+
+      await Promise.race([
+        image.decode().catch(() => undefined),
+        new Promise<void>((resolve) => {
+          const finalize = () => {
+            image.removeEventListener('load', finalize);
+            image.removeEventListener('error', finalize);
+            resolve();
+          };
+          image.addEventListener('load', finalize, { once: true });
+          image.addEventListener('error', finalize, { once: true });
+          setTimeout(finalize, 1200);
+        }),
+      ]);
+    })
+  );
+}
+
 function getScrollElement(): HTMLElement {
   return (document.scrollingElement || document.documentElement || document.body) as HTMLElement;
+}
+
+function isPlaceholderSrc(src: string): boolean {
+  if (!src) return true;
+  if (src.startsWith('data:image/svg+xml')) return true;
+  if (src.startsWith('data:image/gif;base64,R0lGOD')) return true;
+  if (src.includes('data:image/png;base64,iVBORw0KGgoAAAANS')) return true;
+  return /\/cdn-cgi\/mirage\/|rocket-loader|cloudflare-static/i.test(src);
 }
 
 function countPotentialChapterSignals(): number {
@@ -179,11 +248,13 @@ async function hydratePageContent(page: PageIdentity, canContinue: () => boolean
     return;
   }
 
+  await eagerlyHydrateImages();
   let previousSignals = getLoadingSignals();
 
   for (let pass = 0; pass < MAX_LAZY_PASSES && canContinue(); pass += 1) {
     await expandLazySections();
     await triggerLazyLoading();
+    await eagerlyHydrateImages();
     await stabilizePage();
 
     const nextSignals = getLoadingSignals();
@@ -566,7 +637,7 @@ async function scanCurrentPage() {
 
   let collection = await collectLiveDomImages(page.url, {
     includeBackgroundCandidates: true,
-    includeSvgCandidates: true,
+    includeSvgCandidates: false,
     includeMediaCandidates: true,
     includeCssRuleCandidates: false,
     includeScriptCandidates: false,
@@ -578,7 +649,7 @@ async function scanCurrentPage() {
     await sleep(RECHECK_DELAY_MS);
     const afterLazy = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: true,
-      includeSvgCandidates: true,
+      includeSvgCandidates: false,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
       includeScriptCandidates: true,
@@ -591,7 +662,7 @@ async function scanCurrentPage() {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: true,
-      includeSvgCandidates: true,
+      includeSvgCandidates: false,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
       includeScriptCandidates: true,

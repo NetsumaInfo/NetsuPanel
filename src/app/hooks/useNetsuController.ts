@@ -26,6 +26,20 @@ export function useNetsuController() {
   const chapterPreviewTasksRef = useRef<Map<string, ReturnType<typeof fetchChapterPreview>>>(new Map());
   const remoteScanTasksRef = useRef<Map<string, ReturnType<typeof scanRemotePage>>>(new Map());
 
+  const runRemoteScan = useCallback((url: string, options: { referrer?: string; tabId?: number } = {}) => {
+    const cacheKey = `${url}::${options.referrer || ''}::${options.tabId ?? ''}`;
+    const existing = remoteScanTasksRef.current.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const task = scanRemotePage(url, options).finally(() => {
+      remoteScanTasksRef.current.delete(cacheKey);
+    });
+    remoteScanTasksRef.current.set(cacheKey, task);
+    return task;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -52,17 +66,10 @@ export function useNetsuController() {
           });
         const scanPageForSource = (url: string, options: { referrer?: string; tabId?: number } = {}) => {
           const referrer = options.referrer || source.url;
-          const cacheKey = `${url}::${referrer}::${tabId}`;
-          const existing = remoteScanTasksRef.current.get(cacheKey);
-          if (existing) {
-            return existing as ReturnType<typeof scanRemotePage>;
-          }
-          const task = scanRemotePage(url, {
+          return runRemoteScan(url, {
             referrer,
             tabId,
           });
-          remoteScanTasksRef.current.set(cacheKey, task);
-          return task;
         };
 
         const chapters = seedChaptersFromScan(scan);
@@ -179,12 +186,12 @@ export function useNetsuController() {
                   chapter.url,
                   {
                     fetchDocument: (url, options = {}) =>
-                      fetchDocument(url, {
+                    fetchDocument(url, {
                         referrer: options.referrer || chapter.url || source.url,
                         tabId: source.id,
                       }),
                     scanPage: (url, options = {}) =>
-                      scanRemotePage(url, {
+                      runRemoteScan(url, {
                         referrer: options.referrer || chapter.url || source.url,
                         tabId: source.id,
                       }),
@@ -212,7 +219,7 @@ export function useNetsuController() {
       chapterPreviewTasksRef.current.set(chapter.canonicalUrl, task);
       return task;
     },
-    [state.scan, state.source]
+    [runRemoteScan, state.scan, state.source]
   );
 
   const previewUpscale = useCallback(

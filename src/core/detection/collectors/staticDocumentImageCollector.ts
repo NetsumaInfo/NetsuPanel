@@ -31,6 +31,9 @@ export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): 
       }))
       .find((descriptor) => descriptor.resolved);
     if (!selected?.resolved) return;
+    if (/^data:image\/svg\+xml/i.test(selected.resolved) || /\.svg(?:$|[?#])/i.test(selected.resolved)) {
+      return;
+    }
 
     const width = Number(image.getAttribute('width')) || image.naturalWidth || 0;
     const height = Number(image.getAttribute('height')) || image.naturalHeight || 0;
