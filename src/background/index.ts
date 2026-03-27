@@ -1,3 +1,4 @@
+import type { PageScanResult } from '@shared/types';
 import type { RuntimeRequest } from '@shared/messages';
 import { ContentMessageType, RuntimeMessageType } from '@shared/messages';
 import { browser } from '@shared/browser';
@@ -9,6 +10,7 @@ import { fetchBinaryResource, fetchDocumentHtml } from './fetch';
 const LAST_SOURCE_TAB_ID_KEY = 'lastSourceTabId';
 const APP_PAGE_PATH = 'app.html';
 const remoteScanTaskRegistry = new Map<string, Promise<unknown>>();
+const REMOTE_SCAN_RETRY_DELAYS_MS = [900, 1800];
 
 interface PageWorldBinaryResult {
   ok: boolean;
@@ -180,6 +182,31 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
   }
 }
 
+function looksLikeReaderScan(scan: PageScanResult): boolean {
+  return /(chapter|chapitre|episode|viewer|reader|read|scan|manga|manhwa|manhua|comic|webtoon)/i.test(
+    `${scan.page.url} ${scan.page.pathname} ${scan.page.title}`
+  );
+}
+
+function shouldRetryRemoteScan(scan: PageScanResult): boolean {
+  if (!looksLikeReaderScan(scan)) {
+    return false;
+  }
+
+  const currentItems = scan.manga.currentPages.items.length;
+  const generalItems = scan.general.items.length;
+  const maxCandidates = Math.max(scan.manga.currentPages.totalCandidates, scan.general.totalCandidates);
+
+  return currentItems <= 1 && generalItems <= 1 && maxCandidates <= 4;
+}
+
+async function requestTabScan(tabId: number): Promise<PageScanResult> {
+  await ensureContentScript(tabId);
+  return browser.tabs.sendMessage(tabId, {
+    type: ContentMessageType.ScanPage,
+  }) as Promise<PageScanResult>;
+}
+
 async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): Promise<unknown> {
   const taskKey = `${sourceTabId ?? 0}:${url}`;
   const existingTask = remoteScanTaskRegistry.get(taskKey);
@@ -220,12 +247,18 @@ async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): 
     const tempTabId = createdTab.id;
 
     await waitForTabReady(tempTabId);
-    await ensureContentScript(tempTabId);
     await sleep(300);
     await triggerLazyLoadInTab(tempTabId);
-    const scan = await browser.tabs.sendMessage(tempTabId, {
-      type: ContentMessageType.ScanPage,
-    });
+
+    let scan = await requestTabScan(tempTabId);
+    for (const retryDelay of REMOTE_SCAN_RETRY_DELAYS_MS) {
+      if (!shouldRetryRemoteScan(scan)) {
+        break;
+      }
+      await sleep(retryDelay);
+      await triggerLazyLoadInTab(tempTabId);
+      scan = await requestTabScan(tempTabId);
+    }
     return scan;
   } finally {
     if (createdTabId) {

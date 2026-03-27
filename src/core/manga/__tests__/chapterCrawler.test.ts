@@ -282,4 +282,104 @@ describe('chapterCrawler loadChapterPreview', () => {
       'https://cdn.example.com/series/chapter-2/page-002.jpg',
     ]);
   });
+
+  it('falls back to static/html preview when live scan only returns the first image', async () => {
+    const chapterUrl = 'https://reader.example.com/series/chapter-2';
+    const preview = await loadChapterPreview(
+      chapterUrl,
+      {
+        scanPage: jest.fn().mockResolvedValue({
+          page: {
+            url: chapterUrl,
+            title: 'Chapter 2',
+            host: 'reader.example.com',
+            pathname: '/series/chapter-2',
+          },
+          general: {
+            items: [],
+            totalCandidates: 0,
+            diagnostics: [],
+          },
+          manga: {
+            adapterId: 'generic',
+            currentPages: {
+              items: [
+                {
+                  id: 'live-1',
+                  url: 'https://cdn.example.com/series/chapter-2/page-001.jpg',
+                  previewUrl: 'https://cdn.example.com/series/chapter-2/page-001.jpg',
+                  referrer: chapterUrl,
+                  headers: undefined,
+                  transform: undefined,
+                  canonicalUrl: 'https://cdn.example.com/series/chapter-2/page-001.jpg',
+                  querylessUrl: 'https://cdn.example.com/series/chapter-2/page-001.jpg',
+                  captureStrategy: 'network',
+                  sourceKind: 'img-current-src',
+                  origin: 'live-dom',
+                  width: 1200,
+                  height: 1800,
+                  area: 2160000,
+                  domIndex: 0,
+                  top: 0,
+                  left: 0,
+                  altText: '',
+                  titleText: '',
+                  containerSignature: 'reader',
+                  familyKey: 'cdn.example.com/chapter-2',
+                  visible: true,
+                  filenameHint: 'page-001.jpg',
+                  extensionHint: 'jpg',
+                  pageNumber: 1,
+                  score: 100,
+                  diagnostics: [],
+                },
+              ],
+              totalCandidates: 1,
+              diagnostics: [],
+            },
+            chapters: [],
+            navigation: {},
+            diagnostics: [],
+          },
+        }),
+        fetchDocument: jest.fn().mockResolvedValue(`
+          <html>
+            <body>
+              <div class="reading-content">
+                <img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" data-src="https://cdn.example.com/series/chapter-2/page-001.jpg" />
+                <img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" data-src="https://cdn.example.com/series/chapter-2/page-002.jpg" />
+              </div>
+            </body>
+          </html>
+        `),
+      },
+      { referrer: 'https://reader.example.com/series/' }
+    );
+
+    expect(preview.items.map((item) => item.url)).toEqual([
+      'https://cdn.example.com/series/chapter-2/page-001.jpg',
+      'https://cdn.example.com/series/chapter-2/page-002.jpg',
+    ]);
+  });
+
+  it('filters svg extras out of chapter previews', async () => {
+    const chapterUrl = 'https://reader.example.com/series/chapter-3';
+    const preview = await loadChapterPreview(
+      chapterUrl,
+      {
+        fetchDocument: jest.fn().mockResolvedValue(`
+          <html>
+            <body>
+              <img src="https://cdn.example.com/series/chapter-3/page-001.jpg" alt="Page 1" />
+              <img src="https://cdn.example.com/series/chapter-3/page-002.jpg" alt="Page 2" />
+              <img src="data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E" alt="placeholder" />
+            </body>
+          </html>
+        `),
+      }
+    );
+
+    expect(preview.items).toHaveLength(2);
+    expect(preview.items.some((item) => item.url.startsWith('data:image/svg+xml'))).toBe(false);
+  });
 });

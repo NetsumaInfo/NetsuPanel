@@ -2,6 +2,14 @@ import type { RawImageCandidate } from '@shared/types';
 import { resolveUrl } from '@shared/utils/url';
 import { readImageSourceDescriptors } from './imageAttributeSources';
 
+function isPlaceholderSrc(src: string): boolean {
+  if (!src) return true;
+  if (src.startsWith('data:image/svg+xml')) return true;
+  if (src.startsWith('data:image/gif;base64,R0lGOD')) return true;
+  if (src.includes('data:image/png;base64,iVBORw0KGgoAAAANS')) return true;
+  return /\/cdn-cgi\/mirage\/|rocket-loader|cloudflare-static/i.test(src);
+}
+
 function buildContainerSignature(element: Element): string {
   const segments: string[] = [];
   let current: Element | null = element.parentElement;
@@ -24,16 +32,25 @@ function buildContainerSignature(element: Element): string {
 export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): RawImageCandidate[] {
   const imageCandidates: RawImageCandidate[] = [];
   [...root.querySelectorAll<HTMLImageElement>('img')].forEach((image, index) => {
-    const selected = readImageSourceDescriptors(image)
+    const descriptors = readImageSourceDescriptors(image)
       .map((descriptor) => ({
         ...descriptor,
         resolved: resolveUrl(descriptor.value, baseUrl),
       }))
-      .find((descriptor) => descriptor.resolved);
+      .filter((descriptor) => Boolean(descriptor.resolved));
+    const selected = descriptors.find(
+      (descriptor) =>
+        descriptor.resolved &&
+        !isPlaceholderSrc(descriptor.resolved) &&
+        !/^data:image\/svg\+xml/i.test(descriptor.resolved) &&
+        !/\.svg(?:$|[?#])/i.test(descriptor.resolved)
+    ) || descriptors.find(
+      (descriptor) =>
+        descriptor.resolved &&
+        !/^data:image\/svg\+xml/i.test(descriptor.resolved) &&
+        !/\.svg(?:$|[?#])/i.test(descriptor.resolved)
+    );
     if (!selected?.resolved) return;
-    if (/^data:image\/svg\+xml/i.test(selected.resolved) || /\.svg(?:$|[?#])/i.test(selected.resolved)) {
-      return;
-    }
 
     const width = Number(image.getAttribute('width')) || image.naturalWidth || 0;
     const height = Number(image.getAttribute('height')) || image.naturalHeight || 0;

@@ -1,6 +1,7 @@
 import type {
   ChapterItem,
   ChapterLinkCandidate,
+  ImageCandidate,
   ImageCollectionResult,
   PageIdentity,
   PageScanResult,
@@ -12,6 +13,7 @@ import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/co
 import { collectInlineScriptImages } from '@core/detection/collectors/inlineScriptCollector';
 import { collectJsonEmbeddedImages } from '@core/detection/collectors/jsonEmbeddedCollector';
 import { scanPageDocument } from '@core/detection/scanPage';
+import { isLikelyDecorative } from '@core/detection/pipeline/scoreImageCandidate';
 
 export interface ChapterCrawlerDependencies {
   fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
@@ -20,6 +22,91 @@ export interface ChapterCrawlerDependencies {
 
 const DEFAULT_LINEAR_CHAPTER_LIMIT = 64;
 const DEFAULT_DISCOVERY_TIME_BUDGET_MS = 7_000;
+const SVG_URL_RE = /^data:image\/svg\+xml/i;
+const RASTER_HINT_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i;
+
+function isSvgLikeUrl(url: string): boolean {
+  return SVG_URL_RE.test(url) || /\.svg(?:$|[?#])/i.test(url);
+}
+
+function isRasterPreviewCandidate(item: ImageCandidate): boolean {
+  if (!item.url || item.url.startsWith('content://')) return false;
+  if (isSvgLikeUrl(item.url) || isSvgLikeUrl(item.previewUrl || '')) return false;
+  if (isLikelyDecorative(item.url)) return false;
+
+  const hasDimensions = item.width > 0 && item.height > 0;
+  if (hasDimensions && Math.max(item.width, item.height) < 120) return false;
+
+  return true;
+}
+
+function normalizePreviewCollection(
+  collection: ImageCollectionResult,
+  chapterUrl: string
+): ImageCollectionResult {
+  const items = collection.items
+    .filter(isRasterPreviewCandidate)
+    .map((item) => {
+      const normalizedUrl = unwrapProxiedImageUrl(item.url);
+      const normalizedPreviewUrl = unwrapProxiedImageUrl(item.previewUrl || item.url);
+      return {
+        ...item,
+        url: normalizedUrl,
+        previewUrl: normalizedPreviewUrl,
+        canonicalUrl: normalizedUrl.split('#')[0],
+        querylessUrl: normalizedUrl.split('#')[0].split('?')[0],
+        familyKey: normalizedUrl.split('#')[0].split('?')[0],
+        referrer: item.referrer || chapterUrl,
+        origin: 'static-html' as const,
+        captureStrategy: 'network' as const,
+      };
+    });
+
+  return {
+    ...collection,
+    items,
+  };
+}
+
+function sortPreviewItems(items: ImageCandidate[]): ImageCandidate[] {
+  return [...items].sort((left, right) => {
+    if (left.pageNumber !== null && right.pageNumber !== null && left.pageNumber !== right.pageNumber) {
+      return left.pageNumber - right.pageNumber;
+    }
+    if (left.top !== right.top) return left.top - right.top;
+    if (left.domIndex !== right.domIndex) return left.domIndex - right.domIndex;
+    return right.score - left.score;
+  });
+}
+
+function mergePreviewCollections(...collections: Array<ImageCollectionResult | null | undefined>): ImageCollectionResult | null {
+  const available = collections.filter((collection): collection is ImageCollectionResult => Boolean(collection));
+  if (available.length === 0) {
+    return null;
+  }
+
+  const merged = new Map<string, ImageCandidate>();
+  const diagnostics = [];
+  let totalCandidates = 0;
+
+  for (const collection of available) {
+    totalCandidates += collection.totalCandidates;
+    diagnostics.push(...collection.diagnostics);
+    for (const item of collection.items) {
+      const key = item.querylessUrl || item.canonicalUrl || item.url;
+      const existing = merged.get(key);
+      if (!existing || item.score > existing.score) {
+        merged.set(key, item);
+      }
+    }
+  }
+
+  return {
+    items: sortPreviewItems([...merged.values()]),
+    totalCandidates,
+    diagnostics,
+  };
+}
 
 function parseRemoteDocument(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
@@ -397,113 +484,107 @@ export async function loadChapterPreview(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
+  let liveBest: ImageCollectionResult | null = null;
+
   if (dependencies.scanPage) {
     try {
       const liveScan = await dependencies.scanPage(chapterUrl, options);
-      const normalizeLiveCollection = (collection: ImageCollectionResult): ImageCollectionResult => ({
-        ...collection,
-        items: collection.items
-          .filter((item) => !item.url.startsWith('content://'))
-          .map((item) => ({
-            ...item,
-            url: unwrapProxiedImageUrl(item.url),
-            previewUrl: unwrapProxiedImageUrl(item.previewUrl || item.url),
-            referrer: chapterUrl,
-            origin: 'static-html',
-            captureStrategy: 'network',
-          })),
-      });
-
-      const liveManga = normalizeLiveCollection(liveScan.manga.currentPages);
-      const liveGeneral = normalizeLiveCollection(liveScan.general);
-      if (liveManga.items.length >= 1 || liveGeneral.items.length >= 1) {
-        return liveManga.items.length >= liveGeneral.items.length ? liveManga : liveGeneral;
-      }
+      const liveManga = normalizePreviewCollection(liveScan.manga.currentPages, chapterUrl);
+      const liveGeneral = normalizePreviewCollection(liveScan.general, chapterUrl);
+      liveBest = mergePreviewCollections(liveManga, liveGeneral);
     } catch {
       // Fall back to static HTML fetch below when the live DOM scan path fails.
     }
   }
 
-  const html = await dependencies.fetchDocument(chapterUrl, options);
-  const doc = parseRemoteDocument(html);
-  const scan = scanPageDocument({
-    document: doc,
-    page: buildPageIdentity(chapterUrl, doc),
-    origin: 'static-html',
-    imageCandidates: collectRemoteImageCandidates(doc, chapterUrl),
-  });
+  try {
+    const html = await dependencies.fetchDocument(chapterUrl, options);
+    const doc = parseRemoteDocument(html);
+    const scan = scanPageDocument({
+      document: doc,
+      page: buildPageIdentity(chapterUrl, doc),
+      origin: 'static-html',
+      imageCandidates: collectRemoteImageCandidates(doc, chapterUrl),
+    });
 
-  const applyPreferredReferrer = (collection: ImageCollectionResult): ImageCollectionResult => {
-    const preferredReferrer = chapterUrl;
-    return {
-      ...collection,
-      items: collection.items.map((item) => ({
-        ...item,
-        referrer: item.referrer || preferredReferrer,
-      })),
-    };
-  };
+    const mangaResult = normalizePreviewCollection(scan.manga.currentPages, chapterUrl);
+    const generalResult = normalizePreviewCollection(scan.general, chapterUrl);
 
-  // Prefer manga-specific detection (better ordering/filtering)
-  // but fall back to general collection when manga finds nothing meaningful
-  const mangaResult = scan.manga.currentPages;
-  const generalResult = scan.general;
+    let paginatedResult: ImageCollectionResult | null = null;
+    const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
+    const looksLikeImageUrl = (url: string): boolean =>
+      RASTER_HINT_RE.test(url) ||
+      /\/cdn-cgi\/image\//i.test(url) ||
+      /\/_next\/image/i.test(url);
+    if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
+      const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
+        dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
 
-  // Check if the chapter uses a paginated reader
-  const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
-  const looksLikeImageUrl = (url: string): boolean =>
-    /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i.test(url) ||
-    /\/cdn-cgi\/image\//i.test(url) ||
-    /\/_next\/image/i.test(url);
-  if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
-    // Crawl all pages to get all images
-    const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
-      dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
-
-    const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
-    const validImageUrls = allImageUrls.filter((url) => looksLikeImageUrl(url));
-    const minimumExpected = Math.min(2, paginatedInfo.totalPages);
-    if (validImageUrls.length >= minimumExpected) {
-      // Build an ImageCollectionResult from the crawled URLs
-      const paginatedItems = validImageUrls.map((url, i) => ({
-        id: `paginated-${i}`,
-        url,
-        previewUrl: url,
-        referrer: chapterUrl,
-        canonicalUrl: url.split('?')[0],
-        querylessUrl: url.split('?')[0],
-        captureStrategy: 'network' as const,
-        sourceKind: 'paginated-crawl',
-        origin: 'static-html' as const,
-        width: 0,
-        height: 0,
-        area: 0,
-        domIndex: i,
-        top: i * 100,
-        left: 0,
-        altText: `Page ${i + 1}`,
-        titleText: '',
-        containerSignature: 'paginated-reader',
-        familyKey: url.split('?')[0],
-        visible: true,
-        filenameHint: `page-${String(i + 1).padStart(3, '0')}`,
-        extensionHint: url.match(/\.(jpe?g|png|webp|avif)/i)?.[1]?.toLowerCase() || 'jpg',
-        pageNumber: i + 1,
-        score: 100,
-        diagnostics: [],
-      }));
-      return {
-        items: paginatedItems,
-        totalCandidates: paginatedItems.length,
-        diagnostics: [{
-          code: 'paginated-crawl',
-          message: `${paginatedItems.length} images récupérées depuis ${paginatedInfo.totalPages} pages.`,
-          level: 'info',
-        }],
-      };
+      const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
+      const validImageUrls = allImageUrls.filter((url) => looksLikeImageUrl(url) && !isSvgLikeUrl(url));
+      const minimumExpected = Math.min(2, paginatedInfo.totalPages);
+      if (validImageUrls.length >= minimumExpected) {
+        const paginatedItems = validImageUrls.map((url, i) => ({
+          id: `paginated-${i}`,
+          url,
+          previewUrl: url,
+          referrer: chapterUrl,
+          canonicalUrl: url.split('?')[0],
+          querylessUrl: url.split('?')[0],
+          captureStrategy: 'network' as const,
+          sourceKind: 'paginated-crawl',
+          origin: 'static-html' as const,
+          width: 0,
+          height: 0,
+          area: 0,
+          domIndex: i,
+          top: i * 100,
+          left: 0,
+          altText: `Page ${i + 1}`,
+          titleText: '',
+          containerSignature: 'paginated-reader',
+          familyKey: url.split('?')[0],
+          visible: true,
+          filenameHint: `page-${String(i + 1).padStart(3, '0')}`,
+          extensionHint: url.match(/\.(jpe?g|png|webp|avif)/i)?.[1]?.toLowerCase() || 'jpg',
+          pageNumber: i + 1,
+          score: 100,
+          diagnostics: [],
+        }));
+        paginatedResult = {
+          items: paginatedItems,
+          totalCandidates: paginatedItems.length,
+          diagnostics: [{
+            code: 'paginated-crawl',
+            message: `${paginatedItems.length} images récupérées depuis ${paginatedInfo.totalPages} pages.`,
+            level: 'info',
+          }],
+        };
+      }
     }
+
+    const merged = mergePreviewCollections(liveBest, mangaResult, generalResult, paginatedResult);
+    if (merged && merged.items.length > 0) {
+      return merged;
+    }
+  } catch (error) {
+    if (liveBest && liveBest.items.length > 0) {
+      return liveBest;
+    }
+    throw error;
   }
 
-  if (mangaResult.items.length >= 2) return applyPreferredReferrer(mangaResult);
-  return applyPreferredReferrer(generalResult.items.length > mangaResult.items.length ? generalResult : mangaResult);
+  if (liveBest && liveBest.items.length > 0) {
+    return liveBest;
+  }
+
+  return {
+    items: [],
+    totalCandidates: 0,
+    diagnostics: [{
+      code: 'chapter-preview-empty',
+      message: 'Aucune image de chapitre exploitable detectee.',
+      level: 'warning',
+    }],
+  };
 }
