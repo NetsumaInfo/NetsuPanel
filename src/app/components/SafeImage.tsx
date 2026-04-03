@@ -9,163 +9,147 @@ interface SafeImageProps {
   referrer?: string;
   captureTabId?: number;
   captureCandidateId?: string;
+  /** 'auto' = try native src first, then fetch on error
+   *  'network-first' = always proxy-fetch (protected images)
+   *  'capture-first' = live-DOM canvas capture first */
   resolveMode?: 'auto' | 'network-first' | 'capture-first';
 }
 
+type Phase =
+  | 'native'        // Showing native <img src=...>
+  | 'fetching'      // Background-fetch in progress
+  | 'resolved'      // Object-URL from fetch
+  | 'failed';       // All strategies exhausted
+
 interface SafeImageState {
-  sourceKey: string;
-  resolvedSrc: string;
-  failed: boolean;
-  loadingFallback: boolean;
+  phase: Phase;
+  displaySrc: string;
+  attempt: number;   // increments on src prop change
 }
 
 type SafeImageAction =
-  | { type: 'sync-source'; sourceKey: string; resolvedSrc: string }
-  | { type: 'loading-start'; sourceKey: string }
-  | { type: 'loading-stop'; sourceKey: string }
-  | { type: 'resolved'; sourceKey: string; resolvedSrc: string }
-  | { type: 'failed'; sourceKey: string };
+  | { type: 'reset'; displaySrc: string; phase: Phase; attempt: number }
+  | { type: 'fetching'; attempt: number }
+  | { type: 'resolved'; attempt: number; objectUrl: string }
+  | { type: 'failed'; attempt: number };
 
-const FALLBACK_CACHE_LIMIT = 180;
+// ── Global object-URL cache (LRU, keyed by "src::referrer") ──────────────────
+const CACHE_LIMIT = 200;
 const objectUrlCache = new Map<string, string>();
-const NETWORK_FALLBACK_CONCURRENCY = 6;
-let activeNetworkFallbackCount = 0;
-const networkFallbackWaiters: Array<() => void> = [];
-const initialSafeImageState: SafeImageState = {
-  sourceKey: '',
-  resolvedSrc: '',
-  failed: false,
-  loadingFallback: false,
-};
 
-function safeImageReducer(state: SafeImageState, action: SafeImageAction): SafeImageState {
+function cacheGet(key: string): string | undefined {
+  const val = objectUrlCache.get(key);
+  if (!val) return undefined;
+  // LRU touch
+  objectUrlCache.delete(key);
+  objectUrlCache.set(key, val);
+  return val;
+}
+
+function cacheSet(key: string, url: string): void {
+  objectUrlCache.delete(key);
+  objectUrlCache.set(key, url);
+  if (objectUrlCache.size > CACHE_LIMIT) {
+    const oldest = objectUrlCache.keys().next().value as string | undefined;
+    if (oldest) {
+      const evicted = objectUrlCache.get(oldest);
+      objectUrlCache.delete(oldest);
+      // Revoke only non-data URLs
+      if (evicted?.startsWith('blob:')) URL.revokeObjectURL(evicted);
+    }
+  }
+}
+
+// ── Fetch concurrency semaphore ───────────────────────────────────────────────
+const MAX_CONCURRENT = 10;
+let activeFetches = 0;
+const fetchQueue: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (activeFetches < MAX_CONCURRENT) {
+    activeFetches++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => fetchQueue.push(resolve));
+}
+
+function releaseSlot(): void {
+  activeFetches = Math.max(0, activeFetches - 1);
+  const next = fetchQueue.shift();
+  if (next) {
+    activeFetches++;
+    next();
+  }
+}
+
+// ── Fetch with timeout helper ─────────────────────────────────────────────────
+async function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+// ── Per-image network fetch (with retries) ─────────────────────────────────────
+const FETCH_TIMEOUT_MS = 15_000;
+const RETRY_DELAYS_MS = [800, 2000];
+
+async function fetchBinaryWithRetry(
+  src: string,
+  referrer: string | undefined,
+  tabId: number | undefined
+): Promise<{ bytes: ArrayBuffer; mime: string }> {
+  let lastError: unknown;
+
+  const attempts = [
+    // Attempt 1: with referrer
+    () => fetchBinary(src, { referrer, tabId }),
+    // Attempt 2: without referrer (some CDNs reject mismatched referrer)
+    () => fetchBinary(src, { tabId }),
+    // Attempt 3: without tabId (use background fetch directly)
+    () => fetchBinary(src, { referrer }),
+  ];
+
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const result = await fetchWithTimeout(attempts[i](), FETCH_TIMEOUT_MS);
+      return result;
+    } catch (err) {
+      lastError = err;
+      if (i < RETRY_DELAYS_MS.length) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+// ── Reducer ───────────────────────────────────────────────────────────────────
+function reducer(state: SafeImageState, action: SafeImageAction): SafeImageState {
   switch (action.type) {
-    case 'sync-source':
-      return {
-        sourceKey: action.sourceKey,
-        resolvedSrc: action.resolvedSrc,
-        failed: false,
-        loadingFallback: false,
-      };
-
-    case 'loading-start':
-      if (state.sourceKey !== action.sourceKey) return state;
-      return {
-        ...state,
-        loadingFallback: true,
-      };
-
-    case 'loading-stop':
-      if (state.sourceKey !== action.sourceKey) return state;
-      return {
-        ...state,
-        loadingFallback: false,
-      };
-
+    case 'reset':
+      return { phase: action.phase, displaySrc: action.displaySrc, attempt: action.attempt };
+    case 'fetching':
+      if (action.attempt !== state.attempt) return state;
+      return { ...state, phase: 'fetching' };
     case 'resolved':
-      if (state.sourceKey !== action.sourceKey) return state;
-      return {
-        ...state,
-        resolvedSrc: action.resolvedSrc,
-        failed: false,
-        loadingFallback: false,
-      };
-
+      if (action.attempt !== state.attempt) return state;
+      return { ...state, phase: 'resolved', displaySrc: action.objectUrl };
     case 'failed':
-      if (state.sourceKey !== action.sourceKey) return state;
-      return {
-        ...state,
-        failed: true,
-        loadingFallback: false,
-      };
-
+      if (action.attempt !== state.attempt) return state;
+      return { ...state, phase: 'failed' };
     default:
       return state;
   }
 }
 
-function buildCacheKey(src: string, referrer?: string): string {
-  return `${src}::${referrer ?? ''}`;
-}
-
-function buildCaptureKey(tabId?: number, candidateId?: string): string {
-  return `capture:${tabId ?? 'none'}:${candidateId ?? 'none'}`;
-}
-
-function buildSourceKey(
-  src: string,
-  referrer?: string,
-  captureTabId?: number,
-  captureCandidateId?: string
-): string {
-  return `${buildCacheKey(src, referrer)}::${buildCaptureKey(captureTabId, captureCandidateId)}`;
-}
-
-function isNetworkUrl(src: string): boolean {
-  return /^https?:\/\//i.test(src);
-}
-
-function isGifLikeSource(src: string): boolean {
-  if (!src) return false;
-  if (/^data:image\/gif/i.test(src)) return true;
-  return /\.gif(?:$|[?#])/i.test(src);
-}
-
-function shouldPreferCaptureFirst(src: string, captureTabId?: number, captureCandidateId?: string): boolean {
-  if (!captureTabId || !captureCandidateId || !isNetworkUrl(src)) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(src);
-    return (
-      parsed.pathname.startsWith('/_next/image') ||
-      parsed.pathname.startsWith('/cdn-cgi/image') ||
-      /(?:^|[?&])url=/.test(parsed.search)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function getCachedObjectUrl(key: string): string | undefined {
-  const value = objectUrlCache.get(key);
-  if (!value) return undefined;
-  objectUrlCache.delete(key);
-  objectUrlCache.set(key, value);
-  return value;
-}
-
-function setCachedObjectUrl(key: string, objectUrl: string): void {
-  objectUrlCache.delete(key);
-  objectUrlCache.set(key, objectUrl);
-
-  if (objectUrlCache.size > FALLBACK_CACHE_LIMIT) {
-    const oldestKey = objectUrlCache.keys().next().value as string | undefined;
-    if (!oldestKey) return;
-    objectUrlCache.delete(oldestKey);
-  }
-}
-
-async function withNetworkFallbackSlot<T>(task: () => Promise<T>): Promise<T> {
-  if (activeNetworkFallbackCount >= NETWORK_FALLBACK_CONCURRENCY) {
-    await new Promise<void>((resolve) => {
-      networkFallbackWaiters.push(resolve);
-    });
-  }
-
-  activeNetworkFallbackCount += 1;
-  try {
-    return await task();
-  } finally {
-    activeNetworkFallbackCount = Math.max(0, activeNetworkFallbackCount - 1);
-    const waiter = networkFallbackWaiters.shift();
-    if (waiter) {
-      waiter();
-    }
-  }
-}
-
+// ── Component ─────────────────────────────────────────────────────────────────
 export function SafeImage({
   src,
   alt,
@@ -175,219 +159,158 @@ export function SafeImage({
   captureCandidateId,
   resolveMode = 'auto',
 }: SafeImageProps) {
-  const [state, dispatchState] = useReducer(safeImageReducer, initialSafeImageState);
-  const requestTokenRef = useRef(0);
-  const captureAttemptedRef = useRef(false);
-  const networkAttemptedRef = useRef(false);
-  const sourceKey = buildSourceKey(src, referrer, captureTabId, captureCandidateId);
-  const preferNetworkFallback = isGifLikeSource(src);
-  const preferCaptureFirst = resolveMode === 'capture-first' || shouldPreferCaptureFirst(src, captureTabId, captureCandidateId);
-  const preferNetworkFirst = resolveMode === 'network-first' && isNetworkUrl(src);
+  const attemptRef = useRef(0);
+  const [state, dispatch] = useReducer(reducer, {
+    phase: 'native',
+    displaySrc: '',
+    attempt: 0,
+  });
 
-  useEffect(() => {
-    requestTokenRef.current += 1;
-    captureAttemptedRef.current = false;
-    networkAttemptedRef.current = false;
-
-    const captureKey = buildCaptureKey(captureTabId, captureCandidateId);
-    const cachedCapture = preferNetworkFallback ? undefined : getCachedObjectUrl(captureKey);
-    if (cachedCapture) {
-      dispatchState({ type: 'sync-source', sourceKey, resolvedSrc: cachedCapture });
-      return;
-    }
-
-    const networkKey = buildCacheKey(src, referrer);
-    const cachedNetwork = getCachedObjectUrl(networkKey);
-    dispatchState({
-      type: 'sync-source',
-      sourceKey,
-      resolvedSrc:
-        cachedNetwork ||
-        (preferNetworkFirst ? '' : (isSafeRenderableImageSrc(src) ? src : '')),
-    });
-  }, [captureCandidateId, captureTabId, preferNetworkFallback, preferNetworkFirst, referrer, sourceKey, src]);
-
-  const fetchFromCapture = useCallback(async (): Promise<boolean> => {
-    if (!captureTabId || !captureCandidateId) return false;
-
-    const cacheKey = buildCaptureKey(captureTabId, captureCandidateId);
-    const cached = getCachedObjectUrl(cacheKey);
-    if (cached) {
-      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: cached });
-      return true;
-    }
-
-    const token = requestTokenRef.current;
-    dispatchState({ type: 'loading-start', sourceKey });
-    captureAttemptedRef.current = true;
-
-    try {
-      const resource = await captureImage(captureTabId, captureCandidateId);
-      const objectUrl = URL.createObjectURL(new Blob([resource.bytes], { type: resource.mime || 'image/png' }));
-      setCachedObjectUrl(cacheKey, objectUrl);
-
-      if (requestTokenRef.current !== token) return false;
-      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: objectUrl });
-      return true;
-    } catch {
-      return false;
-    } finally {
-      if (requestTokenRef.current === token) {
-        dispatchState({ type: 'loading-stop', sourceKey });
-      }
-    }
-  }, [captureCandidateId, captureTabId, sourceKey]);
-
-  const fetchFromNetwork = useCallback(async (): Promise<boolean> => {
-    if (!isNetworkUrl(src)) {
-      return false;
-    }
-
-    const cacheKey = buildCacheKey(src, referrer);
-    const cached = getCachedObjectUrl(cacheKey);
-    if (cached) {
-      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: cached });
-      return true;
-    }
-
-    const token = requestTokenRef.current;
-    dispatchState({ type: 'loading-start', sourceKey });
-    networkAttemptedRef.current = true;
-
-    try {
-      let resource;
+  const isSafe = isSafeRenderableImageSrc(src);
+  const isNetworkUrl = /^https?:\/\//i.test(src);
+  const forceNetworkFirst = resolveMode === 'network-first';
+  const forceCaptureFirst = resolveMode === 'capture-first' || (
+    resolveMode === 'auto' &&
+    Boolean(captureTabId) &&
+    Boolean(captureCandidateId) &&
+    isNetworkUrl &&
+    (() => {
       try {
-        resource = await withNetworkFallbackSlot(() =>
-          fetchBinary(src, { referrer, tabId: captureTabId })
-        );
-      } catch {
-        resource = await withNetworkFallbackSlot(() =>
-          fetchBinary(src, { tabId: captureTabId })
-        );
-      }
-      const objectUrl = URL.createObjectURL(new Blob([resource.bytes], { type: resource.mime || 'image/jpeg' }));
-      setCachedObjectUrl(cacheKey, objectUrl);
+        const p = new URL(src).pathname;
+        return p.startsWith('/_next/image') || p.startsWith('/cdn-cgi/image');
+      } catch { return false; }
+    })()
+  );
 
-      if (requestTokenRef.current !== token) return false;
-      dispatchState({ type: 'resolved', sourceKey, resolvedSrc: objectUrl });
-      return true;
-    } catch {
-      return false;
-    } finally {
-      if (requestTokenRef.current === token) {
-        dispatchState({ type: 'loading-stop', sourceKey });
-      }
-    }
-  }, [captureTabId, referrer, sourceKey, src]);
-
-  const loadingFallback = state.sourceKey === sourceKey ? state.loadingFallback : false;
-  const failed = state.sourceKey === sourceKey ? state.failed : false;
-  const resolvedSrc = state.sourceKey === sourceKey && state.resolvedSrc
-    ? state.resolvedSrc
-    : (isSafeRenderableImageSrc(src) ? src : '');
-
-  const handleError = useCallback(() => {
-    if (loadingFallback) return;
-
-    const tryFallbacks = async () => {
-      if (preferNetworkFallback && !networkAttemptedRef.current) {
-        const loaded = await fetchFromNetwork();
-        if (loaded) return;
-      }
-
-      if (captureTabId && captureCandidateId && !captureAttemptedRef.current) {
-        const loaded = await fetchFromCapture();
-        if (loaded) return;
-      }
-
-      if (!networkAttemptedRef.current) {
-        const loaded = await fetchFromNetwork();
-        if (loaded) return;
-      }
-
-      dispatchState({ type: 'failed', sourceKey });
-    };
-
-    void tryFallbacks();
-  }, [
-    captureCandidateId,
-    captureTabId,
-    fetchFromCapture,
-    fetchFromNetwork,
-    loadingFallback,
-    preferNetworkFallback,
-    sourceKey,
-  ]);
-
+  // ── Effect: reset when src changes ─────────────────────────────────────────
   useEffect(() => {
-    if ((!preferCaptureFirst && !preferNetworkFirst) || captureAttemptedRef.current || networkAttemptedRef.current) {
+    attemptRef.current += 1;
+    const attempt = attemptRef.current;
+
+    const cacheKey = `${src}::${referrer ?? ''}`;
+
+    // 1. Already cached? → show immediately
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      dispatch({ type: 'reset', attempt, displaySrc: cached, phase: 'resolved' });
       return;
     }
 
-    const token = requestTokenRef.current;
-    const loadPreferredSource = async () => {
-      if (preferNetworkFirst) {
-        const fetched = await fetchFromNetwork();
-        if (fetched || requestTokenRef.current !== token) {
+    // 2. force network/capture first → start fetch immediately (no native try)
+    if (forceNetworkFirst || forceCaptureFirst) {
+      dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
+      void resolveViaFetch(attempt, cacheKey);
+      return;
+    }
+
+    // 3. Default: show native src immediately (fastest path)
+    dispatch({ type: 'reset', attempt, displaySrc: isSafe ? src : '', phase: 'native' });
+
+    // If src is not safe to render directly, kick off a fetch right away
+    if (!isSafe && isNetworkUrl) {
+      void resolveViaFetch(attempt, cacheKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, referrer, captureTabId, captureCandidateId, resolveMode]);
+
+  // ── Fetch resolution ────────────────────────────────────────────────────────
+  const resolveViaFetch = useCallback(
+    async (attempt: number, cacheKey: string) => {
+      if (attempt !== attemptRef.current) return;
+      dispatch({ type: 'fetching', attempt });
+
+      await acquireSlot();
+      try {
+        if (attempt !== attemptRef.current) return;
+
+        // Try canvas capture first if requested
+        if (forceCaptureFirst && captureTabId && captureCandidateId) {
+          try {
+            const res = await fetchWithTimeout(
+              captureImage(captureTabId, captureCandidateId),
+              8_000
+            );
+            const url = URL.createObjectURL(new Blob([res.bytes], { type: res.mime || 'image/png' }));
+            cacheSet(cacheKey, url);
+            if (attempt === attemptRef.current) {
+              dispatch({ type: 'resolved', attempt, objectUrl: url });
+            }
+            return;
+          } catch {
+            // fall through to network fetch
+          }
+        }
+
+        if (!isNetworkUrl) {
+          dispatch({ type: 'failed', attempt });
           return;
         }
-        if (!preferCaptureFirst || captureAttemptedRef.current) {
-          dispatchState({ type: 'failed', sourceKey });
-          return;
+
+        const res = await fetchBinaryWithRetry(src, referrer, captureTabId);
+        const url = URL.createObjectURL(new Blob([res.bytes], { type: res.mime || 'image/jpeg' }));
+        cacheSet(cacheKey, url);
+        if (attempt === attemptRef.current) {
+          dispatch({ type: 'resolved', attempt, objectUrl: url });
         }
-      }
-
-      const captured = await fetchFromCapture();
-      if (captured || requestTokenRef.current !== token) {
-        return;
-      }
-
-      if (!networkAttemptedRef.current) {
-        const fetched = await fetchFromNetwork();
-        if (fetched || requestTokenRef.current !== token) {
-          return;
+      } catch {
+        if (attempt === attemptRef.current) {
+          dispatch({ type: 'failed', attempt });
         }
+      } finally {
+        releaseSlot();
       }
+    },
+    [src, referrer, captureTabId, captureCandidateId, forceCaptureFirst, isNetworkUrl]
+  );
 
-      dispatchState({ type: 'failed', sourceKey });
-    };
+  // ── Error handler (native img failed to load) ───────────────────────────────
+  const handleNativeError = useCallback(() => {
+    if (state.phase !== 'native') return;
+    if (!isNetworkUrl) {
+      dispatch({ type: 'failed', attempt: attemptRef.current });
+      return;
+    }
+    // Native load failed → try background fetch
+    const cacheKey = `${src}::${referrer ?? ''}`;
+    void resolveViaFetch(attemptRef.current, cacheKey);
+  }, [state.phase, isNetworkUrl, src, referrer, resolveViaFetch]);
 
-    void loadPreferredSource();
-  }, [fetchFromCapture, fetchFromNetwork, preferCaptureFirst, preferNetworkFirst, sourceKey]);
+  // ── Render ──────────────────────────────────────────────────────────────────
+  const { phase, displaySrc } = state;
 
-  const title = captureCandidateId ? `${src}\n[candidate=${captureCandidateId}]` : src;
-
-  if (failed) {
+  if (phase === 'failed') {
     return (
       <div
-        className={`flex items-center justify-center bg-border/40 text-2xs text-muted ${className ?? ''}`}
-        title={title}
+        className={`safe-image-failed flex items-center justify-center bg-border/30 text-2xs text-muted/60 select-none ${className ?? ''}`}
+        title={src}
       >
-        ✗
+        <svg className="h-4 w-4 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
       </div>
     );
   }
 
-  if (!resolvedSrc) {
+  if (phase === 'fetching' || !displaySrc) {
     return (
       <div
-        className={`flex items-center justify-center bg-border/40 text-2xs text-muted ${className ?? ''}`}
-        title={loadingFallback ? `${title}\n[loading protected image]` : `${title}\n[blocked unsafe image source]`}
-      >
-        {loadingFallback ? '…' : '✗'}
-      </div>
+        className={`safe-image-skeleton animate-pulse bg-gradient-to-br from-border/40 via-border/20 to-border/40 ${className ?? ''}`}
+        title={src}
+      />
     );
   }
 
   return (
     <img
-      src={resolvedSrc}
+      src={displaySrc}
       alt={alt}
       loading="lazy"
       decoding="async"
       className={className}
-      onError={handleError}
-      title={title}
+      onError={handleNativeError}
+      title={src}
     />
   );
 }

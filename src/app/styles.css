@@ -86,6 +86,23 @@
     background: #f0f1f5;
   }
 
+  /* ─── SafeImage states ─── */
+  .safe-image-skeleton {
+    @apply aspect-[2/3] w-full rounded-lg;
+    background: linear-gradient(110deg, #eaecf2 30%, #f4f5f9 50%, #eaecf2 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+  .safe-image-failed {
+    @apply aspect-[2/3] w-full rounded-lg;
+    background: #f4f5f9;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
   /* ─── Upscale compare ─── */
   .compare-panel {
     @apply overflow-hidden rounded-xl border border-border;
