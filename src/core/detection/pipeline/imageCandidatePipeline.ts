@@ -128,6 +128,16 @@ function selectNarrativeCluster(items: ImageCandidate[]): { items: ImageCandidat
   return { items: sortCandidates(winner.group), diagnostics: [] };
 }
 
+function isSvgCandidate(candidate: ImageCandidate): boolean {
+  return (
+    candidate.extensionHint === 'svg' ||
+    candidate.extensionHint === 'svg+xml' ||
+    candidate.sourceKind.includes('svg') ||
+    /^data:image\/svg\+xml/i.test(candidate.url) ||
+    /\.svg(?:$|[?#])/i.test(candidate.querylessUrl)
+  );
+}
+
 export function buildImageCollection(
   rawCandidates: RawImageCandidate[],
   mode: 'general' | 'manga'
@@ -185,8 +195,9 @@ export function buildImageCollection(
       const minSizeThreshold = 150;
       const minScoreThreshold = 12;
       const isTooSmall = hasDimensions && Math.max(normalized.width, normalized.height) < minSizeThreshold;
+      const isSvg = isSvgCandidate(normalized);
 
-      if (isTooSmall || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
+      if (isTooSmall || isSvg || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
         diagnostics.push({
           code: 'image-rejected-low-signal',
           message: `Rejected low-signal candidate ${normalized.filenameHint}.`,

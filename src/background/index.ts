@@ -70,10 +70,11 @@ async function ensureContentScript(tabId: number): Promise<void> {
   });
 }
 
-async function waitForTabReady(tabId: number, timeoutMs = 20_000): Promise<void> {
+async function waitForTabReady(tabId: number, timeoutMs = 25_000): Promise<void> {
   const existing = await browser.tabs.get(tabId);
   if (existing.status === 'complete') {
-    await sleep(600);
+    // Even when 'complete', JS manga readers may still be rendering images
+    await sleep(1200);
     return;
   }
 
@@ -93,7 +94,8 @@ async function waitForTabReady(tabId: number, timeoutMs = 20_000): Promise<void>
     browser.tabs.onUpdated.addListener(listener);
   });
 
-  await sleep(900);
+  // Extra time for JS-heavy manga readers to finish their initial render
+  await sleep(1500);
 }
 
 async function triggerLazyLoadInTab(tabId: number): Promise<void> {
@@ -153,28 +155,38 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
               };
               image.addEventListener('load', finalize, { once: true });
               image.addEventListener('error', finalize, { once: true });
-              setTimeout(finalize, 1500);
+              // Give images more time to load on slow manga servers
+              setTimeout(finalize, 3000);
             }),
           ]);
         };
 
-        const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
-        await Promise.allSettled(images.slice(0, 80).map((image) => loadImage(image)));
+        // First pass: hydrate ALL images currently in the DOM (no cap)
+        const allImages = () => Array.from(document.querySelectorAll<HTMLImageElement>('img'));
+        await Promise.allSettled(allImages().map((image) => loadImage(image)));
 
         const totalHeight = Math.max(
           document.body?.scrollHeight || 0,
           document.documentElement?.scrollHeight || 0
         );
-        const steps = Math.max(4, Math.min(16, Math.ceil(totalHeight / 900)));
+        // More granular steps (viewport-height increments) with longer pauses
+        const viewportHeight = window.innerHeight || 900;
+        const steps = Math.max(6, Math.min(40, Math.ceil(totalHeight / viewportHeight)));
         for (let i = 0; i < steps; i += 1) {
           const ratio = steps === 1 ? 1 : i / (steps - 1);
           const y = Math.round(totalHeight * ratio);
           window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
-          await new Promise((resolve) => setTimeout(resolve, 180));
+          // Longer pause so IntersectionObserver callbacks fire and images start loading
+          await new Promise((resolve) => setTimeout(resolve, 350));
         }
+        // Scroll back to top so readers that load prev/next pages don't get confused
         window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await Promise.allSettled(images.slice(0, 80).map((image) => loadImage(image)));
+        // Wait for any remaining network requests triggered by the scroll
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        // Second pass: hydrate again after scroll (new images may have been inserted)
+        await Promise.allSettled(allImages().map((image) => loadImage(image)));
+        // Final settlement wait
+        await new Promise((resolve) => setTimeout(resolve, 500));
       },
     });
   } catch {
@@ -197,7 +209,9 @@ function shouldRetryRemoteScan(scan: PageScanResult): boolean {
   const generalItems = scan.general.items.length;
   const maxCandidates = Math.max(scan.manga.currentPages.totalCandidates, scan.general.totalCandidates);
 
-  return currentItems <= 1 && generalItems <= 1 && maxCandidates <= 4;
+  // Retry when the chapter looks incomplete: fewer than 3 usable images
+  // or significantly fewer candidates than expected for a chapter page
+  return (currentItems + generalItems) < 3 || (maxCandidates > 0 && maxCandidates <= 6 && currentItems <= 2);
 }
 
 async function requestTabScan(tabId: number): Promise<PageScanResult> {
@@ -247,7 +261,7 @@ async function scanRemotePageInTemporaryTab(url: string, sourceTabId?: number): 
     const tempTabId = createdTab.id;
 
     await waitForTabReady(tempTabId);
-    await sleep(300);
+    // No extra sleep — waitForTabReady already adds 1.2-1.5 s
     await triggerLazyLoadInTab(tempTabId);
 
     let scan = await requestTabScan(tempTabId);

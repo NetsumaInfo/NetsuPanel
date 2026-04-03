@@ -113,4 +113,26 @@ describe('buildImageCollection', () => {
     expect(result.items).toHaveLength(4);
     expect(result.items.every((item) => item.containerSignature === 'main.reader')).toBe(true);
   });
+
+  it('rejects svg candidates in manga mode', () => {
+    const result = buildImageCollection(
+      [
+        createCandidate(0, {
+          id: 'svg-page',
+          url: 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E',
+          previewUrl: 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E',
+          sourceKind: 'inline-svg',
+          width: 800,
+          height: 1200,
+          altText: 'page 1',
+        }),
+        createCandidate(1),
+        createCandidate(2),
+      ],
+      'manga'
+    );
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items.some((item) => item.sourceKind.includes('svg'))).toBe(false);
+  });
 });

@@ -17,14 +17,14 @@ declare global {
 
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
-const STABILIZE_DELAYS = [60, 120, 220, 360];
-const LAZY_SCROLL_WAIT_MS = 90;
-const LAZY_SETTLE_WAIT_MS = 180;
-const RECHECK_DELAY_MS = 180;
+const STABILIZE_DELAYS = [60, 120, 220, 360, 500];
+const LAZY_SCROLL_WAIT_MS = 250;
+const LAZY_SETTLE_WAIT_MS = 600;
+const RECHECK_DELAY_MS = 300;
 const MAX_LAZY_SCROLL = 120000;
-const MAX_LAZY_STEPS = 32;
-const MAX_LAZY_PASSES = 3;
-const MAX_SCAN_DURATION_MS = 6500;
+const MAX_LAZY_STEPS = 60;
+const MAX_LAZY_PASSES = 5;
+const MAX_SCAN_DURATION_MS = 12000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,7 +79,7 @@ async function eagerlyHydrateImages(): Promise<void> {
   const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
 
   await Promise.allSettled(
-    images.slice(0, 120).map(async (image) => {
+    images.map(async (image) => {
       image.loading = 'eager';
       image.decoding = 'async';
 
@@ -103,7 +103,8 @@ async function eagerlyHydrateImages(): Promise<void> {
           };
           image.addEventListener('load', finalize, { once: true });
           image.addEventListener('error', finalize, { once: true });
-          setTimeout(finalize, 1200);
+          // 3 s budget per image gives slow manga CDNs enough time
+          setTimeout(finalize, 3000);
         }),
       ]);
     })

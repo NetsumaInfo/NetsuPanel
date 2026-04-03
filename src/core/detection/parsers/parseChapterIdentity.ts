@@ -210,8 +210,13 @@ export function parseChapterIdentity(label: string, url: string): ParsedChapterI
   // 3. Special labels (prologue, introduction, etc.)
   const specialNumber = specialLabelToNumber(normalizedLabel);
   if (specialNumber !== null) {
+    const normalizedSpecialLabel =
+      specialNumber === 1 &&
+      /\b(?:first|premier)\s+chapter\b|\bpremier\s+chapitre\b|\blire\s+le\s+premier\s+chapitre\b/i.test(normalizedLabel)
+        ? 'Chapitre 1'
+        : normalizedLabel;
     return {
-      label: normalizedLabel,
+      label: normalizedSpecialLabel,
       chapterNumber: specialNumber,
       volumeNumber: volumeMatch ? Number(volumeMatch[2]) : null,
     };

@@ -410,4 +410,40 @@ describe('chapter detection helpers', () => {
 
     expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
   });
+
+  it('normalizes "Lire le premier chapitre" as chapter 1', () => {
+    expect(
+      parseChapterIdentity(
+        'Lire le premier chapitre',
+        'https://astral-manga.fr/manga/serie/chapter-1/'
+      )
+    ).toMatchObject({
+      label: 'Chapitre 1',
+      chapterNumber: 1,
+    });
+  });
+
+  it('ignores non-chapter navigation links such as Accueil', () => {
+    document.body.innerHTML = `
+      <nav>
+        <a href="https://astral-manga.fr/">Accueil</a>
+      </nav>
+      <ul class="main version-chap">
+        <li><a href="https://astral-manga.fr/manga/serie/chapter-2/">Chapitre 2</a></li>
+        <li><a href="https://astral-manga.fr/manga/serie/chapter-3/">Chapitre 3</a></li>
+      </ul>
+    `;
+
+    const results = collectChapterLinks(
+      document,
+      'https://astral-manga.fr/manga/serie/chapter-2/',
+      'https://astral-manga.fr/manga/serie/chapter-2/'
+    );
+
+    expect(results.some((item) => item.label === 'Accueil')).toBe(false);
+    const chapterNumbers = results
+      .filter((item) => item.chapterNumber !== null)
+      .map((item) => item.chapterNumber);
+    expect(chapterNumbers).toEqual(expect.arrayContaining([2, 3]));
+  });
 });

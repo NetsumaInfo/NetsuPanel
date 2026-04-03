@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - img "Icône pour astral-manga.fr" [ref=e5]
+        - heading "astral-manga.fr" [level=1] [ref=e6]
+      - heading "Vérification de sécurité en cours" [level=2] [ref=e7]
+      - paragraph [ref=e8]: Ce site utilise un service de sécurité pour se protéger contre les bots malveillants. Cette page s’affiche pendant que le site vérifie que vous n’êtes pas un bot.
+  - contentinfo [ref=e12]:
+    - generic [ref=e14]:
+      - generic [ref=e16]:
+        - text: "Ray ID:"
+        - code [ref=e17]: 9e2925723b7cfe4c
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - text: Performances et sécurité par
+          - link "Cloudflare" [ref=e20] [cursor=pointer]:
+            - /url: https://www.cloudflare.com?utm_source=challenge&utm_campaign=m
+        - link "Confidentialité" [ref=e22] [cursor=pointer]:
+          - /url: https://www.cloudflare.com/fr-fr/privacypolicy/
