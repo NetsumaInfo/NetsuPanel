@@ -443,7 +443,12 @@ async function validateFetchedResource(resource: { bytes: unknown; mime: string;
     throw new Error(validation.reason || 'Binary payload is not a valid image.');
   }
 
-  await assertDecodableImage(bytes, validation.mime);
+  // Soft check — createImageBitmap can fail for valid images in certain contexts
+  try {
+    await assertDecodableImage(bytes, validation.mime);
+  } catch {
+    // Magic-byte validation passed — accept the image anyway
+  }
   return {
     bytes,
     mime: validation.mime,
@@ -600,8 +605,24 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
           error: `Unsupported URL scheme for binary fetch: ${message.url}`,
         };
       }
+
+      // Determine if the source tab is same-origin as the image.
+      // Tab-based fetch is only useful when the tab has relevant cookies.
+      let tabIsSameOrigin = false;
+      if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
+        try {
+          const tab = await browser.tabs.get(message.tabId);
+          const tabOrigin = tab.url ? new URL(tab.url).origin : '';
+          const imgOrigin = new URL(normalizedUrl).origin;
+          tabIsSameOrigin = tabOrigin === imgOrigin;
+        } catch {
+          // Tab lookup failed — treat as cross-origin
+        }
+      }
+
       try {
-        if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
+        // Strategy A: For same-origin images, try page-world first (has cookies)
+        if (tabIsSameOrigin && message.tabId) {
           try {
             const pageWorldResource = await fetchBinaryViaPageWorld(
               message.tabId,
@@ -614,25 +635,63 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
             };
           } catch (pageWorldErr) {
             console.debug('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
-            try {
-              const contentResource = await fetchBinaryViaContentScript(
-                message.tabId,
-                normalizedUrl,
-                normalizedReferrer || undefined,
-                sanitizedHeaders
-              );
-              return {
-                resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
-              };
-            } catch (contentErr) {
-              console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
-            }
           }
         }
+
+        // Strategy B: Background fetch with DNR-injected Referer header.
+        // This is the most reliable for cross-origin / protected images.
+        try {
+          return {
+            resource: serializeBinaryResource(
+              await fetchBinaryResource(normalizedUrl, {
+                referrer: normalizedReferrer || undefined,
+                headers: sanitizedHeaders,
+              })
+            ),
+          };
+        } catch (bgErr) {
+          console.debug('[NetsuPanel] Background binary fetch failed:', (bgErr as Error).message);
+        }
+
+        // Strategy C: Content-script fetch (different cookie jar than page-world)
+        if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
+          try {
+            const contentResource = await fetchBinaryViaContentScript(
+              message.tabId,
+              normalizedUrl,
+              normalizedReferrer || undefined,
+              sanitizedHeaders
+            );
+            return {
+              resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
+            };
+          } catch (contentErr) {
+            console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
+          }
+        }
+
+        // Strategy D: Page-world fetch for cross-origin (last resort — the page
+        // might have a broader session that works)
+        if (!tabIsSameOrigin && message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
+          try {
+            const pageWorldResource = await fetchBinaryViaPageWorld(
+              message.tabId,
+              normalizedUrl,
+              normalizedReferrer || undefined,
+              sanitizedHeaders
+            );
+            return {
+              resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
+            };
+          } catch (pageWorldErr) {
+            console.debug('[NetsuPanel] Page-world binary fetch (cross-origin, last resort) failed:', (pageWorldErr as Error).message);
+          }
+        }
+
+        // Strategy E: Background fetch without referrer (some CDNs reject wrong referrer)
         return {
           resource: serializeBinaryResource(
-            await fetchBinaryResource(message.url, {
-              referrer: normalizedReferrer || undefined,
+            await fetchBinaryResource(normalizedUrl, {
               headers: sanitizedHeaders,
             })
           ),

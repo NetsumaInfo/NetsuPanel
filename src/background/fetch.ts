@@ -204,7 +204,16 @@ export async function fetchBinaryResource(url: string, options: FetchOptions = {
     throw new Error(validation.reason || 'Binary payload is not a valid image.');
   }
 
-  await assertDecodableImage(bytes, validation.mime);
+  // assertDecodableImage uses createImageBitmap which may not be available
+  // in service worker context or can fail for certain valid encodings.
+  // Treat it as a soft check — if bytes pass magic-byte validation, accept them.
+  try {
+    await assertDecodableImage(bytes, validation.mime);
+  } catch {
+    // Magic-byte detection already confirmed this is a valid image format.
+    // The decode check can fail in background service worker context or
+    // for progressive/truncated images that are still displayable.
+  }
   return {
     bytes,
     mime: validation.mime,

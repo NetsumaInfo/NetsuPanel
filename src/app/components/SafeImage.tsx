@@ -10,7 +10,7 @@ interface SafeImageProps {
   captureTabId?: number;
   captureCandidateId?: string;
   /** 'auto' = try native src first, then fetch on error
-   *  'network-first' = always proxy-fetch (protected images)
+   *  'network-first' = try native img first, background fetch on error
    *  'capture-first' = live-DOM canvas capture first */
   resolveMode?: 'auto' | 'network-first' | 'capture-first';
 }
@@ -24,7 +24,7 @@ type Phase =
 interface SafeImageState {
   phase: Phase;
   displaySrc: string;
-  attempt: number;   // increments on src prop change
+  attempt: number;
 }
 
 type SafeImageAction =
@@ -33,14 +33,13 @@ type SafeImageAction =
   | { type: 'resolved'; attempt: number; objectUrl: string }
   | { type: 'failed'; attempt: number };
 
-// ── Global object-URL cache (LRU, keyed by "src::referrer") ──────────────────
-const CACHE_LIMIT = 200;
+// ── Global object-URL cache (LRU, keyed by fetched URL) ──────────────────────
+const CACHE_LIMIT = 250;
 const objectUrlCache = new Map<string, string>();
 
 function cacheGet(key: string): string | undefined {
   const val = objectUrlCache.get(key);
   if (!val) return undefined;
-  // LRU touch
   objectUrlCache.delete(key);
   objectUrlCache.set(key, val);
   return val;
@@ -54,14 +53,13 @@ function cacheSet(key: string, url: string): void {
     if (oldest) {
       const evicted = objectUrlCache.get(oldest);
       objectUrlCache.delete(oldest);
-      // Revoke only non-data URLs
       if (evicted?.startsWith('blob:')) URL.revokeObjectURL(evicted);
     }
   }
 }
 
 // ── Fetch concurrency semaphore ───────────────────────────────────────────────
-const MAX_CONCURRENT = 10;
+const MAX_CONCURRENT = 12;
 let activeFetches = 0;
 const fetchQueue: Array<() => void> = [];
 
@@ -95,9 +93,8 @@ async function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> 
   }
 }
 
-// ── Per-image network fetch (with retries) ─────────────────────────────────────
-const FETCH_TIMEOUT_MS = 15_000;
-const RETRY_DELAYS_MS = [800, 2000];
+// ── Per-image network fetch with retry cascade ─────────────────────────────────
+const FETCH_TIMEOUT_MS = 20_000;
 
 async function fetchBinaryWithRetry(
   src: string,
@@ -106,23 +103,47 @@ async function fetchBinaryWithRetry(
 ): Promise<{ bytes: ArrayBuffer; mime: string }> {
   let lastError: unknown;
 
-  const attempts = [
-    // Attempt 1: with referrer
-    () => fetchBinary(src, { referrer, tabId }),
-    // Attempt 2: without referrer (some CDNs reject mismatched referrer)
-    () => fetchBinary(src, { tabId }),
-    // Attempt 3: without tabId (use background fetch directly)
-    () => fetchBinary(src, { referrer }),
-  ];
+  // Build a cascade of fetch strategies — each with different
+  // referrer/tab combinations to find one that passes protection.
+  const strategies: Array<() => Promise<{ bytes: ArrayBuffer; mime: string }>> = [];
 
-  for (let i = 0; i < attempts.length; i++) {
+  // Strategy 1: background-only fetch with referrer and DNR-injected Referer
+  // (no tabId → skips page-world/content-script entirely)
+  if (referrer) {
+    strategies.push(() => fetchBinary(src, { referrer }));
+  }
+
+  // Strategy 2: page-world fetch via source tab (uses page cookies)
+  if (tabId) {
+    strategies.push(() => fetchBinary(src, { referrer, tabId }));
+  }
+
+  // Strategy 3: background fetch with origin-only referrer
+  if (referrer) {
     try {
-      const result = await fetchWithTimeout(attempts[i](), FETCH_TIMEOUT_MS);
-      return result;
+      const originRef = new URL(referrer).origin + '/';
+      if (originRef !== referrer) {
+        strategies.push(() => fetchBinary(src, { referrer: originRef }));
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Strategy 4: background fetch without any referrer
+  strategies.push(() => fetchBinary(src, {}));
+
+  // Strategy 5: page-world fetch without referrer
+  if (tabId) {
+    strategies.push(() => fetchBinary(src, { tabId }));
+  }
+
+  for (let i = 0; i < strategies.length; i++) {
+    try {
+      return await fetchWithTimeout(strategies[i](), FETCH_TIMEOUT_MS);
     } catch (err) {
       lastError = err;
-      if (i < RETRY_DELAYS_MS.length) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
+      // Small delay between attempts so we don't hammer the server
+      if (i < strategies.length - 1) {
+        await new Promise((r) => setTimeout(r, 300));
       }
     }
   }
@@ -168,7 +189,6 @@ export function SafeImage({
 
   const isSafe = isSafeRenderableImageSrc(src);
   const isNetworkUrl = /^https?:\/\//i.test(src);
-  const forceNetworkFirst = resolveMode === 'network-first';
   const forceCaptureFirst = resolveMode === 'capture-first' || (
     resolveMode === 'auto' &&
     Boolean(captureTabId) &&
@@ -186,29 +206,35 @@ export function SafeImage({
   useEffect(() => {
     attemptRef.current += 1;
     const attempt = attemptRef.current;
-
     const cacheKey = `${src}::${referrer ?? ''}`;
 
-    // 1. Already cached? → show immediately
+    // 1. Already cached?
     const cached = cacheGet(cacheKey);
     if (cached) {
       dispatch({ type: 'reset', attempt, displaySrc: cached, phase: 'resolved' });
       return;
     }
 
-    // 2. force network/capture first → start fetch immediately (no native try)
-    if (forceNetworkFirst || forceCaptureFirst) {
+    // 2. capture-first → fetch immediately
+    if (forceCaptureFirst) {
       dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
       void resolveViaFetch(attempt, cacheKey);
       return;
     }
 
-    // 3. Default: show native src immediately (fastest path)
-    dispatch({ type: 'reset', attempt, displaySrc: isSafe ? src : '', phase: 'native' });
-
-    // If src is not safe to render directly, kick off a fetch right away
-    if (!isSafe && isNetworkUrl) {
+    // 3. ALL modes (including 'network-first') → try native img tag first.
+    //    The extension's CSP allows img-src https:.
+    //    If the server serves the image, great — the browser handles cookies
+    //    and referrer natively.  If it fails (403 / CORS / hotlink),
+    //    handleNativeError kicks off the background fetch fallback.
+    if (isSafe) {
+      dispatch({ type: 'reset', attempt, displaySrc: src, phase: 'native' });
+    } else if (isNetworkUrl) {
+      // URL is valid http(s) but has something unsafe for direct rendering
+      dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
       void resolveViaFetch(attempt, cacheKey);
+    } else {
+      dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'failed' });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, referrer, captureTabId, captureCandidateId, resolveMode]);
@@ -270,10 +296,22 @@ export function SafeImage({
       dispatch({ type: 'failed', attempt: attemptRef.current });
       return;
     }
-    // Native load failed → try background fetch
+    // The native <img> tag failed (protection, CORS, hotlink, bad network, etc.)
+    // → fall back to background fetch which uses DNR referrer injection
     const cacheKey = `${src}::${referrer ?? ''}`;
     void resolveViaFetch(attemptRef.current, cacheKey);
   }, [state.phase, isNetworkUrl, src, referrer, resolveViaFetch]);
+
+  // ── Retry handler (click to retry on "failed" state) ────────────────────────
+  const handleRetry = useCallback(() => {
+    if (!isNetworkUrl) return;
+    attemptRef.current += 1;
+    const attempt = attemptRef.current;
+    const cacheKey = `${src}::${referrer ?? ''}`;
+    // Instead of trying native again (it already failed), go straight to fetch
+    dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
+    void resolveViaFetch(attempt, cacheKey);
+  }, [isNetworkUrl, src, referrer, resolveViaFetch]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   const { phase, displaySrc } = state;
@@ -281,14 +319,20 @@ export function SafeImage({
   if (phase === 'failed') {
     return (
       <div
-        className={`safe-image-failed flex items-center justify-center bg-border/30 text-2xs text-muted/60 select-none ${className ?? ''}`}
-        title={src}
+        className={`safe-image-failed flex cursor-pointer items-center justify-center select-none ${className ?? ''}`}
+        title={`${src}\n\nCliquer pour réessayer`}
+        onClick={handleRetry}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleRetry(); }}
       >
-        <svg className="h-4 w-4 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
+        <div className="flex flex-col items-center gap-1 text-muted/50">
+          <svg className="h-4 w-4 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+          </svg>
+          <span className="text-[9px]">Réessayer</span>
+        </div>
       </div>
     );
   }
@@ -296,7 +340,7 @@ export function SafeImage({
   if (phase === 'fetching' || !displaySrc) {
     return (
       <div
-        className={`safe-image-skeleton animate-pulse bg-gradient-to-br from-border/40 via-border/20 to-border/40 ${className ?? ''}`}
+        className={`safe-image-skeleton ${className ?? ''}`}
         title={src}
       />
     );
