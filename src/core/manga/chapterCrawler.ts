@@ -5,6 +5,7 @@ import type {
   ImageCollectionResult,
   PageIdentity,
   PageScanResult,
+  RawImageCandidate,
 } from '@shared/types';
 import { unwrapProxiedImageUrl } from '@shared/utils/url';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
@@ -12,6 +13,8 @@ import { collectChapterLinks } from '@core/detection/collectors/chapterLinkColle
 import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
 import { collectInlineScriptImages } from '@core/detection/collectors/inlineScriptCollector';
 import { collectJsonEmbeddedImages } from '@core/detection/collectors/jsonEmbeddedCollector';
+import { collectRuntimeMangaGlobals } from '@core/detection/collectors/runtimeMangaGlobalsCollector';
+import { detectPageStrategy } from '@core/detection/pageStrategy';
 import { scanPageDocument } from '@core/detection/scanPage';
 import { isLikelyDecorative } from '@core/detection/pipeline/scoreImageCandidate';
 
@@ -122,14 +125,34 @@ function buildPageIdentity(url: string, document: Document): PageIdentity {
   };
 }
 
-function collectRemoteImageCandidates(document: Document, baseUrl: string) {
-  const merged = [
-    ...collectStaticDocumentImages(document, baseUrl),
-    ...collectJsonEmbeddedImages(document, baseUrl),
-    ...collectInlineScriptImages(document, baseUrl),
-  ];
+function collectRemoteImageCandidates(document: Document, baseUrl: string): RawImageCandidate[] {
+  // Priority order:
+  // 1. Runtime globals (ts_reader.run, chapterPages, __NEXT_DATA__) — most reliable for JS readers
+  // 2. Static img tags with lazy-load data attributes
+  // 3. JSON embedded in script tags
+  // 4. Inline script URL extraction
+  // 5. Noscript images (Cloudflare Mirage)
+  const fromRuntime = collectFromRuntimeGlobals(document, baseUrl);
+  const fromStatic = collectStaticDocumentImages(document, baseUrl);
+  const fromJson = collectJsonEmbeddedImages(document, baseUrl);
+  const fromScript = collectInlineScriptImages(document, baseUrl);
+  const fromNoscript = collectNoscriptImages(document, baseUrl);
 
-  const normalized = merged.map((candidate) => {
+  const allCandidates = [...fromRuntime, ...fromStatic, ...fromJson, ...fromScript, ...fromNoscript];
+
+  // Deduplicate by resolved URL
+  const seen = new Set<string>();
+  const deduped: RawImageCandidate[] = [];
+  for (const candidate of allCandidates) {
+    const key = candidate.url.split('#')[0];
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(candidate);
+    }
+  }
+
+  // Normalize proxied URLs
+  return deduped.map((candidate) => {
     const nextUrl = unwrapProxiedImageUrl(candidate.url);
     return {
       ...candidate,
@@ -137,16 +160,106 @@ function collectRemoteImageCandidates(document: Document, baseUrl: string) {
       previewUrl: candidate.previewUrl ? unwrapProxiedImageUrl(candidate.previewUrl) : nextUrl,
     };
   });
+}
 
-  const deduped = new Map<string, (typeof merged)[number]>();
-  for (const candidate of normalized) {
-    const key = candidate.url.split('#')[0];
-    if (!deduped.has(key)) {
-      deduped.set(key, candidate);
+
+/** Extract image URLs from <noscript> tags (Cloudflare Mirage pattern) */
+function collectNoscriptImages(document: Document, baseUrl: string): RawImageCandidate[] {
+  const candidates: RawImageCandidate[] = [];
+  const noscripts = Array.from(document.querySelectorAll('noscript'));
+  let index = 0;
+
+  for (const ns of noscripts) {
+    const text = ns.textContent || '';
+    if (!text.includes('<img')) continue;
+
+    // Parse noscript HTML to extract img elements
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = text;
+    const imgs = Array.from(wrapper.querySelectorAll<HTMLImageElement>('img'));
+
+    for (const img of imgs) {
+      const src =
+        img.getAttribute('data-cfsrc') ||
+        img.getAttribute('data-src') ||
+        img.getAttribute('src') ||
+        '';
+      if (!src || src.startsWith('data:')) continue;
+
+      let resolved = src;
+      try { resolved = new URL(src, baseUrl).href; } catch { continue; }
+      if (!RASTER_HINT_RE.test(resolved)) continue;
+
+      const width = Number(img.getAttribute('width')) || 1080;
+      const height = Number(img.getAttribute('height')) || 1560;
+
+      candidates.push({
+        id: `noscript-img-${index++}`,
+        url: resolved,
+        previewUrl: resolved,
+        referrer: baseUrl,
+        captureStrategy: 'network',
+        sourceKind: 'noscript-img',
+        origin: 'static-html',
+        width,
+        height,
+        domIndex: index,
+        top: index,
+        left: 0,
+        altText: img.alt || '',
+        titleText: '',
+        containerSignature: 'noscript',
+        visible: true,
+        diagnostics: [],
+      });
     }
   }
 
-  return [...deduped.values()];
+  return candidates;
+}
+
+/** Build RawImageCandidates from runtime globals (ts_reader, chapterPages, imglist, __NEXT_DATA__) */
+function collectFromRuntimeGlobals(document: Document, baseUrl: string): RawImageCandidate[] {
+  const globals = collectRuntimeMangaGlobals(document);
+  const urls = [
+    ...globals.tsReaderImages,
+    ...globals.chapterPages,
+    ...globals.mangagoImages,
+    ...globals.nextDataImages,
+  ];
+
+  const seen = new Set<string>();
+  const candidates: RawImageCandidate[] = [];
+
+  for (let i = 0; i < urls.length; i++) {
+    let url = urls[i];
+    try { url = new URL(url, baseUrl).href; } catch { continue; }
+    if (seen.has(url)) continue;
+    if (!RASTER_HINT_RE.test(url) && !/\/_next\/image|^\/cdn-cgi\/image/.test(url)) continue;
+    seen.add(url);
+
+    candidates.push({
+      id: `runtime-global-${i}`,
+      url,
+      previewUrl: url,
+      referrer: baseUrl,
+      captureStrategy: 'network',
+      sourceKind: 'inline-script',
+      origin: 'static-html',
+      width: 0,
+      height: 0,
+      domIndex: i,
+      top: i,
+      left: 0,
+      altText: '',
+      titleText: '',
+      containerSignature: 'runtime-global',
+      visible: true,
+      diagnostics: [],
+    });
+  }
+
+  return candidates;
 }
 
 function isListingPaginationUrl(url: string): boolean {
@@ -484,107 +597,159 @@ export async function loadChapterPreview(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
-  let liveBest: ImageCollectionResult | null = null;
+  // ── Step 1: Fetch the HTML (always) ─────────────────────────────────────────
+  let html = '';
+  let htmlFetchError: unknown = null;
+  try {
+    html = await dependencies.fetchDocument(chapterUrl, options);
+  } catch (err) {
+    htmlFetchError = err;
+  }
 
-  if (dependencies.scanPage) {
+  // ── Step 2: Analyze the HTML to choose the extraction strategy ───────────────
+  const strategy = html ? detectPageStrategy(html, chapterUrl) : null;
+  const needsLiveScan = !strategy ||
+    strategy.strategy === 'live-dom' ||
+    (strategy.strategy === 'cloudflare' && strategy.staticImageCount < 3) ||
+    (strategy.strategy === 'static-html' && strategy.confidence < 0.55 && strategy.staticImageCount < 3);
+
+  // ── Step 3: Live DOM scan (only when static extraction won't be enough) ──────
+  let liveBest: ImageCollectionResult | null = null;
+  if (needsLiveScan && dependencies.scanPage) {
     try {
       const liveScan = await dependencies.scanPage(chapterUrl, options);
       const liveManga = normalizePreviewCollection(liveScan.manga.currentPages, chapterUrl);
       const liveGeneral = normalizePreviewCollection(liveScan.general, chapterUrl);
-      liveBest = mergePreviewCollections(liveManga, liveGeneral);
+      const merged = mergePreviewCollections(liveManga, liveGeneral);
+      if (merged && merged.items.length > 0) {
+        liveBest = merged;
+        // If the live scan found enough images, use it directly
+        if (liveBest.items.length >= 3) {
+          return liveBest;
+        }
+      }
     } catch {
-      // Fall back to static HTML fetch below when the live DOM scan path fails.
+      // Fall through to static extraction
     }
   }
 
-  try {
-    const html = await dependencies.fetchDocument(chapterUrl, options);
-    const doc = parseRemoteDocument(html);
-    const scan = scanPageDocument({
-      document: doc,
-      page: buildPageIdentity(chapterUrl, doc),
-      origin: 'static-html',
-      imageCandidates: collectRemoteImageCandidates(doc, chapterUrl),
-    });
+  // ── Step 4: Static HTML extraction ───────────────────────────────────────────
+  if (html) {
+    try {
+      const doc = parseRemoteDocument(html);
+      const imageCandidates = collectRemoteImageCandidates(doc, chapterUrl);
 
-    const mangaResult = normalizePreviewCollection(scan.manga.currentPages, chapterUrl);
-    const generalResult = normalizePreviewCollection(scan.general, chapterUrl);
+      const scan = scanPageDocument({
+        document: doc,
+        page: buildPageIdentity(chapterUrl, doc),
+        origin: 'static-html',
+        imageCandidates,
+      });
 
-    let paginatedResult: ImageCollectionResult | null = null;
-    const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
-    const looksLikeImageUrl = (url: string): boolean =>
-      RASTER_HINT_RE.test(url) ||
-      /\/cdn-cgi\/image\//i.test(url) ||
-      /\/_next\/image/i.test(url);
-    if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
-      const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
-        dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
+      const mangaResult = normalizePreviewCollection(scan.manga.currentPages, chapterUrl);
+      const generalResult = normalizePreviewCollection(scan.general, chapterUrl);
 
-      const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
-      const validImageUrls = allImageUrls.filter((url) => looksLikeImageUrl(url) && !isSvgLikeUrl(url));
-      const minimumExpected = Math.min(2, paginatedInfo.totalPages);
-      if (validImageUrls.length >= minimumExpected) {
-        const paginatedItems = validImageUrls.map((url, i) => ({
-          id: `paginated-${i}`,
-          url,
-          previewUrl: url,
-          referrer: chapterUrl,
-          canonicalUrl: url.split('?')[0],
-          querylessUrl: url.split('?')[0],
-          captureStrategy: 'network' as const,
-          sourceKind: 'paginated-crawl',
-          origin: 'static-html' as const,
-          width: 0,
-          height: 0,
-          area: 0,
-          domIndex: i,
-          top: i * 100,
-          left: 0,
-          altText: `Page ${i + 1}`,
-          titleText: '',
-          containerSignature: 'paginated-reader',
-          familyKey: url.split('?')[0],
-          visible: true,
-          filenameHint: `page-${String(i + 1).padStart(3, '0')}`,
-          extensionHint: url.match(/\.(jpe?g|png|webp|avif)/i)?.[1]?.toLowerCase() || 'jpg',
-          pageNumber: i + 1,
-          score: 100,
-          diagnostics: [],
-        }));
-        paginatedResult = {
-          items: paginatedItems,
-          totalCandidates: paginatedItems.length,
-          diagnostics: [{
-            code: 'paginated-crawl',
-            message: `${paginatedItems.length} images récupérées depuis ${paginatedInfo.totalPages} pages.`,
-            level: 'info',
-          }],
-        };
+      // ── Step 4b: Paginated reader crawl ────────────────────────────────────
+      let paginatedResult: ImageCollectionResult | null = null;
+      const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
+      const looksLikeImageUrl = (url: string): boolean =>
+        RASTER_HINT_RE.test(url) ||
+        /\/cdn-cgi\/image\//i.test(url) ||
+        /\/_next\/image/i.test(url);
+
+      if (paginatedInfo.isPaginatedReader && paginatedInfo.totalPages && paginatedInfo.totalPages > 1) {
+        const fetchDoc = async (url: string, opts?: { referrer?: string }) =>
+          dependencies.fetchDocument(url, { referrer: opts?.referrer || chapterUrl });
+
+        const allImageUrls = await crawlPaginatedChapter(paginatedInfo, fetchDoc, chapterUrl);
+        const validImageUrls = allImageUrls.filter((url) => looksLikeImageUrl(url) && !isSvgLikeUrl(url));
+        const minimumExpected = Math.min(2, paginatedInfo.totalPages);
+
+        if (validImageUrls.length >= minimumExpected) {
+          const paginatedItems = validImageUrls.map((url, i) => ({
+            id: `paginated-${i}`,
+            url,
+            previewUrl: url,
+            referrer: chapterUrl,
+            canonicalUrl: url.split('?')[0],
+            querylessUrl: url.split('?')[0],
+            captureStrategy: 'network' as const,
+            sourceKind: 'paginated-crawl',
+            origin: 'static-html' as const,
+            width: 0,
+            height: 0,
+            area: 0,
+            domIndex: i,
+            top: i * 100,
+            left: 0,
+            altText: `Page ${i + 1}`,
+            titleText: '',
+            containerSignature: 'paginated-reader',
+            familyKey: url.split('?')[0],
+            visible: true,
+            filenameHint: `page-${String(i + 1).padStart(3, '0')}`,
+            extensionHint: url.match(/\.(jpe?g|png|webp|avif)/i)?.[1]?.toLowerCase() || 'jpg',
+            pageNumber: i + 1,
+            score: 100,
+            diagnostics: [],
+          }));
+          paginatedResult = {
+            items: paginatedItems,
+            totalCandidates: paginatedItems.length,
+            diagnostics: [{
+              code: 'paginated-crawl',
+              message: `${paginatedItems.length} images récupérées depuis ${paginatedInfo.totalPages} pages.`,
+              level: 'info',
+            }],
+          };
+        }
       }
-    }
 
-    const merged = mergePreviewCollections(liveBest, mangaResult, generalResult, paginatedResult);
-    if (merged && merged.items.length > 0) {
-      return merged;
+      const merged = mergePreviewCollections(liveBest, mangaResult, generalResult, paginatedResult);
+      if (merged && merged.items.length > 0) {
+        return merged;
+      }
+    } catch (err) {
+      // Static extraction failed — fall back to live result if available
+      if (liveBest && liveBest.items.length > 0) {
+        return liveBest;
+      }
+      if (!htmlFetchError) throw err;
     }
-  } catch (error) {
-    if (liveBest && liveBest.items.length > 0) {
-      return liveBest;
+  }
+
+  // ── Step 5: Last resort — live scan if we didn't try it yet ─────────────────
+  if (!needsLiveScan && dependencies.scanPage && !liveBest) {
+    try {
+      const liveScan = await dependencies.scanPage(chapterUrl, options);
+      const liveManga = normalizePreviewCollection(liveScan.manga.currentPages, chapterUrl);
+      const liveGeneral = normalizePreviewCollection(liveScan.general, chapterUrl);
+      const result = mergePreviewCollections(liveManga, liveGeneral);
+      if (result && result.items.length > 0) {
+        return result;
+      }
+    } catch {
+      // Ignore
     }
-    throw error;
   }
 
   if (liveBest && liveBest.items.length > 0) {
     return liveBest;
   }
 
+  if (htmlFetchError) {
+    throw htmlFetchError;
+  }
+
+  const strategySignals = strategy ? strategy.signals.join(', ') : 'no-html';
   return {
     items: [],
     totalCandidates: 0,
     diagnostics: [{
       code: 'chapter-preview-empty',
-      message: 'Aucune image de chapitre exploitable detectee.',
+      message: `Aucune image détectée. Stratégie: ${strategy?.strategy ?? 'unknown'} (${strategySignals}).`,
       level: 'warning',
     }],
   };
 }
+
