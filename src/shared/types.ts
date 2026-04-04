@@ -27,6 +27,7 @@ export type ArchiveFormat =
   | 'zip-png'
   | 'zip-webp';
 
+export type ImageResolveMode = 'auto' | 'network-first' | 'capture-first';
 export type CaptureStrategy = 'network' | 'content';
 export type DetectionOrigin = 'live-dom' | 'static-html';
 export type ChapterRelation = 'current' | 'previous' | 'next' | 'listing' | 'candidate';

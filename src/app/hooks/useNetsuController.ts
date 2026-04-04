@@ -9,6 +9,7 @@ import { serializeUpscaleSettings } from '@core/upscale/realesrganModels';
 import { Waifu2xRuntime } from '@core/upscale/waifu2xRuntime';
 import { appReducer, initialAppState } from '@app/state/appState';
 import { useDownloadActions } from '@app/hooks/useDownloadActions';
+import { resolveCandidateImageSrc } from '@app/services/imagePresentation';
 import {
   captureImage,
   fetchBinary,
@@ -226,9 +227,10 @@ export function useNetsuController() {
     async (candidate: ImageCandidate, referrer?: string) => {
       if (!state.source) return;
       const currentSettings = state.upscaleSettings[state.mode];
+      const previewSourceUrl = resolveCandidateImageSrc(candidate);
       const previewState: UpscalePreviewState = {
         sourceImageId: candidate.id,
-        originalUrl: candidate.previewUrl || candidate.url,
+        originalUrl: previewSourceUrl,
         originalReferrer: referrer,
         loading: true,
       };

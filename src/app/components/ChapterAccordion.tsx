@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
+import { resolveCandidateImageMode, resolveCandidateImageSrc } from '@app/services/imagePresentation';
 import { SafeImage } from './SafeImage';
 import { ChevronDownIcon, DownloadIcon } from './icons';
 
@@ -118,47 +119,52 @@ export function ChapterAccordion({
                   className={`grid ${compact ? 'gap-1' : 'gap-1.5'}`}
                   style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))` }}
                 >
-                  {previewItems.map((item, i) => (
-                    <article
-                      key={item.id}
-                      title={item.filenameHint}
-                      className="group relative cursor-pointer overflow-hidden rounded-lg border border-border bg-border/20 transition-colors hover:border-border/80"
-                      onClick={() => onOpenImage(chapter, previewItems, i)}
-                      onKeyDown={(event) => {
-                        if (event.key === ' ' || event.key === 'Enter') {
-                          event.preventDefault();
-                          onOpenImage(chapter, previewItems, i);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <button
-                        type="button"
-                        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-[14px] bg-[rgba(247,249,252,0.78)] text-ink/70 shadow-[0_10px_24px_rgba(15,17,23,0.10)] backdrop-blur-md transition-all duration-200 hover:scale-[1.05] hover:bg-white hover:text-ink"
-                        title="Télécharger l'image"
-                        aria-label="Télécharger l'image"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onDownloadImage(item, chapter);
+                  {previewItems.map((item, i) => {
+                    const imageSrc = resolveCandidateImageSrc(item);
+                    const imageMode = resolveCandidateImageMode(item);
+
+                    return (
+                      <article
+                        key={item.id}
+                        title={item.filenameHint}
+                        className="group relative cursor-pointer overflow-hidden rounded-lg border border-border bg-border/20 transition-colors hover:border-border/80"
+                        onClick={() => onOpenImage(chapter, previewItems, i)}
+                        onKeyDown={(event) => {
+                          if (event.key === ' ' || event.key === 'Enter') {
+                            event.preventDefault();
+                            onOpenImage(chapter, previewItems, i);
+                          }
                         }}
+                        role="button"
+                        tabIndex={0}
                       >
-                        <DownloadIcon size={13} />
-                      </button>
-                      <SafeImage
-                        src={item.previewUrl || item.url}
-                        alt={`Page ${i + 1}`}
-                        referrer={item.referrer || chapter.url}
-                        captureTabId={sourceTabId}
-                        captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
-                        resolveMode={item.origin === 'live-dom' ? 'auto' : 'network-first'}
-                        className="page-thumb transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]"
-                      />
-                      <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-2xs text-white">
-                        {i + 1}
-                      </span>
-                    </article>
-                  ))}
+                        <button
+                          type="button"
+                          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-[14px] bg-[rgba(247,249,252,0.78)] text-ink/70 shadow-[0_10px_24px_rgba(15,17,23,0.10)] backdrop-blur-md transition-all duration-200 hover:scale-[1.05] hover:bg-white hover:text-ink"
+                          title="Télécharger l'image"
+                          aria-label="Télécharger l'image"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDownloadImage(item, chapter);
+                          }}
+                        >
+                          <DownloadIcon size={13} />
+                        </button>
+                        <SafeImage
+                          src={imageSrc}
+                          alt={`Page ${i + 1}`}
+                          referrer={item.referrer || chapter.url}
+                          captureTabId={sourceTabId}
+                          captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
+                          resolveMode={imageMode}
+                          className="page-thumb transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]"
+                        />
+                        <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-0.5 text-2xs text-white">
+                          {i + 1}
+                        </span>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-[11px] text-muted">Aucune page détectée.</p>

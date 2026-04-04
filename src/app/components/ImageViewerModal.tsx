@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImageCandidate, UpscalePreviewState } from '@shared/types';
+import { resolveCandidateImageMode, resolveCandidateImageSrc } from '@app/services/imagePresentation';
 import { formatMediaMeta, resolveMediaName } from '@app/services/mediaMeta';
 import { SafeImage } from './SafeImage';
 import { ChevronDownIcon, CompareIcon, DownloadIcon, XIcon } from './icons';
@@ -85,7 +86,8 @@ export function ImageViewerModal({
 
   const currentIndex = clampIndex(index, items.length);
   const currentItem = items[currentIndex];
-  const currentItemUrl = currentItem ? (currentItem.previewUrl || currentItem.url) : '';
+  const currentItemUrl = currentItem ? resolveCandidateImageSrc(currentItem) : '';
+  const currentItemMode = currentItem ? resolveCandidateImageMode(currentItem) : 'auto';
   const previewMatches = Boolean(
     currentItem &&
     preview &&
@@ -197,7 +199,7 @@ export function ImageViewerModal({
     referrer,
     captureTabId: sourceTabId,
     captureCandidateId: currentItem.origin === 'live-dom' ? currentItem.id : undefined,
-    resolveMode: (currentItem.origin === 'live-dom' ? 'auto' : 'network-first') as 'auto' | 'network-first',
+    resolveMode: currentItemMode,
     className: 'h-full w-full object-contain select-none',
   };
 
@@ -349,7 +351,7 @@ export function ImageViewerModal({
                         style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}
                       >
                         <SafeImage
-                          src={currentItem.previewUrl || currentItem.url}
+                          src={currentItemUrl}
                           alt={currentItem.filenameHint}
                           {...imageProps}
                         />
@@ -378,7 +380,7 @@ export function ImageViewerModal({
                     </>
                   ) : (
                     <SafeImage
-                      src={currentItem.previewUrl || currentItem.url}
+                      src={currentItemUrl}
                       alt={currentItem.filenameHint}
                       {...imageProps}
                     />

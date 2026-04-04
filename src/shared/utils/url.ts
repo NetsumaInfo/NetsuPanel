@@ -43,6 +43,24 @@ export function sameHost(a: string, b: string): boolean {
   return Boolean(left && right && left.host === right.host);
 }
 
+export function isPlaceholderImageUrl(input: string): boolean {
+  if (!input) return true;
+  if (input.startsWith('data:image/svg+xml')) return true;
+  if (input.startsWith('data:image/gif;base64,R0lGOD')) return true;
+  if (input.includes('data:image/png;base64,iVBORw0KGgoAAAANS')) return true;
+  return /\/cdn-cgi\/mirage\/|rocket-loader|cloudflare-static/i.test(input);
+}
+
+export function isKnownImageProxyUrl(input: string): boolean {
+  const parsed = safeUrl(input);
+  if (!parsed) return false;
+  return (
+    /\/_next\/image(?:\/|$)/i.test(parsed.pathname) ||
+    /\/cdn-cgi\/image(?:\/|$)/i.test(parsed.pathname) ||
+    /^i\d+\.wp\.com$/i.test(parsed.hostname)
+  );
+}
+
 function decodeHttpCandidate(value: string | null, baseOrigin?: string): string | null {
   if (!value) return null;
   try {
@@ -61,7 +79,7 @@ function decodeHttpCandidate(value: string | null, baseOrigin?: string): string 
   return null;
 }
 
-export function unwrapProxiedImageUrl(input: string): string {
+function unwrapSingleProxiedImageUrl(input: string): string {
   const parsed = safeUrl(input);
   if (!parsed) return input;
   const origin = `${parsed.protocol}//${parsed.host}`;
@@ -82,4 +100,18 @@ export function unwrapProxiedImageUrl(input: string): string {
   }
 
   return parsed.href;
+}
+
+export function unwrapProxiedImageUrl(input: string): string {
+  let current = input;
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    const next = unwrapSingleProxiedImageUrl(current);
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+
+  return current;
 }

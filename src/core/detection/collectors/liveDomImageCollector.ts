@@ -1,5 +1,5 @@
 import type { RawImageCandidate } from '@shared/types';
-import { resolveUrl } from '@shared/utils/url';
+import { isPlaceholderImageUrl, resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
 import { collectJsonEmbeddedImages } from './jsonEmbeddedCollector';
 import { collectInlineScriptImages } from './inlineScriptCollector';
@@ -75,10 +75,14 @@ function previewFromCanvas(canvas: HTMLCanvasElement): string {
   }
 }
 
-function previewFromImage(image: HTMLImageElement): string {
-  // For network-fetchable images, just use the URL — no data URI needed
-  const networkUrl = image.currentSrc || image.src || '';
-  if (networkUrl && !networkUrl.startsWith('blob:') && !networkUrl.startsWith('data:')) {
+function previewFromImage(image: HTMLImageElement, preferredUrl: string): string {
+  // If we already resolved a direct network image URL, keep it.
+  if (preferredUrl && !preferredUrl.startsWith('blob:') && !preferredUrl.startsWith('data:') && !isPlaceholderImageUrl(preferredUrl)) {
+    return preferredUrl;
+  }
+
+  const networkUrl = unwrapProxiedImageUrl(image.currentSrc || image.src || '');
+  if (networkUrl && !networkUrl.startsWith('blob:') && !networkUrl.startsWith('data:') && !isPlaceholderImageUrl(networkUrl)) {
     return networkUrl;
   }
 
@@ -99,17 +103,6 @@ function previewFromImage(image: HTMLImageElement): string {
   }
 }
 
-// Cloudflare Mirage / WP Rocket replace src with a data:image/svg+xml placeholder
-function isPlaceholderSrc(src: string): boolean {
-  if (!src) return true;
-  if (src.startsWith('data:image/svg+xml')) return true;
-  if (src.startsWith('data:image/gif;base64,R0lGOD')) return true; // classic 1x1 GIF transparent
-  if (src.includes('data:image/png;base64,iVBORw0KGgoAAAANS')) return true; // 1x1 PNG transparent
-  // Cloudflare Mirage placeholder URL pattern
-  if (/\/cdn-cgi\/mirage\/|rocket-loader|cloudflare-static/i.test(src)) return true;
-  return false;
-}
-
 function buildImageCandidate(
   image: HTMLImageElement,
   domIndex: number,
@@ -128,19 +121,20 @@ function buildImageCandidate(
 
   // Check if current src is a Cloudflare placeholder — if so, skip src/currentSrc
   const currentSrcValue = image.currentSrc || image.src || '';
-  const srcIsPlaceholder = isPlaceholderSrc(currentSrcValue);
+  const srcIsPlaceholder = isPlaceholderImageUrl(currentSrcValue);
 
   // Prefer the first data-attribute source (actual high-res)
   // If current src is a Cloudflare placeholder, skip src/currentSrc entries
-  const dataAttrCandidate = resolved.find((d) => d.sourceKind.startsWith('data-') && !isPlaceholderSrc(d.resolved));
-  const nonPlaceholderFallback = resolved.find((d) => !isPlaceholderSrc(d.resolved));
+  const dataAttrCandidate = resolved.find((d) => d.sourceKind.startsWith('data-') && !isPlaceholderImageUrl(d.resolved));
+  const nonPlaceholderFallback = resolved.find((d) => !isPlaceholderImageUrl(d.resolved));
   const selected = dataAttrCandidate || (srcIsPlaceholder ? null : nonPlaceholderFallback) || nonPlaceholderFallback;
   if (!selected?.resolved) return null;
 
   const rect = image.getBoundingClientRect();
   const style = window.getComputedStyle(image);
   const id = `image-${domIndex}`;
-  const isBlobOrData = selected.resolved.startsWith('blob:') || selected.resolved.startsWith('data:');
+  const selectedUrl = unwrapProxiedImageUrl(selected.resolved);
+  const isBlobOrData = selectedUrl.startsWith('blob:') || selectedUrl.startsWith('data:');
   const captureStrategy = isBlobOrData ? 'content' : 'network';
   capturables.set(id, image);
 
@@ -152,8 +146,8 @@ function buildImageCandidate(
 
   return {
     id,
-    url: selected.resolved,
-    previewUrl: isPlaceholderSrc(selected.resolved) ? '' : (previewFromImage(image) || selected.resolved),
+    url: selectedUrl,
+    previewUrl: isPlaceholderImageUrl(selectedUrl) ? '' : (previewFromImage(image, selectedUrl) || selectedUrl),
     captureStrategy,
     sourceKind: selected.sourceKind,
     origin: 'live-dom',

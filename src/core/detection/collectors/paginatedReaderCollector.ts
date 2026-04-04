@@ -12,6 +12,9 @@
  * 4. Fournit des URLs de pages pour crawl optionnel
  */
 
+import { readImageSourceDescriptors } from './imageAttributeSources';
+import { isPlaceholderImageUrl, resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+
 export interface PaginatedReaderInfo {
   /** Whether this appears to be a paginated reader */
   isPaginatedReader: boolean;
@@ -234,27 +237,22 @@ function extractCurrentPageImage(doc: Document, baseUrl: string): string | null 
     const img = el instanceof HTMLImageElement ? el : el.querySelector('img');
     if (!img) continue;
 
-    const src =
-      img.getAttribute('data-cfsrc') ||
-      img.getAttribute('data-src') ||
-      img.getAttribute('data-lazy-src') ||
-      img.getAttribute('data-original') ||
-      img.getAttribute('data-url') ||
-      img.currentSrc ||
-      img.getAttribute('src') ||
-      '';
+    const descriptors = readImageSourceDescriptors(img)
+      .map((descriptor) => ({
+        ...descriptor,
+        resolved: resolveUrl(descriptor.value, baseUrl),
+      }))
+      .filter((descriptor) => Boolean(descriptor.resolved));
+    const selected = descriptors.find(
+      (descriptor) =>
+        descriptor.resolved &&
+        !isPlaceholderImageUrl(descriptor.resolved) &&
+        isLikelyImageResourceUrl(descriptor.resolved)
+    );
 
-    if (!src || src.startsWith('data:image/svg+xml') || src.startsWith('data:image/gif;base64,R0lGOD')) {
-      continue;
+    if (selected?.resolved) {
+      return unwrapProxiedImageUrl(selected.resolved);
     }
-
-    try {
-      const resolved = new URL(src, baseUrl).href;
-      if (!isLikelyImageResourceUrl(resolved)) {
-        continue;
-      }
-      return resolved;
-    } catch { /* skip */ }
   }
 
   return null;

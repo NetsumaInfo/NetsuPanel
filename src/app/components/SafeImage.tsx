@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { captureImage, fetchBinary } from '@app/services/runtimeClient';
+import type { ImageResolveMode } from '@shared/types';
 import { isSafeRenderableImageSrc } from '@shared/utils/resourcePolicy';
+import { isKnownImageProxyUrl } from '@shared/utils/url';
 
 interface SafeImageProps {
   src: string;
@@ -12,7 +14,7 @@ interface SafeImageProps {
   /** 'auto' = try native src first, then fetch on error
    *  'network-first' = try native img first, background fetch on error
    *  'capture-first' = live-DOM canvas capture first */
-  resolveMode?: 'auto' | 'network-first' | 'capture-first';
+  resolveMode?: ImageResolveMode;
 }
 
 type Phase =
@@ -107,34 +109,36 @@ async function fetchBinaryWithRetry(
   // referrer/tab combinations to find one that passes protection.
   const strategies: Array<() => Promise<{ bytes: ArrayBuffer; mime: string }>> = [];
 
-  // Strategy 1: background-only fetch with referrer and DNR-injected Referer
-  // (no tabId → skips page-world/content-script entirely)
-  if (referrer) {
-    strategies.push(() => fetchBinary(src, { referrer }));
-  }
-
-  // Strategy 2: page-world fetch via source tab (uses page cookies)
+  // Strategy 1: source-tab-aware fetch with referrer.
+  // This gives the background access to page-world/content-script fallbacks
+  // when the image is same-origin with the reader tab.
   if (tabId) {
     strategies.push(() => fetchBinary(src, { referrer, tabId }));
   }
 
-  // Strategy 3: background fetch with origin-only referrer
+  // Strategy 2: background-only fetch with referrer and DNR-injected Referer.
+  if (referrer) {
+    strategies.push(() => fetchBinary(src, { referrer }));
+  }
+
+  // Strategy 3/4: relax the referrer to strict-origin style.
   if (referrer) {
     try {
       const originRef = new URL(referrer).origin + '/';
       if (originRef !== referrer) {
+        if (tabId) {
+          strategies.push(() => fetchBinary(src, { referrer: originRef, tabId }));
+        }
         strategies.push(() => fetchBinary(src, { referrer: originRef }));
       }
     } catch { /* ignore */ }
   }
 
-  // Strategy 4: background fetch without any referrer
-  strategies.push(() => fetchBinary(src, {}));
-
-  // Strategy 5: page-world fetch without referrer
+  // Strategy 5/6: last resort without referrer.
   if (tabId) {
     strategies.push(() => fetchBinary(src, { tabId }));
   }
+  strategies.push(() => fetchBinary(src, {}));
 
   for (let i = 0; i < strategies.length; i++) {
     try {
@@ -189,18 +193,25 @@ export function SafeImage({
 
   const isSafe = isSafeRenderableImageSrc(src);
   const isNetworkUrl = /^https?:\/\//i.test(src);
+  const shouldAutoPreferCapture = (
+    /^content:\/\//i.test(src) ||
+    /^blob:/i.test(src) ||
+    !isSafe ||
+    isKnownImageProxyUrl(src)
+  );
+  // capture-first: explicit mode, or live-dom images with a candidate ID
   const forceCaptureFirst = resolveMode === 'capture-first' || (
     resolveMode === 'auto' &&
     Boolean(captureTabId) &&
     Boolean(captureCandidateId) &&
-    isNetworkUrl &&
-    (() => {
-      try {
-        const p = new URL(src).pathname;
-        return p.startsWith('/_next/image') || p.startsWith('/cdn-cgi/image');
-      } catch { return false; }
-    })()
+    shouldAutoPreferCapture
   );
+  // network-first: explicitly requested OR the image URL indicates a proxy
+  // In this mode we skip the native <img> and go straight to background fetch.
+  // This is essential for hotlink-protected images (the extension page has
+  // no origin that would pass the Referer check).
+  const forceNetworkFetch = resolveMode === 'network-first' ||
+    (resolveMode === 'auto' && isNetworkUrl && !!referrer && isKnownImageProxyUrl(src));
 
   // ── Effect: reset when src changes ─────────────────────────────────────────
   useEffect(() => {
@@ -215,27 +226,27 @@ export function SafeImage({
       return;
     }
 
-    // 2. capture-first → fetch immediately
+    // 2. capture-first → go straight to source-tab capture / fetch resolution.
     if (forceCaptureFirst) {
       dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
       void resolveViaFetch(attempt, cacheKey);
       return;
     }
 
-    // 3. ALL modes (including 'network-first') → try native img tag first.
-    //    The extension's CSP allows img-src https:.
-    //    If the server serves the image, great — the browser handles cookies
-    //    and referrer natively.  If it fails (403 / CORS / hotlink),
-    //    handleNativeError kicks off the background fetch fallback.
-    if (isSafe) {
-      dispatch({ type: 'reset', attempt, displaySrc: src, phase: 'native' });
-    } else if (isNetworkUrl) {
-      // URL is valid http(s) but has something unsafe for direct rendering
-      dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
-      void resolveViaFetch(attempt, cacheKey);
-    } else {
-      dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'failed' });
+    // 3. network-first or unsafe src → resolve through the background bridge.
+    if (forceNetworkFetch || !isSafe) {
+      if (isNetworkUrl) {
+        dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'fetching' });
+        void resolveViaFetch(attempt, cacheKey);
+      } else {
+        dispatch({ type: 'reset', attempt, displaySrc: '', phase: 'failed' });
+      }
+      return;
     }
+
+    // 4. 'auto' mode with a safe URL → try native img tag first (fastest path).
+    //    onError will trigger background fetch if it fails.
+    dispatch({ type: 'reset', attempt, displaySrc: src, phase: 'native' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, referrer, captureTabId, captureCandidateId, resolveMode]);
 
@@ -249,8 +260,9 @@ export function SafeImage({
       try {
         if (attempt !== attemptRef.current) return;
 
-        // Try canvas capture first if requested
-        if (forceCaptureFirst && captureTabId && captureCandidateId) {
+        // Try canvas capture first if we have a candidate ID
+        // (works for live-dom images where the tab is still open)
+        if (captureTabId && captureCandidateId) {
           try {
             const res = await fetchWithTimeout(
               captureImage(captureTabId, captureCandidateId),
@@ -263,7 +275,7 @@ export function SafeImage({
             }
             return;
           } catch {
-            // fall through to network fetch
+            // Tab may be closed — fall through to network fetch
           }
         }
 

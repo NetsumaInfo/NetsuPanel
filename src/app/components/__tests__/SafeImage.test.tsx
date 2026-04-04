@@ -56,6 +56,24 @@ describe('SafeImage', () => {
     expect(fetchBinary).not.toHaveBeenCalled();
   });
 
+  test('keeps native loading in auto mode when the direct image URL is already usable', async () => {
+    render(
+      <SafeImage
+        src="https://cdn.example.com/chapter-2/page-003.jpg"
+        alt="Page 3"
+        captureTabId={12}
+        captureCandidateId="image-9"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByAltText('Page 3')).toHaveAttribute('src', 'https://cdn.example.com/chapter-2/page-003.jpg');
+    });
+
+    expect(captureImage).not.toHaveBeenCalled();
+    expect(fetchBinary).not.toHaveBeenCalled();
+  });
+
   test('supports network-first mode for protected chapter previews', async () => {
     (fetchBinary as jest.Mock).mockResolvedValue({
       bytes: new Uint8Array([5, 6, 7, 8]).buffer,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ImageCandidate } from '@shared/types';
 import type { GeneralImageSection } from '@app/services/generalImageView';
+import { resolveCandidateImageMode, resolveCandidateImageSrc } from '@app/services/imagePresentation';
 import { formatMediaMeta, resolveMediaName } from '@app/services/mediaMeta';
 import { SafeImage } from './SafeImage';
 import { CheckIcon, DownloadIcon, ImageIcon } from './icons';
@@ -142,6 +143,8 @@ export function GeneralGrid({
               >
                 {section.items.map((item) => {
                   const isSelected = Boolean(selected[item.id]);
+                  const imageSrc = resolveCandidateImageSrc(item);
+                  const imageMode = resolveCandidateImageMode(item);
                   return (
                     <article
                       key={item.id}
@@ -175,11 +178,12 @@ export function GeneralGrid({
                       </button>
 
                       <SafeImage
-                        src={item.previewUrl || item.url}
+                        src={imageSrc}
                         alt={item.filenameHint}
                         referrer={item.referrer || referrer}
                         captureTabId={sourceTabId}
                         captureCandidateId={item.origin === 'live-dom' ? item.id : undefined}
+                        resolveMode={imageMode}
                         className={`${compact ? 'aspect-[3/4]' : 'aspect-[4/5]'} w-full object-contain bg-border/20 transition-transform duration-200 ease-out group-hover:scale-[1.025] group-focus-within:scale-[1.025]`}
                       />
 
