@@ -123,9 +123,6 @@ function isLikelyHiddenElement(element: Element): boolean {
   if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') {
     return true;
   }
-  if (element.getAttribute('data-state') === 'inactive') {
-    return true;
-  }
   if (element instanceof HTMLElement) {
     const style = window.getComputedStyle?.(element);
     if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) {

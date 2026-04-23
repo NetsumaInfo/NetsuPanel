@@ -169,7 +169,7 @@ describe('buildImageCollection — mode general', () => {
     expect(result.items.some((item) => item.url.includes('thumbnail'))).toBe(true);
   });
 
-  test('rejects social/logo decorative assets even when encoded in URL query', () => {
+  test('keeps social/logo decorative assets in general mode', () => {
     const candidates = [
       makeMangaCandidate({
         id: 'discord',
@@ -193,7 +193,6 @@ describe('buildImageCollection — mode general', () => {
     ];
 
     const result = buildImageCollection(candidates, 'general');
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.id).toBe('page');
+    expect(result.items.map((item) => item.id).sort()).toEqual(['discord', 'next-logo', 'page']);
   });
 });

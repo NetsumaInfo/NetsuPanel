@@ -387,11 +387,15 @@ function pickBestChapterCluster(candidates: ChapterLinkCandidate[]): ChapterLink
 
 function pickBestChapterSet(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
   const cluster = pickBestChapterCluster(candidates);
+  const numbered = candidates.filter((candidate) => candidate.chapterNumber !== null && candidate.score >= 18);
+  if (numbered.length >= Math.max(4, Math.ceil(cluster.length * 1.35))) {
+    return numbered;
+  }
+
   if (cluster.length >= 4) {
     return cluster;
   }
 
-  const numbered = candidates.filter((candidate) => candidate.chapterNumber !== null && candidate.score >= 18);
   if (numbered.length >= 4) {
     return numbered;
   }

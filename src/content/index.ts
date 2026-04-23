@@ -18,13 +18,14 @@ declare global {
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
 const STABILIZE_DELAYS = [60, 120, 220, 360, 500];
-const LAZY_SCROLL_WAIT_MS = 250;
-const LAZY_SETTLE_WAIT_MS = 600;
-const RECHECK_DELAY_MS = 300;
+const LAZY_SCROLL_WAIT_MS = 120;
+const LAZY_SETTLE_WAIT_MS = 260;
+const RECHECK_DELAY_MS = 160;
 const MAX_LAZY_SCROLL = 120000;
-const MAX_LAZY_STEPS = 60;
-const MAX_LAZY_PASSES = 5;
-const MAX_SCAN_DURATION_MS = 12000;
+const MAX_LAZY_STEPS = 24;
+const MAX_LAZY_PASSES = 3;
+const MAX_SCAN_DURATION_MS = 6500;
+const HYDRATE_SETTLE_WAIT_MS = 220;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,38 +78,23 @@ function pickLazyImageSource(image: HTMLImageElement): string | null {
 
 async function eagerlyHydrateImages(): Promise<void> {
   const images = Array.from(document.querySelectorAll<HTMLImageElement>('img'));
+  let touched = false;
 
-  await Promise.allSettled(
-    images.map(async (image) => {
-      image.loading = 'eager';
-      image.decoding = 'async';
+  for (const image of images) {
+    image.loading = 'eager';
+    image.decoding = 'async';
 
-      const currentSrc = image.currentSrc || image.src || '';
-      const preferredSrc = pickLazyImageSource(image);
-      if ((!currentSrc || isPlaceholderSrc(currentSrc) || image.naturalWidth === 0) && preferredSrc && preferredSrc !== currentSrc) {
-        image.src = preferredSrc;
-      }
+    const currentSrc = image.currentSrc || image.src || '';
+    const preferredSrc = pickLazyImageSource(image);
+    if ((!currentSrc || isPlaceholderSrc(currentSrc) || image.naturalWidth === 0) && preferredSrc && preferredSrc !== currentSrc) {
+      image.src = preferredSrc;
+      touched = true;
+    }
+  }
 
-      if (image.complete && image.naturalWidth > 0) {
-        return;
-      }
-
-      await Promise.race([
-        image.decode().catch(() => undefined),
-        new Promise<void>((resolve) => {
-          const finalize = () => {
-            image.removeEventListener('load', finalize);
-            image.removeEventListener('error', finalize);
-            resolve();
-          };
-          image.addEventListener('load', finalize, { once: true });
-          image.addEventListener('error', finalize, { once: true });
-          // 3 s budget per image gives slow manga CDNs enough time
-          setTimeout(finalize, 3000);
-        }),
-      ]);
-    })
-  );
+  if (touched || images.some((image) => !image.complete || image.naturalWidth === 0)) {
+    await sleep(HYDRATE_SETTLE_WAIT_MS);
+  }
 }
 
 function getScrollElement(): HTMLElement {

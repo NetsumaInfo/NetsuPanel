@@ -6,6 +6,39 @@ import { isLikelyDecorative, scoreImageCandidate } from './scoreImageCandidate';
 
 const PAGE_NUMBER_RE =
   /(?:^|[/_\-\s(])(?:page|pg|p|img|image)[._\-\s#]*(\d{1,4})(?=$|[/)_\-\s.#?])|(?:^|[/_\-\s(])0*(\d{1,4})(?=\.(?:jpe?g|png|webp|avif|gif)(?:$|[?#]))/i;
+const IMAGE_EXTENSION_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp|svg)(?:$|[?#])/i;
+const CACHE_BUSTER_QUERY_KEYS = new Set([
+  '_',
+  'cache',
+  'cb',
+  't',
+  'ts',
+  'timestamp',
+  'ver',
+  'version',
+  'w',
+  'h',
+  'width',
+  'height',
+  'q',
+  'quality',
+  'fit',
+  'format',
+  'fm',
+]);
+const IDENTITY_QUERY_KEYS = new Set([
+  'url',
+  'src',
+  'file',
+  'image',
+  'img',
+  'path',
+  'id',
+  'page',
+  'p',
+  'no',
+  'name',
+]);
 
 function extractPageNumber(input: string): number | null {
   const match = input.match(PAGE_NUMBER_RE);
@@ -55,6 +88,36 @@ function keepBestDuplicate(left: ImageCandidate, right: ImageCandidate): ImageCa
   if (right.score !== left.score) return right.score > left.score ? right : left;
   if (right.area !== left.area) return right.area > left.area ? right : left;
   return right.domIndex < left.domIndex ? right : left;
+}
+
+function buildDedupeKey(candidate: ImageCandidate): string {
+  if (/^(?:data|blob):/i.test(candidate.url)) {
+    return `${candidate.captureStrategy}:${candidate.url}`;
+  }
+
+  try {
+    const parsed = new URL(candidate.url);
+    const hasImagePath = IMAGE_EXTENSION_RE.test(parsed.pathname);
+    const identityParams = new URLSearchParams();
+    const fallbackParams = new URLSearchParams();
+
+    parsed.searchParams.forEach((value, key) => {
+      const normalizedKey = key.toLowerCase();
+      if (IDENTITY_QUERY_KEYS.has(normalizedKey)) {
+        identityParams.append(key, value);
+        return;
+      }
+      if (!CACHE_BUSTER_QUERY_KEYS.has(normalizedKey)) {
+        fallbackParams.append(key, value);
+      }
+    });
+
+    const significantParams = identityParams.toString() || (!hasImagePath ? fallbackParams.toString() : '');
+    const normalizedUrl = `${parsed.origin}${parsed.pathname}${significantParams ? `?${significantParams}` : ''}`;
+    return `${candidate.captureStrategy}:${normalizedUrl}`;
+  } catch {
+    return `${candidate.captureStrategy}:${candidate.querylessUrl || candidate.canonicalUrl || candidate.url}`;
+  }
 }
 
 function sortCandidates(items: ImageCandidate[]): ImageCandidate[] {
@@ -161,36 +224,7 @@ export function buildImageCollection(
 
     const hasDimensions = normalized.width > 0 && normalized.height > 0;
 
-    if (mode === 'general') {
-      // General mode: show ALL images with a valid URL.
-      // Only skip genuinely micro images (both dims known AND both < 50px = likely icon/pixel)
-      const isMicro = hasDimensions && normalized.width < 50 && normalized.height < 50;
-      const isDecorativeUnknown =
-        isLikelyDecorative(normalized.url) &&
-        (!hasDimensions || maxDim < 320);
-      const isLowSignalScriptCandidate =
-        (normalized.sourceKind === 'inline-script' || normalized.sourceKind === 'json-embedded') &&
-        !hasDimensions &&
-        normalized.score < 24;
-      if (isMicro) {
-        diagnostics.push({
-          code: 'image-rejected-micro',
-          message: `Rejected micro image ${normalized.filenameHint}.`,
-          level: 'info',
-          candidateId: normalized.id,
-        });
-        continue;
-      }
-      if (isDecorativeUnknown || isLowSignalScriptCandidate) {
-        diagnostics.push({
-          code: 'image-rejected-decorative',
-          message: `Rejected decorative/low-signal image ${normalized.filenameHint}.`,
-          level: 'info',
-          candidateId: normalized.id,
-        });
-        continue;
-      }
-    } else {
+    if (mode !== 'general') {
       // Manga mode: strict filtering
       const minSizeThreshold = 150;
       const minScoreThreshold = 12;
@@ -211,7 +245,7 @@ export function buildImageCollection(
     const dedupeKey =
       normalized.captureStrategy === 'content'
         ? `${normalized.captureStrategy}:${normalized.id}`
-        : `${normalized.captureStrategy}:${normalized.querylessUrl}`;
+        : buildDedupeKey(normalized);
     const existing = deduped.get(dedupeKey);
     deduped.set(dedupeKey, existing ? keepBestDuplicate(existing, normalized) : normalized);
   }

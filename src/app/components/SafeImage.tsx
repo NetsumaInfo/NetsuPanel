@@ -61,7 +61,7 @@ function cacheSet(key: string, url: string): void {
 }
 
 // ── Fetch concurrency semaphore ───────────────────────────────────────────────
-const MAX_CONCURRENT = 12;
+const MAX_CONCURRENT = 8;
 let activeFetches = 0;
 const fetchQueue: Array<() => void> = [];
 

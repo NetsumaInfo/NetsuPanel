@@ -10,7 +10,7 @@ import { fetchBinaryResource, fetchDocumentHtml } from './fetch';
 const LAST_SOURCE_TAB_ID_KEY = 'lastSourceTabId';
 const APP_PAGE_PATH = 'app.html';
 const remoteScanTaskRegistry = new Map<string, Promise<unknown>>();
-const REMOTE_SCAN_RETRY_DELAYS_MS = [900, 1800];
+const REMOTE_SCAN_RETRY_DELAYS_MS = [600, 1200];
 
 interface PageWorldBinaryResult {
   ok: boolean;
@@ -74,7 +74,7 @@ async function waitForTabReady(tabId: number, timeoutMs = 25_000): Promise<void>
   const existing = await browser.tabs.get(tabId);
   if (existing.status === 'complete') {
     // Even when 'complete', JS manga readers may still be rendering images
-    await sleep(1200);
+    await sleep(500);
     return;
   }
 
@@ -95,7 +95,7 @@ async function waitForTabReady(tabId: number, timeoutMs = 25_000): Promise<void>
   });
 
   // Extra time for JS-heavy manga readers to finish their initial render
-  await sleep(1500);
+  await sleep(700);
 }
 
 async function triggerLazyLoadInTab(tabId: number): Promise<void> {
@@ -131,7 +131,7 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
           return null;
         };
 
-        const loadImage = async (image: HTMLImageElement): Promise<void> => {
+        const prepareImage = (image: HTMLImageElement): void => {
           image.loading = 'eager';
           image.decoding = 'async';
           const nextSrc = chooseImageSource(image);
@@ -140,53 +140,33 @@ async function triggerLazyLoadInTab(tabId: number): Promise<void> {
           if ((!currentSrc || PLACEHOLDER_RE.test(currentSrc) || image.naturalWidth === 0) && nextSrc && nextSrc !== currentSrc) {
             image.src = nextSrc;
           }
-
-          if (image.complete && image.naturalWidth > 0) {
-            return;
-          }
-
-          await Promise.race([
-            image.decode().catch(() => undefined),
-            new Promise<void>((resolve) => {
-              const finalize = () => {
-                image.removeEventListener('load', finalize);
-                image.removeEventListener('error', finalize);
-                resolve();
-              };
-              image.addEventListener('load', finalize, { once: true });
-              image.addEventListener('error', finalize, { once: true });
-              // Give images more time to load on slow manga servers
-              setTimeout(finalize, 3000);
-            }),
-          ]);
         };
 
-        // First pass: hydrate ALL images currently in the DOM (no cap)
+        // First pass: hydrate source attributes without blocking on full decode.
         const allImages = () => Array.from(document.querySelectorAll<HTMLImageElement>('img'));
-        await Promise.allSettled(allImages().map((image) => loadImage(image)));
+        allImages().forEach((image) => prepareImage(image));
+        await new Promise((resolve) => setTimeout(resolve, 260));
 
         const totalHeight = Math.max(
           document.body?.scrollHeight || 0,
           document.documentElement?.scrollHeight || 0
         );
-        // More granular steps (viewport-height increments) with longer pauses
+        // Viewport-height increments trigger IntersectionObserver lazy loaders.
         const viewportHeight = window.innerHeight || 900;
-        const steps = Math.max(6, Math.min(40, Math.ceil(totalHeight / viewportHeight)));
+        const steps = Math.max(4, Math.min(24, Math.ceil(totalHeight / viewportHeight)));
         for (let i = 0; i < steps; i += 1) {
           const ratio = steps === 1 ? 1 : i / (steps - 1);
           const y = Math.round(totalHeight * ratio);
           window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
-          // Longer pause so IntersectionObserver callbacks fire and images start loading
-          await new Promise((resolve) => setTimeout(resolve, 350));
+          await new Promise((resolve) => setTimeout(resolve, 160));
         }
         // Scroll back to top so readers that load prev/next pages don't get confused
         window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
         // Wait for any remaining network requests triggered by the scroll
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await new Promise((resolve) => setTimeout(resolve, 360));
         // Second pass: hydrate again after scroll (new images may have been inserted)
-        await Promise.allSettled(allImages().map((image) => loadImage(image)));
-        // Final settlement wait
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        allImages().forEach((image) => prepareImage(image));
+        await new Promise((resolve) => setTimeout(resolve, 260));
       },
     });
   } catch {

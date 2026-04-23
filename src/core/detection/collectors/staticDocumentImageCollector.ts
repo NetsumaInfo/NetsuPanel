@@ -31,16 +31,7 @@ export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): 
       }))
       .filter((descriptor) => Boolean(descriptor.resolved));
     const selected = descriptors.find(
-      (descriptor) =>
-        descriptor.resolved &&
-        !isPlaceholderImageUrl(descriptor.resolved) &&
-        !/^data:image\/svg\+xml/i.test(descriptor.resolved) &&
-        !/\.svg(?:$|[?#])/i.test(descriptor.resolved)
-    ) || descriptors.find(
-      (descriptor) =>
-        descriptor.resolved &&
-        !/^data:image\/svg\+xml/i.test(descriptor.resolved) &&
-        !/\.svg(?:$|[?#])/i.test(descriptor.resolved)
+      (descriptor) => descriptor.resolved && !isPlaceholderImageUrl(descriptor.resolved)
     );
     if (!selected?.resolved) return;
 

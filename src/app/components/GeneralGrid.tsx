@@ -22,8 +22,8 @@ interface GeneralGridProps {
   onOpen(candidate: ImageCandidate): void;
 }
 
-const INITIAL_RENDER_COUNT = 72;
-const RENDER_BATCH_SIZE = 48;
+const INITIAL_RENDER_COUNT = 48;
+const RENDER_BATCH_SIZE = 32;
 
 export function GeneralGrid({
   items,

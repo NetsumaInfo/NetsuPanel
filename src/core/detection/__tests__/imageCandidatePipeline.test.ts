@@ -70,6 +70,35 @@ describe('buildImageCollection', () => {
     expect(result.items[0].querylessUrl).toContain('page-001.jpg');
   });
 
+  it('keeps distinct dynamic image URLs that only differ by identity query params', () => {
+    const candidates = [
+      createCandidate(0, {
+        id: 'next-1',
+        url: 'https://reader.example.com/_next/image?url=%2Fpages%2F001.jpg&w=1080&q=75',
+        previewUrl: 'https://reader.example.com/_next/image?url=%2Fpages%2F001.jpg&w=1080&q=75',
+      }),
+      createCandidate(1, {
+        id: 'next-2',
+        url: 'https://reader.example.com/_next/image?url=%2Fpages%2F002.jpg&w=1080&q=75',
+        previewUrl: 'https://reader.example.com/_next/image?url=%2Fpages%2F002.jpg&w=1080&q=75',
+      }),
+      createCandidate(2, {
+        id: 'dynamic-1',
+        url: 'https://reader.example.com/image.php?id=page-003&cache=123',
+        previewUrl: 'https://reader.example.com/image.php?id=page-003&cache=123',
+      }),
+      createCandidate(3, {
+        id: 'dynamic-2',
+        url: 'https://reader.example.com/image.php?id=page-004&cache=456',
+        previewUrl: 'https://reader.example.com/image.php?id=page-004&cache=456',
+      }),
+    ];
+
+    const result = buildImageCollection(candidates, 'general');
+
+    expect(result.items.map((item) => item.id)).toEqual(['next-1', 'next-2', 'dynamic-1', 'dynamic-2']);
+  });
+
   it('does not treat chapter numbers in path segments as page numbers', () => {
     const result = buildImageCollection(
       [

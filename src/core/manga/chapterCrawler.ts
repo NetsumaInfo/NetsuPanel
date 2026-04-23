@@ -25,6 +25,7 @@ export interface ChapterCrawlerDependencies {
 
 const DEFAULT_LINEAR_CHAPTER_LIMIT = 64;
 const DEFAULT_DISCOVERY_TIME_BUDGET_MS = 7_000;
+const DEFAULT_LISTING_PAGE_LIMIT = 24;
 const SVG_URL_RE = /^data:image\/svg\+xml/i;
 const RASTER_HINT_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i;
 
@@ -41,6 +42,28 @@ function isRasterPreviewCandidate(item: ImageCandidate): boolean {
   if (hasDimensions && Math.max(item.width, item.height) < 120) return false;
 
   return true;
+}
+
+function looksLikeChapterPreviewTarget(url: string, document?: Document): boolean {
+  const text = `${url} ${document?.title || ''}`.toLowerCase();
+  if (/(chapter|chapitre|episode|viewer|reader|read|scan|manga|manhwa|manhua|comic|webtoon)/i.test(text)) {
+    return true;
+  }
+
+  return Boolean(
+    document?.querySelector(
+      [
+        '.reading-content',
+        '.reader-area',
+        '.chapter-content',
+        '.wp-manga-chapter-img',
+        '.page-break img',
+        '#readerarea img',
+        '#scansPlacement img',
+        '.viewer_lst img',
+      ].join(', ')
+    )
+  );
 }
 
 function normalizePreviewCollection(
@@ -338,15 +361,7 @@ function sortChapterItems(items: ChapterItem[]): ChapterItem[] {
   });
 }
 
-async function scanRemotePage(
-  url: string,
-  dependencies: ChapterCrawlerDependencies,
-  options: { referrer?: string; tabId?: number } = {}
-): Promise<PageScanResult> {
-  if (dependencies.scanPage) {
-    return dependencies.scanPage(url, options);
-  }
-  const html = await dependencies.fetchDocument(url, options);
+function scanStaticPageHtml(url: string, html: string): PageScanResult {
   const document = parseRemoteDocument(html);
   return scanPageDocument({
     document,
@@ -354,6 +369,61 @@ async function scanRemotePage(
     origin: 'static-html',
     imageCandidates: collectRemoteImageCandidates(document, url),
   });
+}
+
+function scanStaticChapterListing(url: string, document: Document): PageScanResult {
+  return scanPageDocument({
+    document,
+    page: buildPageIdentity(url, document),
+    origin: 'static-html',
+    imageCandidates: [],
+  });
+}
+
+function hasUsefulRemoteScanSignals(scan: PageScanResult): boolean {
+  const navigation = scan.manga.navigation;
+  return (
+    scan.manga.chapters.length > 1 ||
+    scan.manga.currentPages.items.length >= 3 ||
+    Boolean(navigation.previous || navigation.next || navigation.listing)
+  );
+}
+
+function mergeChaptersFromScan(scan: PageScanResult, accumulator: Map<string, ChapterItem>): void {
+  scan.manga.chapters.forEach((chapter) => {
+    addChapterItem(accumulator, chapterLinkToItem(chapter));
+  });
+}
+
+async function scanRemotePage(
+  url: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number } = {}
+): Promise<PageScanResult> {
+  let staticScan: PageScanResult | null = null;
+  let staticError: unknown = null;
+  try {
+    const html = await dependencies.fetchDocument(url, options);
+    staticScan = scanStaticPageHtml(url, html);
+    if (!dependencies.scanPage || hasUsefulRemoteScanSignals(staticScan)) {
+      return staticScan;
+    }
+  } catch (error) {
+    staticError = error;
+  }
+
+  if (dependencies.scanPage) {
+    try {
+      return await dependencies.scanPage(url, options);
+    } catch (error) {
+      if (staticScan) return staticScan;
+      if (staticError) throw staticError;
+      throw error;
+    }
+  }
+
+  if (staticError) throw staticError;
+  throw new Error(`Unable to scan remote page: ${url}`);
 }
 
 interface LinearWalkContext {
@@ -396,11 +466,16 @@ function extractListingPaginationUrls(document: Document, listingUrl: string): s
       const parsed = new URL(href, listingUrl);
       if (parsed.host !== parsedListing.host) continue;
       const pageMatch = parsed.pathname.match(/\/page\/(\d+)(?:\/|$)/i);
-      if (!pageMatch) continue;
+      const queryPage =
+        parsed.searchParams.get('page') ||
+        parsed.searchParams.get('paged') ||
+        parsed.searchParams.get('p');
+      const pageNumber = pageMatch ? Number(pageMatch[1]) : Number(queryPage);
+      if (!Number.isFinite(pageNumber) || pageNumber <= 1) continue;
       resolved = parsed.href;
       if (seen.has(resolved)) continue;
       seen.add(resolved);
-      results.push({ url: resolved, page: Number(pageMatch[1]) });
+      results.push({ url: resolved, page: pageNumber });
     } catch {
       // ignore malformed URLs
     }
@@ -505,45 +580,58 @@ export async function discoverChapters(
     addChapterItem(accumulator, chapterLinkToItem(chapter));
   });
 
+  const fetchAndMergeListingPage = async (
+    pageUrl: string,
+    requestOptions: { referrer?: string; tabId?: number }
+  ): Promise<Document | null> => {
+    try {
+      const html = await dependencies.fetchDocument(pageUrl, requestOptions);
+      const doc = parseRemoteDocument(html);
+      const scan = scanStaticChapterListing(pageUrl, doc);
+      mergeChaptersFromScan(scan, accumulator);
+      mergeRawChapterCandidatesFromDocument(doc, pageUrl, accumulator);
+      return doc;
+    } catch {
+      return null;
+    }
+  };
+
   const listingUrl = initialScan.manga.navigation.listing?.url;
   if ((options.includeListingFetch ?? true) && listingUrl && Date.now() <= context.deadline) {
-    try {
-      const listingScan = await getRemoteScan(listingUrl, fetchOptions);
-      listingScan.manga.chapters.forEach((chapter) => {
-        addChapterItem(accumulator, chapterLinkToItem(chapter));
-      });
+    const beforeListingCount = accumulator.size;
+    const listingDoc = await fetchAndMergeListingPage(listingUrl, fetchOptions);
 
-      // Some chapter lists are paginated (/page/2, /page/3...). Fetch additional listing pages.
-      const listingHtml = await dependencies.fetchDocument(listingUrl, fetchOptions);
-      const listingDoc = parseRemoteDocument(listingHtml);
-      mergeRawChapterCandidatesFromDocument(listingDoc, listingUrl, accumulator);
+    if (!listingDoc && dependencies.scanPage && Date.now() <= context.deadline) {
+      try {
+        const listingScan = await getRemoteScan(listingUrl, fetchOptions);
+        mergeChaptersFromScan(listingScan, accumulator);
+      } catch {
+        // Keep chapter list from initial scan when listing live scan is denied.
+      }
+    }
+
+    if (listingDoc) {
       const listingPages = extractListingPaginationUrls(listingDoc, listingUrl).slice(
         0,
-        Math.max(0, options.maxListingPages ?? 8)
+        Math.max(0, options.maxListingPages ?? DEFAULT_LISTING_PAGE_LIMIT)
       );
 
       for (const listingPageUrl of listingPages) {
         if (Date.now() > context.deadline) break;
-        try {
-          const pagedScan = await getRemoteScan(listingPageUrl, {
-            ...fetchOptions,
-            referrer: listingUrl,
-          });
-          pagedScan.manga.chapters.forEach((chapter) => {
-            addChapterItem(accumulator, chapterLinkToItem(chapter));
-          });
-          const pagedHtml = await dependencies.fetchDocument(listingPageUrl, {
-            ...fetchOptions,
-            referrer: listingUrl,
-          });
-          const pagedDoc = parseRemoteDocument(pagedHtml);
-          mergeRawChapterCandidatesFromDocument(pagedDoc, listingPageUrl, accumulator);
-        } catch {
-          // keep partial chapter discovery
-        }
+        await fetchAndMergeListingPage(listingPageUrl, {
+          ...fetchOptions,
+          referrer: listingUrl,
+        });
       }
-    } catch {
-      // Keep chapter list from initial scan when listing fetch is denied.
+    }
+
+    if (accumulator.size === beforeListingCount && dependencies.scanPage && Date.now() <= context.deadline) {
+      try {
+        const listingScan = await getRemoteScan(listingUrl, fetchOptions);
+        mergeChaptersFromScan(listingScan, accumulator);
+      } catch {
+        // keep partial chapter discovery
+      }
     }
   }
 
@@ -560,27 +648,14 @@ export async function discoverChapters(
   if (shouldProbeGuessedListingPages && listingUrl) {
     const guessedPages = buildGuessedListingPageUrls(
       listingUrl,
-      Math.max(2, options.maxListingPages ?? 8)
+      Math.max(2, options.maxListingPages ?? DEFAULT_LISTING_PAGE_LIMIT)
     );
     for (const listingPageUrl of guessedPages) {
       if (Date.now() > context.deadline) break;
-      try {
-        const pagedScan = await getRemoteScan(listingPageUrl, {
-          ...fetchOptions,
-          referrer: listingUrl,
-        });
-        pagedScan.manga.chapters.forEach((chapter) => {
-          addChapterItem(accumulator, chapterLinkToItem(chapter));
-        });
-        const pagedHtml = await dependencies.fetchDocument(listingPageUrl, {
-          ...fetchOptions,
-          referrer: listingUrl,
-        });
-        const pagedDoc = parseRemoteDocument(pagedHtml);
-        mergeRawChapterCandidatesFromDocument(pagedDoc, listingPageUrl, accumulator);
-      } catch {
-        // Ignore guessed listing pages that do not exist or are blocked.
-      }
+      await fetchAndMergeListingPage(listingPageUrl, {
+        ...fetchOptions,
+        referrer: listingUrl,
+      });
     }
   }
 
@@ -608,12 +683,16 @@ export async function loadChapterPreview(
 
   // ── Step 2: Analyze the HTML to choose the extraction strategy ───────────────
   const strategy = html ? detectPageStrategy(html, chapterUrl) : null;
+  // Only trigger live scan when static extraction is clearly insufficient:
+  // - No HTML at all
+  // - Explicitly detected as live-dom (SPA with empty mount)
+  // - Cloudflare with ZERO noscript images (total blockage)
+  // Conservative: default to static-html and let live scan be a last resort.
   const needsLiveScan = !strategy ||
-    strategy.strategy === 'live-dom' ||
-    (strategy.strategy === 'cloudflare' && strategy.staticImageCount < 3) ||
-    (strategy.strategy === 'static-html' && strategy.confidence < 0.55 && strategy.staticImageCount < 3);
+    (strategy.strategy === 'live-dom' && strategy.staticImageCount === 0) ||
+    (strategy.strategy === 'cloudflare' && strategy.staticImageCount === 0);
 
-  // ── Step 3: Live DOM scan (only when static extraction won't be enough) ──────
+  // ── Step 3: Live DOM scan (only when static is clearly insufficient) ─────────
   let liveBest: ImageCollectionResult | null = null;
   if (needsLiveScan && dependencies.scanPage) {
     try {
@@ -623,10 +702,8 @@ export async function loadChapterPreview(
       const merged = mergePreviewCollections(liveManga, liveGeneral);
       if (merged && merged.items.length > 0) {
         liveBest = merged;
-        // If the live scan found enough images, use it directly
-        if (liveBest.items.length >= 3) {
-          return liveBest;
-        }
+        // Do NOT return early — always try static extraction too.
+        // Static candidates have better metadata and are easier to display.
       }
     } catch {
       // Fall through to static extraction
@@ -707,6 +784,27 @@ export async function loadChapterPreview(
 
       const merged = mergePreviewCollections(liveBest, mangaResult, generalResult, paginatedResult);
       if (merged && merged.items.length > 0) {
+        const liveScanner = dependencies.scanPage;
+        const shouldAugmentWithLive =
+          !liveBest &&
+          liveScanner &&
+          looksLikeChapterPreviewTarget(chapterUrl, doc) &&
+          merged.items.length < 3;
+
+        if (shouldAugmentWithLive) {
+          try {
+            const liveScan = await liveScanner(chapterUrl, options);
+            const liveManga = normalizePreviewCollection(liveScan.manga.currentPages, chapterUrl);
+            const liveGeneral = normalizePreviewCollection(liveScan.general, chapterUrl);
+            const liveMerged = mergePreviewCollections(merged, liveManga, liveGeneral);
+            if (liveMerged && liveMerged.items.length > merged.items.length) {
+              return liveMerged;
+            }
+          } catch {
+            // Keep the static result when live augmentation is blocked.
+          }
+        }
+
         return merged;
       }
     } catch (err) {
@@ -752,4 +850,3 @@ export async function loadChapterPreview(
     }],
   };
 }
-

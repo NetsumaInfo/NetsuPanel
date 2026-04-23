@@ -154,6 +154,29 @@ describe('buildMangaLinkMap', () => {
     expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([8, 9, 10, 11, 12]);
   });
 
+  it('keeps numbered chapters split across multiple large groups', () => {
+    const firstVolume = Array.from({ length: 6 }, (_, index) => ({
+      ...createChapterCandidate(`v1-${index}`, `Chapter ${index + 1}`, index + 1, 'candidate', 80),
+      containerSignature: 'div.volume-one',
+    }));
+    const secondVolume = Array.from({ length: 6 }, (_, index) => ({
+      ...createChapterCandidate(`v2-${index}`, `Chapter ${index + 7}`, index + 7, 'candidate', 80),
+      containerSignature: 'div.volume-two',
+    }));
+
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://reader.example.com/title/chapter-6',
+        title: 'Series Name Chapter 6',
+        host: 'reader.example.com',
+        pathname: '/title/chapter-6',
+      },
+      [...firstVolume, ...secondVolume]
+    );
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
   it('filters chapter candidates that belong to other series on the same host', () => {
     const result = buildMangaLinkMap(
       {
@@ -320,6 +343,23 @@ describe('chapter detection helpers', () => {
 
     expect(candidates.filter((candidate) => candidate.chapterNumber !== null).length).toBeGreaterThanOrEqual(3);
     expect(candidates.some((candidate) => candidate.relation === 'current')).toBe(true);
+  });
+
+  it('keeps chapters inside inactive tab panels', () => {
+    document.body.innerHTML = `
+      <section data-state="inactive">
+        <a href="/series/chapter-1">Chapter 1</a>
+        <a href="/series/chapter-2">Chapter 2</a>
+      </section>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://reader.example.com/series/',
+      'https://reader.example.com/series/'
+    );
+
+    expect(candidates.map((candidate) => candidate.chapterNumber)).toEqual([1, 2]);
   });
 
   it('extracts previous/next from link rel tags', () => {
