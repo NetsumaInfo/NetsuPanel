@@ -30,8 +30,8 @@ describe('resourcePolicy', () => {
     });
   });
 
-  test('blocks svg data urls in render path', () => {
+  test('allows svg data urls in render path without allowing svg fetch validation', () => {
     expect(isSafeRenderableImageSrc('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
-    expect(isSafeRenderableImageSrc('data:image/svg+xml,%3Csvg%3E%3C/svg%3E')).toBe(false);
+    expect(isSafeRenderableImageSrc('data:image/svg+xml,%3Csvg%3E%3C/svg%3E')).toBe(true);
   });
 });

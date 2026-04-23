@@ -215,7 +215,11 @@ describe('chapterCrawler discoverChapters', () => {
             ...createScan(url, [createChapterLink(url, 'current', 3, 100)]).manga,
             navigation: {
               current: createChapterLink(url, 'current', 3, 100),
-              previous: createChapterLink('https://astral-manga.fr/manga/series/chapter/chapter-2-id', 'previous', 2, 98),
+              previous: {
+                ...createChapterLink('https://astral-manga.fr/manga/series/chapter/chapter-2-id', 'previous', 0, 98),
+                label: 'Précédent',
+                chapterNumber: null,
+              },
             },
           },
         };
@@ -230,9 +234,10 @@ describe('chapterCrawler discoverChapters', () => {
     );
 
     expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
+    expect(chapters.find((chapter) => chapter.chapterNumber === 2)?.label).toBe('Chapitre 2');
     expect(scanPage).toHaveBeenCalledWith(
       'https://astral-manga.fr/manga/series/chapter/chapter-3-id',
-      expect.anything()
+      expect.objectContaining({ forceLive: true })
     );
   });
 });

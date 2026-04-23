@@ -624,7 +624,7 @@ async function scanCurrentPage() {
 
   let collection = await collectLiveDomImages(page.url, {
     includeBackgroundCandidates: true,
-    includeSvgCandidates: false,
+    includeSvgCandidates: true,
     includeMediaCandidates: true,
     includeCssRuleCandidates: false,
     includeScriptCandidates: false,
@@ -636,7 +636,7 @@ async function scanCurrentPage() {
     await sleep(RECHECK_DELAY_MS);
     const afterLazy = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: true,
-      includeSvgCandidates: false,
+      includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
       includeScriptCandidates: true,
@@ -649,7 +649,7 @@ async function scanCurrentPage() {
     await sleep(RECHECK_DELAY_MS);
     const nextCollection = await collectLiveDomImages(page.url, {
       includeBackgroundCandidates: true,
-      includeSvgCandidates: false,
+      includeSvgCandidates: true,
       includeMediaCandidates: true,
       includeCssRuleCandidates: false,
       includeScriptCandidates: true,

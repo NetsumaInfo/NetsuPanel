@@ -6,6 +6,11 @@ const SUPPORTED_FETCH_IMAGE_MIMES = new Set([
   'image/gif',
 ]);
 
+const SUPPORTED_RENDER_IMAGE_MIMES = new Set([
+  ...SUPPORTED_FETCH_IMAGE_MIMES,
+  'image/svg+xml',
+]);
+
 const ALLOWED_REQUEST_HEADERS = new Set([
   'accept',
   'accept-language',
@@ -25,7 +30,7 @@ export function isSafeRenderableImageSrc(src: string): boolean {
   if (/^blob:/i.test(src)) return true;
   if (/^data:/i.test(src)) {
     const match = src.match(/^data:([^;,]+)/i);
-    return Boolean(match?.[1] && isSupportedFetchedImageMime(match[1]));
+    return Boolean(match?.[1] && SUPPORTED_RENDER_IMAGE_MIMES.has(normalizeMime(match[1])));
   }
 
   try {

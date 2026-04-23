@@ -20,7 +20,7 @@ import { isLikelyDecorative } from '@core/detection/pipeline/scoreImageCandidate
 
 export interface ChapterCrawlerDependencies {
   fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
-  scanPage?(url: string, options?: { referrer?: string; tabId?: number }): Promise<PageScanResult>;
+  scanPage?(url: string, options?: { referrer?: string; tabId?: number; forceLive?: boolean }): Promise<PageScanResult>;
 }
 
 const DEFAULT_LINEAR_CHAPTER_LIMIT = 64;
@@ -356,6 +356,8 @@ function addChapterItem(
 
 function mergeChapterItems(existing: ChapterItem | undefined, candidate: ChapterItem): ChapterItem {
   if (!existing) return candidate;
+  if (candidate.chapterNumber !== null && existing.chapterNumber === null) return candidate;
+  if (existing.chapterNumber !== null && candidate.chapterNumber === null) return existing;
   return candidate.score > existing.score ? candidate : existing;
 }
 
@@ -411,15 +413,50 @@ function mergeChaptersFromScan(scan: PageScanResult, accumulator: Map<string, Ch
   }
 }
 
+interface RemotePageScanOptions {
+  referrer?: string;
+  tabId?: number;
+  forceLive?: boolean;
+}
+
+function addInferredGapChapter(
+  accumulator: Map<string, ChapterItem>,
+  candidate: ChapterLinkCandidate | undefined,
+  expectedChapterNumber: number
+): void {
+  if (!candidate?.url || candidate.relation === 'listing') {
+    return;
+  }
+
+  addChapterItem(accumulator, {
+    ...chapterLinkToItem(candidate),
+    label: candidate.chapterNumber === expectedChapterNumber ? candidate.label : `Chapitre ${expectedChapterNumber}`,
+    chapterNumber: candidate.chapterNumber ?? expectedChapterNumber,
+    score: Math.max(candidate.score, 96),
+  });
+}
+
 async function scanRemotePage(
   url: string,
   dependencies: ChapterCrawlerDependencies,
-  options: { referrer?: string; tabId?: number } = {}
+  options: RemotePageScanOptions = {}
 ): Promise<PageScanResult> {
+  if (options.forceLive && dependencies.scanPage) {
+    try {
+      return await dependencies.scanPage(url, options);
+    } catch {
+      // Fall back to static extraction below.
+    }
+  }
+
   let staticScan: PageScanResult | null = null;
   let staticError: unknown = null;
+  const fetchOptions = {
+    referrer: options.referrer,
+    tabId: options.tabId,
+  };
   try {
-    const html = await dependencies.fetchDocument(url, options);
+    const html = await dependencies.fetchDocument(url, fetchOptions);
     staticScan = scanStaticPageHtml(url, html);
     if (!dependencies.scanPage || hasUsefulRemoteScanSignals(staticScan)) {
       return staticScan;
@@ -602,8 +639,8 @@ export async function discoverChapters(
     deadline: Date.now() + Math.max(500, options.maxDurationMs ?? DEFAULT_DISCOVERY_TIME_BUDGET_MS),
   };
 
-  const getRemoteScan = (url: string, options: { referrer?: string; tabId?: number } = {}) => {
-    const cacheKey = `${url}::${options.referrer || ''}::${options.tabId ?? ''}`;
+  const getRemoteScan = (url: string, options: RemotePageScanOptions = {}) => {
+    const cacheKey = `${url}::${options.referrer || ''}::${options.tabId ?? ''}::${options.forceLive ? 'live' : 'auto'}`;
     const existing = remoteScanCache.get(cacheKey);
     if (existing) return existing;
     const task = scanRemotePage(url, dependencies, options);
@@ -697,13 +734,16 @@ export async function discoverChapters(
   const smallGaps = findSmallChapterNumberGaps([...accumulator.values()]).slice(0, 4);
   for (const gap of smallGaps) {
     if (Date.now() > context.deadline) break;
+    const expectedChapterNumber = (gap.left.chapterNumber as number) + 1;
 
     try {
       const rightScan = await getRemoteScan(gap.right.url, {
         ...fetchOptions,
         referrer: gap.left.url,
+        forceLive: true,
       });
       mergeChaptersFromScan(rightScan, accumulator);
+      addInferredGapChapter(accumulator, rightScan.manga.navigation.previous, expectedChapterNumber);
     } catch {
       // Try the other side of the gap below.
     }
@@ -714,8 +754,10 @@ export async function discoverChapters(
       const leftScan = await getRemoteScan(gap.left.url, {
         ...fetchOptions,
         referrer: gap.right.url,
+        forceLive: true,
       });
       mergeChaptersFromScan(leftScan, accumulator);
+      addInferredGapChapter(accumulator, leftScan.manga.navigation.next, expectedChapterNumber);
     } catch {
       // Keep the listing result when reader navigation is blocked.
     }
