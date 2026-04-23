@@ -2,7 +2,6 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { captureImage, fetchBinary } from '@app/services/runtimeClient';
 import type { ImageResolveMode } from '@shared/types';
 import { isSafeRenderableImageSrc } from '@shared/utils/resourcePolicy';
-import { isKnownImageProxyUrl } from '@shared/utils/url';
 
 interface SafeImageProps {
   src: string;
@@ -196,8 +195,7 @@ export function SafeImage({
   const shouldAutoPreferCapture = (
     /^content:\/\//i.test(src) ||
     /^blob:/i.test(src) ||
-    !isSafe ||
-    isKnownImageProxyUrl(src)
+    !isSafe
   );
   // capture-first: explicit mode, or live-dom images with a candidate ID
   const forceCaptureFirst = resolveMode === 'capture-first' || (
@@ -206,12 +204,7 @@ export function SafeImage({
     Boolean(captureCandidateId) &&
     shouldAutoPreferCapture
   );
-  // network-first: explicitly requested OR the image URL indicates a proxy
-  // In this mode we skip the native <img> and go straight to background fetch.
-  // This is essential for hotlink-protected images (the extension page has
-  // no origin that would pass the Referer check).
-  const forceNetworkFetch = resolveMode === 'network-first' ||
-    (resolveMode === 'auto' && isNetworkUrl && !!referrer && isKnownImageProxyUrl(src));
+  const forceNetworkFetch = resolveMode === 'network-first';
 
   // ── Effect: reset when src changes ─────────────────────────────────────────
   useEffect(() => {

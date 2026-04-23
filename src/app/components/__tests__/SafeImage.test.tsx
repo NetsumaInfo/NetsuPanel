@@ -30,12 +30,7 @@ describe('SafeImage', () => {
     jest.clearAllMocks();
   });
 
-  test('prefers source-tab capture for protected Next.js image URLs', async () => {
-    (captureImage as jest.Mock).mockResolvedValue({
-      bytes: new Uint8Array([1, 2, 3, 4]).buffer,
-      mime: 'image/jpeg',
-    });
-
+  test('tries native loading first for Next.js image URLs in auto mode', async () => {
     render(
       <SafeImage
         src="https://astral-manga.fr/_next/image?url=https%3A%2F%2Fs3.example.com%2Fcover.jpg&w=3840&q=75"
@@ -46,13 +41,13 @@ describe('SafeImage', () => {
     );
 
     await waitFor(() => {
-      expect(captureImage).toHaveBeenCalledWith(12, 'image-4');
+      expect(screen.getByAltText('Cover')).toHaveAttribute(
+        'src',
+        'https://astral-manga.fr/_next/image?url=https%3A%2F%2Fs3.example.com%2Fcover.jpg&w=3840&q=75'
+      );
     });
 
-    await waitFor(() => {
-      expect(screen.getByAltText('Cover')).toHaveAttribute('src', 'blob:captured-cover');
-    });
-
+    expect(captureImage).not.toHaveBeenCalled();
     expect(fetchBinary).not.toHaveBeenCalled();
   });
 

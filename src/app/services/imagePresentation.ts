@@ -57,6 +57,10 @@ export function resolveCandidateImageMode(candidate: ImagePresentationInput): Im
     return 'capture-first';
   }
 
+  if (shouldPreserveImageProxyUrl(src)) {
+    return 'auto';
+  }
+
   if (isKnownImageProxyUrl(src)) {
     return 'network-first';
   }

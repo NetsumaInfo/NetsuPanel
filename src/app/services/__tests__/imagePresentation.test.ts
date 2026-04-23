@@ -11,7 +11,7 @@ describe('imagePresentation', () => {
     expect(resolveCandidateImageSrc(candidate)).toBe(
       'https://reader.example.com/_next/image?url=https%3A%2F%2Fcdn.example.com%2Fchapter-12%2Fpage-001.webp&w=1920&q=75'
     );
-    expect(resolveCandidateImageMode(candidate)).toBe('network-first');
+    expect(resolveCandidateImageMode(candidate)).toBe('auto');
   });
 
   test('keeps capture-first for content-only image handles', () => {
