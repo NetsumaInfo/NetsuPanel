@@ -76,31 +76,43 @@ function previewFromCanvas(canvas: HTMLCanvasElement): string {
 }
 
 function previewFromImage(image: HTMLImageElement, preferredUrl: string): string {
-  // If we already resolved a direct network image URL, keep it.
+  const shouldInlinePreview =
+    shouldPreserveImageProxyUrl(preferredUrl) ||
+    /^blob:/i.test(preferredUrl) ||
+    /^data:/i.test(preferredUrl);
+
+  try {
+    const srcW = Math.max(image.naturalWidth || image.width || 1, 1);
+    const srcH = Math.max(image.naturalHeight || image.height || 1, 1);
+    if (shouldInlinePreview && srcW > 1 && srcH > 1) {
+      const [tw, th] = thumbnailDimensions(srcW, srcH);
+      const canvas = document.createElement('canvas');
+      canvas.width = tw;
+      canvas.height = th;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(image, 0, 0, tw, th);
+        const preview = canvas.toDataURL('image/jpeg', 0.6);
+        if (preview) return preview;
+      }
+    }
+  } catch {
+    // Cross-origin or protected images can taint canvas; fall back to URL.
+  }
+
   if (preferredUrl && !preferredUrl.startsWith('blob:') && !preferredUrl.startsWith('data:') && !isPlaceholderImageUrl(preferredUrl)) {
     return preferredUrl;
   }
 
-  const networkUrl = unwrapProxiedImageUrl(image.currentSrc || image.src || '');
+  const rawNetworkUrl = image.currentSrc || image.src || '';
+  const networkUrl = shouldPreserveImageProxyUrl(rawNetworkUrl)
+    ? rawNetworkUrl
+    : unwrapProxiedImageUrl(rawNetworkUrl);
   if (networkUrl && !networkUrl.startsWith('blob:') && !networkUrl.startsWith('data:') && !isPlaceholderImageUrl(networkUrl)) {
     return networkUrl;
   }
 
-  // For blob:/data: images, generate a small thumbnail
-  try {
-    const srcW = Math.max(image.naturalWidth || image.width || 1, 1);
-    const srcH = Math.max(image.naturalHeight || image.height || 1, 1);
-    const [tw, th] = thumbnailDimensions(srcW, srcH);
-    const canvas = document.createElement('canvas');
-    canvas.width = tw;
-    canvas.height = th;
-    const context = canvas.getContext('2d');
-    if (!context) return '';
-    context.drawImage(image, 0, 0, tw, th);
-    return canvas.toDataURL('image/jpeg', 0.6);
-  } catch {
-    return '';
-  }
+  return '';
 }
 
 function buildImageCandidate(
