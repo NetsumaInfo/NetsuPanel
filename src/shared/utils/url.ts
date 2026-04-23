@@ -61,6 +61,12 @@ export function isKnownImageProxyUrl(input: string): boolean {
   );
 }
 
+export function shouldPreserveImageProxyUrl(input: string): boolean {
+  const parsed = safeUrl(input);
+  if (!parsed) return false;
+  return /\/_next\/image(?:\/|$)/i.test(parsed.pathname);
+}
+
 function decodeHttpCandidate(value: string | null, baseOrigin?: string): string | null {
   if (!value) return null;
   try {

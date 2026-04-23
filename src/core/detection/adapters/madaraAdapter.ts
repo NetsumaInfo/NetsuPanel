@@ -7,7 +7,7 @@ import { parseChapterIdentity } from '@core/detection/parsers/parseChapterIdenti
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 import { buildMangaLinkMap } from '@core/detection/pipeline/chapterPipeline';
 import { compactWhitespace, stripChapterLabelMetadata } from '@shared/utils/strings';
-import { resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+import { resolveUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { createOrderedNetworkCandidates, prependCandidates } from './adapterHelpers';
 import type { ScanAdapterInput, SiteAdapter } from './types';
 
@@ -228,6 +228,9 @@ function collectMadaraDomImages(document: ParentNode, baseUrl: string): string[]
 }
 
 function stripWordPressProxy(url: string): string {
+  if (shouldPreserveImageProxyUrl(url)) {
+    return url;
+  }
   return unwrapProxiedImageUrl(url);
 }
 

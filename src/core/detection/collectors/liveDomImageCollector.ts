@@ -1,5 +1,5 @@
 import type { RawImageCandidate } from '@shared/types';
-import { isPlaceholderImageUrl, resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+import { isPlaceholderImageUrl, resolveUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
 import { collectJsonEmbeddedImages } from './jsonEmbeddedCollector';
 import { collectInlineScriptImages } from './inlineScriptCollector';
@@ -133,7 +133,9 @@ function buildImageCandidate(
   const rect = image.getBoundingClientRect();
   const style = window.getComputedStyle(image);
   const id = `image-${domIndex}`;
-  const selectedUrl = unwrapProxiedImageUrl(selected.resolved);
+  const selectedUrl = shouldPreserveImageProxyUrl(selected.resolved)
+    ? selected.resolved
+    : unwrapProxiedImageUrl(selected.resolved);
   const isBlobOrData = selectedUrl.startsWith('blob:') || selectedUrl.startsWith('data:');
   const captureStrategy = isBlobOrData ? 'content' : 'network';
   capturables.set(id, image);

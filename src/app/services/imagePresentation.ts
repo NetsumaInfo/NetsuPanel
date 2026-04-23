@@ -1,5 +1,5 @@
 import type { CaptureStrategy, ImageResolveMode } from '@shared/types';
-import { isKnownImageProxyUrl, isPlaceholderImageUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+import { isKnownImageProxyUrl, isPlaceholderImageUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 
 interface ImagePresentationInput {
   url: string;
@@ -22,6 +22,14 @@ export function resolveCandidateImageSrc(candidate: ImagePresentationInput): str
 
   if (isInlinePreviewUrl(previewRaw)) {
     return previewRaw;
+  }
+
+  if (previewRaw && shouldPreserveImageProxyUrl(previewRaw)) {
+    return previewRaw;
+  }
+
+  if (primaryRaw && shouldPreserveImageProxyUrl(primaryRaw)) {
+    return primaryRaw;
   }
 
   const preview = normalizeNetworkUrl(previewRaw);

@@ -185,6 +185,56 @@ describe('chapterCrawler discoverChapters', () => {
     expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2]);
     expect(chapters.every((chapter) => !/\/page\/\d+/.test(chapter.url))).toBe(true);
   });
+
+  it('repairs small chapter gaps by scanning reader navigation', async () => {
+    const initialScan = createScan(
+      'https://astral-manga.fr/manga/series',
+      [
+        createChapterLink('https://astral-manga.fr/manga/series/chapter/chapter-1-id', 'candidate', 1, 90),
+        createChapterLink('https://astral-manga.fr/manga/series/chapter/chapter-3-id', 'candidate', 3, 90),
+      ],
+      'https://astral-manga.fr/manga/series'
+    );
+
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url.includes('/chapter/')) {
+        return '<html><body><h1>Chapitre</h1></body></html>';
+      }
+      return `
+      <html><body>
+        <a href="https://astral-manga.fr/manga/series/chapter/chapter-1-id">Chapitre 1</a>
+        <a href="https://astral-manga.fr/manga/series/chapter/chapter-3-id">Chapitre 3</a>
+      </body></html>
+    `;
+    });
+    const scanPage = jest.fn(async (url: string) => {
+      if (url.includes('chapter-3-id')) {
+        return {
+          ...createScan(url, [createChapterLink(url, 'current', 3, 100)]),
+          manga: {
+            ...createScan(url, [createChapterLink(url, 'current', 3, 100)]).manga,
+            navigation: {
+              current: createChapterLink(url, 'current', 3, 100),
+              previous: createChapterLink('https://astral-manga.fr/manga/series/chapter/chapter-2-id', 'previous', 2, 98),
+            },
+          },
+        };
+      }
+      return createScan(url, []);
+    });
+
+    const chapters = await discoverChapters(
+      initialScan,
+      { fetchDocument, scanPage },
+      { maxDurationMs: 20_000 }
+    );
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
+    expect(scanPage).toHaveBeenCalledWith(
+      'https://astral-manga.fr/manga/series/chapter/chapter-3-id',
+      expect.anything()
+    );
+  });
 });
 
 describe('chapterCrawler loadChapterPreview', () => {

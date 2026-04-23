@@ -1,5 +1,5 @@
 import type { RawImageCandidate } from '@shared/types';
-import { isPlaceholderImageUrl, resolveUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+import { isPlaceholderImageUrl, resolveUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { readImageSourceDescriptors } from './imageAttributeSources';
 
 function buildContainerSignature(element: Element): string {
@@ -39,7 +39,9 @@ export function collectStaticDocumentImages(root: ParentNode, baseUrl: string): 
     const height = Number(image.getAttribute('height')) || image.naturalHeight || 0;
     const inferredWidth = width || Number(image.getAttribute('data-width')) || 1080;
     const inferredHeight = height || Number(image.getAttribute('data-height')) || 1560;
-    const selectedUrl = unwrapProxiedImageUrl(selected.resolved);
+    const selectedUrl = shouldPreserveImageProxyUrl(selected.resolved)
+      ? selected.resolved
+      : unwrapProxiedImageUrl(selected.resolved);
 
     imageCandidates.push({
       id: `static-image-${index}`,

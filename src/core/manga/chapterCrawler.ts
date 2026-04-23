@@ -7,7 +7,7 @@ import type {
   PageScanResult,
   RawImageCandidate,
 } from '@shared/types';
-import { unwrapProxiedImageUrl } from '@shared/utils/url';
+import { shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 import { collectStaticDocumentImages } from '@core/detection/collectors/staticDocumentImageCollector';
 import { collectChapterLinks } from '@core/detection/collectors/chapterLinkCollector';
 import { detectPaginatedReader, crawlPaginatedChapter } from '@core/detection/collectors/paginatedReaderCollector';
@@ -74,14 +74,19 @@ function normalizePreviewCollection(
     .filter(isRasterPreviewCandidate)
     .map((item) => {
       const normalizedUrl = unwrapProxiedImageUrl(item.url);
-      const normalizedPreviewUrl = unwrapProxiedImageUrl(item.previewUrl || item.url);
+      const rawPreviewUrl = item.previewUrl || item.url;
+      const preserveItemUrl = shouldPreserveImageProxyUrl(item.url);
+      const displayUrl = preserveItemUrl ? item.url : normalizedUrl;
+      const normalizedPreviewUrl = shouldPreserveImageProxyUrl(rawPreviewUrl)
+        ? rawPreviewUrl
+        : unwrapProxiedImageUrl(rawPreviewUrl);
       return {
         ...item,
-        url: normalizedUrl,
+        url: displayUrl,
         previewUrl: normalizedPreviewUrl,
-        canonicalUrl: normalizedUrl.split('#')[0],
-        querylessUrl: normalizedUrl.split('#')[0].split('?')[0],
-        familyKey: normalizedUrl.split('#')[0].split('?')[0],
+        canonicalUrl: displayUrl.split('#')[0],
+        querylessUrl: displayUrl.split('#')[0].split('?')[0],
+        familyKey: displayUrl.split('#')[0].split('?')[0],
         referrer: item.referrer || chapterUrl,
         origin: 'static-html' as const,
         captureStrategy: 'network' as const,
@@ -176,11 +181,16 @@ function collectRemoteImageCandidates(document: Document, baseUrl: string): RawI
 
   // Normalize proxied URLs
   return deduped.map((candidate) => {
-    const nextUrl = unwrapProxiedImageUrl(candidate.url);
+    const nextUrl = shouldPreserveImageProxyUrl(candidate.url)
+      ? candidate.url
+      : unwrapProxiedImageUrl(candidate.url);
+    const nextPreviewUrl = candidate.previewUrl
+      ? (shouldPreserveImageProxyUrl(candidate.previewUrl) ? candidate.previewUrl : unwrapProxiedImageUrl(candidate.previewUrl))
+      : nextUrl;
     return {
       ...candidate,
       url: nextUrl,
-      previewUrl: candidate.previewUrl ? unwrapProxiedImageUrl(candidate.previewUrl) : nextUrl,
+      previewUrl: nextPreviewUrl,
     };
   });
 }
@@ -393,6 +403,12 @@ function mergeChaptersFromScan(scan: PageScanResult, accumulator: Map<string, Ch
   scan.manga.chapters.forEach((chapter) => {
     addChapterItem(accumulator, chapterLinkToItem(chapter));
   });
+  if (scan.manga.navigation.previous) {
+    addChapterItem(accumulator, chapterLinkToItem(scan.manga.navigation.previous));
+  }
+  if (scan.manga.navigation.next) {
+    addChapterItem(accumulator, chapterLinkToItem(scan.manga.navigation.next));
+  }
 }
 
 async function scanRemotePage(
@@ -429,6 +445,25 @@ async function scanRemotePage(
 interface LinearWalkContext {
   maxLinearSteps: number;
   deadline: number;
+}
+
+function findSmallChapterNumberGaps(items: ChapterItem[]): Array<{ left: ChapterItem; right: ChapterItem }> {
+  const numbered = sortChapterItems(items)
+    .filter((chapter) => chapter.chapterNumber !== null && chapter.relation !== 'listing');
+  const gaps: Array<{ left: ChapterItem; right: ChapterItem }> = [];
+
+  for (let index = 0; index < numbered.length - 1; index += 1) {
+    const left = numbered[index];
+    const right = numbered[index + 1];
+    const leftNumber = left.chapterNumber as number;
+    const rightNumber = right.chapterNumber as number;
+    const gap = rightNumber - leftNumber;
+    if (gap > 1 && gap <= 3 && Number.isInteger(leftNumber) && Number.isInteger(rightNumber)) {
+      gaps.push({ left, right });
+    }
+  }
+
+  return gaps;
 }
 
 function extractListingPaginationUrls(document: Document, listingUrl: string): string[] {
@@ -656,6 +691,33 @@ export async function discoverChapters(
         ...fetchOptions,
         referrer: listingUrl,
       });
+    }
+  }
+
+  const smallGaps = findSmallChapterNumberGaps([...accumulator.values()]).slice(0, 4);
+  for (const gap of smallGaps) {
+    if (Date.now() > context.deadline) break;
+
+    try {
+      const rightScan = await getRemoteScan(gap.right.url, {
+        ...fetchOptions,
+        referrer: gap.left.url,
+      });
+      mergeChaptersFromScan(rightScan, accumulator);
+    } catch {
+      // Try the other side of the gap below.
+    }
+
+    if (Date.now() > context.deadline) break;
+
+    try {
+      const leftScan = await getRemoteScan(gap.left.url, {
+        ...fetchOptions,
+        referrer: gap.right.url,
+      });
+      mergeChaptersFromScan(leftScan, accumulator);
+    } catch {
+      // Keep the listing result when reader navigation is blocked.
     }
   }
 

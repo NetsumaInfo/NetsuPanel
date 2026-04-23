@@ -28,13 +28,12 @@ function normalizeReferrer(url: string, referrer?: string): string | undefined {
   if (!referrer) return undefined;
 
   try {
-    const requestUrl = new URL(url);
-    const referrerUrl = new URL(referrer);
-    if (requestUrl.origin === referrerUrl.origin) {
-      return referrerUrl.href;
-    }
-    // Mimic strict-origin policy for cross-origin resource requests.
-    return `${referrerUrl.origin}/`;
+    const parsed = new URL(referrer);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+    // Return the FULL referrer URL — DNR can inject it as-is.
+    // The browser's own fetch() will enforce referrer-policy anyway,
+    // but the DNR path overrides it with this full URL.
+    return referrer;
   } catch {
     return undefined;
   }
@@ -148,7 +147,9 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
   }
 
   let lastError: Error | null = null;
-  const normalizedReferrer = normalizeReferrer(normalizedUrl, normalizeHttpUrl(options.referrer) || undefined);
+  // Full referrer passed to DNR injection (can set any Referer header).
+  // For the browser's own fetch(), the referrer-policy will apply regardless.
+  const fullReferrer = normalizeReferrer(normalizedUrl, normalizeHttpUrl(options.referrer) || undefined);
   const sanitizedHeaders = sanitizeRequestHeaders(options.headers);
 
   for (let attempt = 0; attempt < RETRY_DELAYS.length + 1; attempt += 1) {
@@ -161,11 +162,7 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
           ...(sanitizedHeaders || {}),
         },
       };
-      if (normalizedReferrer && !getChromeDnrApi()) {
-        requestInit.referrer = normalizedReferrer;
-        requestInit.referrerPolicy = 'no-referrer-when-downgrade';
-      }
-      const response = await fetchWithReferrerWorkaround(normalizedUrl, requestInit, normalizedReferrer);
+      const response = await fetchWithReferrerWorkaround(normalizedUrl, requestInit, fullReferrer);
       if (response.ok) {
         return response;
       }

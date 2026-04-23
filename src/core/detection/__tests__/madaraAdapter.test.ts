@@ -66,4 +66,30 @@ describe('madaraAdapter', () => {
     const chapterOne = result.chapters.find((chapter) => chapter.chapterNumber === 1);
     expect(chapterOne?.label).toBe('Chapitre 1');
   });
+
+  test('preserves Next image proxy URLs for Astral previews', () => {
+    const proxyUrl =
+      'https://astral-manga.fr/_next/image?url=https%3A%2F%2Fcdn.astral.test%2Fchapter%2F001.webp&w=1920&q=75';
+    document.body.innerHTML = `
+      <div class="reading-content">
+        <img class="ts-main-image" src="${proxyUrl}" alt="Page 1" />
+        <img class="ts-main-image" src="${proxyUrl.replace('001.webp', '002.webp')}" alt="Page 2" />
+      </div>
+    `;
+
+    const result = madaraAdapter.scan({
+      document,
+      page: {
+        url: 'https://astral-manga.fr/manga/series/chapter/abc',
+        title: 'Chapitre 1',
+        host: 'astral-manga.fr',
+        pathname: '/manga/series/chapter/abc',
+      },
+      origin: 'live-dom',
+      imageCandidates: [],
+    });
+
+    expect(result.currentPages.items).toHaveLength(2);
+    expect(result.currentPages.items[0].url).toContain('/_next/image?url=');
+  });
 });
