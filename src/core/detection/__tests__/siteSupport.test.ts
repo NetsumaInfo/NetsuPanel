@@ -19,6 +19,12 @@ describe('resolveSiteSupport', () => {
     expect(support.family).toBe('Locked Reader');
   });
 
+  test('marks Manga Downloader Plus reader-pattern domains as supported', () => {
+    const support = resolveSiteSupport('https://readopm.com/manga/onepunch-man/chapter-200/');
+    expect(support.status).toBe('supported');
+    expect(support.family).toBe('Manga Downloader Plus reader patterns');
+  });
+
   test('falls back to experimental for unknown domains', () => {
     const support = resolveSiteSupport('https://reader.example.com/series/chapter-1');
     expect(support.status).toBe('experimental');

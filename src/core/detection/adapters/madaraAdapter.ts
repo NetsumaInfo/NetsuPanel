@@ -74,6 +74,19 @@ function isMadaraListingPage(url: string): boolean {
   }
 }
 
+function normalizeComparableUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    if (parsed.pathname !== '/') {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    }
+    return parsed.href;
+  } catch {
+    return url.split('#')[0].replace(/\/+$/, '');
+  }
+}
+
 /**
  * Collect images from Madara chapter reader DOM.
  * Handles multiple lazy-loading patterns and Cloudflare placeholder src.
@@ -330,6 +343,12 @@ function collectMadaraChapterCandidates(document: ParentNode, currentUrl: string
   firstChapterCtaAnchors.forEach(({ anchor, ctaLabel }, index) => {
     const candidate = createMadaraChapterCandidate(anchor, currentUrl, index, 'candidate', 'madara:first-chapter-cta', 72);
     if (!candidate) return;
+    if (
+      isMadaraListingPage(currentUrl) &&
+      normalizeComparableUrl(candidate.canonicalUrl) === normalizeComparableUrl(currentUrl)
+    ) {
+      return;
+    }
     const fallbackLabel = /\b(premier|chapitre|lire)\b/i.test(ctaLabel) ? 'Chapitre 1' : 'Chapter 1';
     results.push({
       ...candidate,

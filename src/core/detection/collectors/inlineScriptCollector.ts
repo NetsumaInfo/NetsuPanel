@@ -13,6 +13,8 @@ import type { RawImageCandidate } from '@shared/types';
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|avif|gif)/i;
 const FULL_URL_RE = /https?:\/\/[^\s"'`\\<>]+\.(?:jpe?g|png|webp|avif|gif)(?:[?#][^\s"'`\\<>]*)?/gi;
+const QUOTED_IMAGE_PATH_RE =
+  /["'`]((?:https?:\/\/|\/|\.\/|\.\.\/)[^"'`\\<>]+?\.(?:jpe?g|png|webp|avif|gif)(?:[?#][^"'`\\<>]*)?)["'`]/gi;
 
 /**
  * Known global variable patterns where manga readers embed page data.
@@ -20,7 +22,10 @@ const FULL_URL_RE = /https?:\/\/[^\s"'`\\<>]+\.(?:jpe?g|png|webp|avif|gif)(?:[?#
  */
 const GLOBAL_VAR_PATTERNS: RegExp[] = [
   // WordPress manga / generic
-  /(?:var|let|const)\s+(?:pages|images?|chapter_images?|page_list|img_list)\s*=\s*(\[.*?\])\s*;/is,
+  /(?:var|let|const)\s+(?:pages|images?|chapter_images?|chapterImages|chapImages|page_list|img_list)\s*=\s*(\[.*?\])\s*;/is,
+  // MangaBuddy / MangaBall style: var chapImages = 'url1,url2'; const chapterImages = JSON.parse(`[...]`)
+  /(?:var|let|const)\s+(?:chapImages|chapterImages)\s*=\s*(['"`][\s\S]*?['"`])\s*;/i,
+  /(?:var|let|const)\s+(?:chapImages|chapterImages)\s*=\s*JSON\.parse\(\s*(['"`][\s\S]*?['"`])\s*\)/i,
   // Nuxt
   /window\.__NUXT__\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/i,
   // Next.js
@@ -33,11 +38,17 @@ const GLOBAL_VAR_PATTERNS: RegExp[] = [
 
 function extractUrlsFromText(text: string): string[] {
   FULL_URL_RE.lastIndex = 0;
+  QUOTED_IMAGE_PATH_RE.lastIndex = 0;
   const urls: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = FULL_URL_RE.exec(text)) !== null) {
     if (IMAGE_EXT_RE.test(m[0])) {
       urls.push(m[0]);
+    }
+  }
+  while ((m = QUOTED_IMAGE_PATH_RE.exec(text)) !== null) {
+    if (m[1] && IMAGE_EXT_RE.test(m[1])) {
+      urls.push(m[1].replace(/\\\//g, '/'));
     }
   }
   return urls;
@@ -46,8 +57,13 @@ function extractUrlsFromText(text: string): string[] {
 function extractUrlsFromJsonString(jsonStr: string): string[] {
   if (!jsonStr) return [];
   if (!IMAGE_EXT_RE.test(jsonStr)) return [];
+  const unquoted = jsonStr
+    .replace(/^['"`]|['"`]$/g, '')
+    .replace(/\\`/g, '`')
+    .replace(/\\"/g, '"')
+    .replace(/\\\//g, '/');
   try {
-    const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(unquoted);
     const found: string[] = [];
     (function walk(node: unknown, depth: number): void {
       if (depth > 10) return;
@@ -62,7 +78,7 @@ function extractUrlsFromJsonString(jsonStr: string): string[] {
     return found;
   } catch {
     // Not valid JSON — fallback to regex
-    return extractUrlsFromText(jsonStr);
+    return extractUrlsFromText(unquoted);
   }
 }
 

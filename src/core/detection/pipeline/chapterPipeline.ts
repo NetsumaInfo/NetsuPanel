@@ -388,6 +388,15 @@ function pickBestChapterCluster(candidates: ChapterLinkCandidate[]): ChapterLink
 function pickBestChapterSet(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
   const cluster = pickBestChapterCluster(candidates);
   const numbered = candidates.filter((candidate) => candidate.chapterNumber !== null && candidate.score >= 18);
+  const knownListCandidates = candidates.filter(
+    (candidate) => candidate.score >= 40 && /known-chapter-list|chapter-list|hydration-json|madara:chapter-list/i.test(candidate.containerSignature)
+  );
+  if (numbered.length >= 4) {
+    return numbered;
+  }
+  if (knownListCandidates.length >= Math.max(4, cluster.length)) {
+    return knownListCandidates;
+  }
   if (numbered.length >= Math.max(4, Math.ceil(cluster.length * 1.35))) {
     return numbered;
   }

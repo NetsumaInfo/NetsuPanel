@@ -180,25 +180,27 @@ export function useNetsuController() {
 
       const task = (async () => {
         try {
-          const preview =
-            isSameChapterUrl(chapter.canonicalUrl, source.url)
-              ? currentScan.manga.currentPages
-              : await fetchChapterPreview(
-                  chapter.url,
-                  {
-                    fetchDocument: (url, options = {}) =>
+          const canReuseCurrentScan =
+            isSameChapterUrl(chapter.canonicalUrl, source.url) &&
+            currentScan.manga.currentPages.items.length > 0;
+          const preview = canReuseCurrentScan
+            ? currentScan.manga.currentPages
+            : await fetchChapterPreview(
+                chapter.url,
+                {
+                  fetchDocument: (url, options = {}) =>
                     fetchDocument(url, {
-                        referrer: options.referrer || chapter.url || source.url,
-                        tabId: source.id,
-                      }),
-                    scanPage: (url, options = {}) =>
-                      runRemoteScan(url, {
-                        referrer: options.referrer || chapter.url || source.url,
-                        tabId: source.id,
-                      }),
-                  },
-                  { referrer: chapter.url || source.url, tabId: source.id }
-                );
+                      referrer: options.referrer || chapter.url || source.url,
+                      tabId: source.id,
+                    }),
+                  scanPage: (url, options = {}) =>
+                    runRemoteScan(url, {
+                      referrer: options.referrer || chapter.url || source.url,
+                      tabId: source.id,
+                    }),
+                },
+                { referrer: chapter.url || source.url, tabId: source.id }
+              );
           dispatch({
             type: 'set-chapter-preview',
             chapterUrl: chapter.canonicalUrl,

@@ -24,6 +24,29 @@ const NON_CHAPTER_NAV_RE = /(?:^|\b)(?:accueil|home|homepage|index|catalogue|bro
 const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan|fiction|novel|story)/i;
 const PAGINATION_PATH_RE = /(?:^|\/)(?:page|paged|pagination|pg)\/?\d+(?:$|[/?#])/i;
 const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment)/i;
+const KNOWN_CHAPTER_LIST_ANCHOR_SELECTOR = [
+  'div#chapterlist a[href]',
+  'div#chapter-list > div > a[href]',
+  'div#chapter-list-inner ul#chapter-list > li > a[href]',
+  'div#tab-chapper div#list-chapter a[href]',
+  'div#chaptersContainer div.chapter-translation a[href]',
+  'div.list-body li.item > a[href]',
+  'div.list-body div.item > a[href]',
+  'table#chapter_table a[href]',
+  'div.manga-info-chapter div.chapter-list div.row a[href]',
+  'div.chapter-list div.row a[href]',
+  'li.wp-manga-chapter a[href]',
+  '.listing-chapters_wrap a[href]',
+  '.main.version-chap a[href]',
+  '.version-chap a[href]',
+  '.chapter_content ul.chapter_list > li a[href]',
+  'div.bg-bg-secondary div.grid a[href]',
+  'div.card-table table.table a.btn-primary[href]',
+  'div.detail_lst ul#_listUl > li a[href]',
+].join(', ');
+
+const KNOWN_CHAPTER_LIST_CONTAINER_RE =
+  /(chapter-list|chapterlist|listing-chapters|version-chap|manga-info-chapter|chapter_table|detail_lst|card-table|chaptersContainer|bg-bg-secondary|list-body|chapter_content)/i;
 
 function relationFromAnchor(anchor: HTMLAnchorElement, label: string): ChapterRelation {
   const rel = (anchor.getAttribute('rel') || '').toLowerCase();
@@ -119,6 +142,28 @@ function buildContainerSignature(anchor: Element): string {
   return segments.join('>');
 }
 
+function matchesKnownChapterListAnchor(anchor: Element): boolean {
+  try {
+    if (anchor.matches(KNOWN_CHAPTER_LIST_ANCHOR_SELECTOR)) {
+      return true;
+    }
+  } catch {
+    // Ignore selector support quirks in old DOM implementations.
+  }
+
+  let current: Element | null = anchor.parentElement;
+  let depth = 0;
+  while (current && depth < 5) {
+    const hint = `${current.id || ''} ${current.className || ''}`;
+    if (KNOWN_CHAPTER_LIST_CONTAINER_RE.test(hint)) {
+      return true;
+    }
+    current = current.parentElement;
+    depth += 1;
+  }
+  return false;
+}
+
 function isLikelyHiddenElement(element: Element): boolean {
   if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') {
     return true;
@@ -130,6 +175,14 @@ function isLikelyHiddenElement(element: Element): boolean {
     }
   }
   return false;
+}
+
+function isChapterLikeHint(label: string, href: string, chapterNumber: number | null): boolean {
+  return (
+    chapterNumber !== null ||
+    CHAPTER_HINT_RE.test(`${label} ${href}`) ||
+    CHAPTER_PATH_RE.test(href)
+  );
 }
 
 function extractChapterLabel(element: Element): string {
@@ -257,6 +310,138 @@ function collectScriptChapterLinks(
   return results;
 }
 
+function parseJsonScript(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function readStringProperty(node: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = node[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return '';
+}
+
+function collectHydratedChapterLinks(
+  root: ParentNode,
+  baseUrl: string,
+  currentUrl: string
+): ChapterLinkCandidate[] {
+  const scripts = Array.from(
+    root.querySelectorAll<HTMLScriptElement>(
+      'script[type="application/json"], script[type="application/ld+json"], script:not([src])'
+    )
+  );
+  const results: ChapterLinkCandidate[] = [];
+  const seen = new Set<string>();
+
+  scripts.forEach((script, scriptIndex) => {
+    const text = script.textContent?.trim() || '';
+    if (!text || !/(chapter|chapitre|chapters|episode|episodes|chapterList|episodeList)/i.test(text)) {
+      return;
+    }
+
+    const parsed = parseJsonScript(text);
+    if (!parsed) return;
+
+    const walk = (node: unknown, depth: number): void => {
+      if (!node || depth > 10) return;
+      if (Array.isArray(node)) {
+        node.forEach((entry) => walk(entry, depth + 1));
+        return;
+      }
+      if (typeof node !== 'object') return;
+
+      const record = node as Record<string, unknown>;
+      const rawUrl = readStringProperty(record, [
+        'url',
+        'href',
+        'link',
+        'permalink',
+        'chapterUrl',
+        'chapter_url',
+        'episodeUrl',
+        'episode_url',
+      ]);
+      if (rawUrl) {
+        const resolvedUrl = resolveUrl(rawUrl, baseUrl);
+        if (resolvedUrl && sameHost(currentUrl, resolvedUrl)) {
+          const canonicalUrl = resolvedUrl.split('#')[0];
+          if (!seen.has(canonicalUrl)) {
+            const rawNumber = readStringProperty(record, [
+              'chapterNumber',
+              'chapter_number',
+              'episodeNumber',
+              'episode_number',
+              'number',
+              'no',
+              'episode_no',
+            ]);
+            const rawLabel = readStringProperty(record, [
+              'title',
+              'name',
+              'label',
+              'chapterTitle',
+              'chapter_title',
+              'chapterName',
+              'chapter_name',
+              'episodeTitle',
+              'episode_title',
+            ]);
+            const label = rawLabel || (rawNumber ? `Chapter ${rawNumber}` : rawUrl);
+            const identity = parseChapterIdentity(label, resolvedUrl);
+            const chapterNumber = identity.chapterNumber ?? (rawNumber ? Number(rawNumber) : null);
+            const numericChapterNumber =
+              typeof chapterNumber === 'number' && Number.isFinite(chapterNumber) ? chapterNumber : null;
+            if (isChapterLikeHint(label, resolvedUrl, numericChapterNumber)) {
+              const relation = canonicalUrl === currentUrl.split('#')[0] ? 'current' : relationFromHints(`${label} ${resolvedUrl}`);
+              const score =
+                computeScore(
+                  identity.label,
+                  currentUrl,
+                  resolvedUrl,
+                  relation,
+                  numericChapterNumber,
+                  'script:hydration-json'
+                ) + 20;
+              if (score >= 12) {
+                seen.add(canonicalUrl);
+                results.push({
+                  id: `chapter-hydration-link-${scriptIndex}-${results.length}`,
+                  url: resolvedUrl,
+                  canonicalUrl,
+                  label: identity.label || label,
+                  relation,
+                  score,
+                  chapterNumber: numericChapterNumber,
+                  volumeNumber: identity.volumeNumber,
+                  containerSignature: 'script:hydration-json',
+                  diagnostics: [],
+                });
+              }
+            }
+          }
+        }
+      }
+
+      Object.values(record).forEach((value) => walk(value, depth + 1));
+    };
+
+    walk(parsed, 0);
+  });
+
+  return results;
+}
+
 export function collectChapterLinks(
   root: ParentNode,
   baseUrl: string,
@@ -271,17 +456,20 @@ export function collectChapterLinks(
   const results: ChapterLinkCandidate[] = [];
 
   anchors.forEach((anchor, index) => {
-    if (isLikelyHiddenElement(anchor)) return;
     const resolvedUrl = resolveUrl(anchor.getAttribute('href') || '', baseUrl);
     if (!resolvedUrl) return;
 
     const label = extractChapterLabel(anchor);
-    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !LISTING_HINT_RE.test(resolvedUrl)) {
-      return;
-    }
-
     const relation = relationFromAnchor(anchor, label);
     const identity = parseChapterIdentity(label, resolvedUrl);
+    const knownChapterListAnchor = matchesKnownChapterListAnchor(anchor);
+    const chapterLike = isChapterLikeHint(label, resolvedUrl, identity.chapterNumber);
+    if (isLikelyHiddenElement(anchor) && !knownChapterListAnchor && !chapterLike && relation !== 'listing') {
+      return;
+    }
+    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !LISTING_HINT_RE.test(resolvedUrl) && !knownChapterListAnchor) {
+      return;
+    }
     const containerSignature = buildContainerSignature(anchor);
     if (relation === 'candidate' && NAV_SECTION_RE.test(containerSignature) && !CHAPTER_HINT_RE.test(label)) {
       return;
@@ -293,7 +481,7 @@ export function collectChapterLinks(
       relation,
       identity.chapterNumber,
       containerSignature
-    );
+    ) + (knownChapterListAnchor ? 24 : 0);
     if (score < 8) return;
 
     results.push({
@@ -305,13 +493,12 @@ export function collectChapterLinks(
       score,
       chapterNumber: identity.chapterNumber,
       volumeNumber: identity.volumeNumber,
-      containerSignature,
+      containerSignature: knownChapterListAnchor ? `known-chapter-list>${containerSignature}` : containerSignature,
       diagnostics: [],
     });
   });
 
   dataHrefElements.forEach((element, index) => {
-    if (isLikelyHiddenElement(element)) return;
     const rawHref =
       element.getAttribute('data-href') ||
       element.getAttribute('data-url') ||
@@ -322,10 +509,6 @@ export function collectChapterLinks(
     if (!resolvedUrl) return;
 
     const label = extractChapterLabel(element);
-    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl)) {
-      return;
-    }
-
     const relation =
       element.hasAttribute('data-next')
         ? 'next'
@@ -335,6 +518,14 @@ export function collectChapterLinks(
             ? 'candidate'
             : 'listing';
     const identity = parseChapterIdentity(label, resolvedUrl);
+    const knownChapterListAnchor = matchesKnownChapterListAnchor(element);
+    const chapterLike = isChapterLikeHint(label, resolvedUrl, identity.chapterNumber);
+    if (isLikelyHiddenElement(element) && !knownChapterListAnchor && !chapterLike && relation !== 'listing') {
+      return;
+    }
+    if (!label && !CHAPTER_HINT_RE.test(resolvedUrl) && !CHAPTER_PATH_RE.test(resolvedUrl) && !knownChapterListAnchor) {
+      return;
+    }
     const containerSignature = buildContainerSignature(element);
     if (relation === 'candidate' && NAV_SECTION_RE.test(containerSignature) && !CHAPTER_HINT_RE.test(label)) {
       return;
@@ -347,7 +538,7 @@ export function collectChapterLinks(
         relation,
         identity.chapterNumber,
         containerSignature
-      ) + 8;
+      ) + 8 + (knownChapterListAnchor ? 24 : 0);
     if (score < 8) return;
 
     results.push({
@@ -359,7 +550,7 @@ export function collectChapterLinks(
       score,
       chapterNumber: identity.chapterNumber,
       volumeNumber: identity.volumeNumber,
-      containerSignature,
+      containerSignature: knownChapterListAnchor ? `known-chapter-list>${containerSignature}` : containerSignature,
       diagnostics: [],
     });
   });
@@ -444,5 +635,7 @@ export function collectChapterLinks(
     });
   });
 
-  return results.concat(collectScriptChapterLinks(root, baseUrl, currentUrl));
+  return results
+    .concat(collectScriptChapterLinks(root, baseUrl, currentUrl))
+    .concat(collectHydratedChapterLinks(root, baseUrl, currentUrl));
 }

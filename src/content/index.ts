@@ -161,7 +161,8 @@ async function expandLazySections(): Promise<void> {
     document.querySelectorAll<HTMLElement>('button, [role="button"], [role="tab"], a[role="button"]')
   );
   const chapterTabRe = /\b(chapitres?|chapters?)\b/i;
-  const expandRe = /\b(load more|show more|voir plus|afficher plus|plus de chapitres|more chapters)\b/i;
+  const expandRe =
+    /\b(load more|show more|show all|voir plus|tout afficher|afficher plus|plus de chapitres|all chapters|more chapters)\b/i;
 
   for (const element of clickables) {
     const hint = textOf(element);
@@ -182,6 +183,21 @@ async function expandLazySections(): Promise<void> {
     if (!hint || !expandRe.test(hint)) continue;
     element.click();
     await sleep(160);
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const hiddenChapterListButton = document.querySelector<HTMLElement>(
+      '#chapter-list > button, #chapter-list-inner button, [id*="chapter-list"] button'
+    );
+    if (!hiddenChapterListButton) {
+      break;
+    }
+    const hint = textOf(hiddenChapterListButton);
+    if (hint && !expandRe.test(hint) && !chapterTabRe.test(hint)) {
+      break;
+    }
+    hiddenChapterListButton.click();
+    await sleep(180);
   }
 }
 

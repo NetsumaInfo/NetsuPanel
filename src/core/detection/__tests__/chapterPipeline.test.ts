@@ -362,6 +362,27 @@ describe('chapter detection helpers', () => {
     expect(candidates.map((candidate) => candidate.chapterNumber)).toEqual([1, 2]);
   });
 
+  it('keeps known chapter-list links even when the site hides the full list', () => {
+    document.body.innerHTML = `
+      <div id="chapter-list" style="display:none">
+        <div><a href="/chapters/opaque-a"><span><span>001</span></span></a></div>
+        <div><a href="/chapters/opaque-b"><span><span>002</span></span></a></div>
+      </div>
+    `;
+
+    const candidates = collectChapterLinks(
+      document,
+      'https://weebcentral.com/series/',
+      'https://weebcentral.com/series/'
+    );
+
+    expect(candidates.map((candidate) => candidate.url)).toEqual([
+      'https://weebcentral.com/chapters/opaque-a',
+      'https://weebcentral.com/chapters/opaque-b',
+    ]);
+    expect(candidates.every((candidate) => candidate.containerSignature.startsWith('known-chapter-list'))).toBe(true);
+  });
+
   it('extracts previous/next from link rel tags', () => {
     document.head.innerHTML = `
       <link rel="prev" href="https://reader.example.com/series/chapter-9" />

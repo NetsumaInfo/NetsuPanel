@@ -50,6 +50,21 @@ function createScan(url: string, chapters: ChapterLinkCandidate[], listingUrl?: 
   };
 }
 
+function createMangaDexApiChapter(id: string, chapter: string, language = 'fr') {
+  return {
+    id,
+    type: 'chapter',
+    attributes: {
+      chapter,
+      title: null,
+      translatedLanguage: language,
+      volume: null,
+      pages: 12,
+    },
+    relationships: [],
+  };
+}
+
 describe('chapterCrawler discoverChapters', () => {
   it('keeps initial chapters when remote listing fetch is denied', async () => {
     const current = createChapterLink('https://example.com/chapter-1', 'current', 1, 1);
@@ -238,6 +253,71 @@ describe('chapterCrawler discoverChapters', () => {
     expect(scanPage).toHaveBeenCalledWith(
       'https://astral-manga.fr/manga/series/chapter/chapter-3-id',
       expect.objectContaining({ forceLive: true })
+    );
+  });
+
+  it('loads MangaDex chapter lists from the public feed API on title pages', async () => {
+    const mangaId = 'aac2001d-1b47-4103-9e78-7f3e72ea9851';
+    const initialScan = createScan(`https://mangadex.org/title/${mangaId}/series`, []);
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url.startsWith(`https://api.mangadex.org/manga/${mangaId}/feed`)) {
+        return JSON.stringify({
+          total: 3,
+          limit: 100,
+          offset: 0,
+          data: [
+            createMangaDexApiChapter('a606faeb-fd0d-4cd8-8e33-2820e047332d', '1', 'en'),
+            createMangaDexApiChapter('9a7a6f6c-5379-46e9-8fef-9baabe51fb30', '2', 'en'),
+            createMangaDexApiChapter('19160590-69e1-44ea-bdfe-0536e02688ac', '3', 'en'),
+          ],
+        });
+      }
+      return '<html><body></body></html>';
+    });
+
+    const chapters = await discoverChapters(initialScan, { fetchDocument });
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2, 3]);
+    expect(chapters[1]?.url).toBe('https://mangadex.org/chapter/9a7a6f6c-5379-46e9-8fef-9baabe51fb30');
+    expect(chapters[1]?.label).toBe('Chapitre 2 (en)');
+  });
+
+  it('uses MangaDex chapter metadata to fetch the feed in the current chapter language', async () => {
+    const mangaId = 'aac2001d-1b47-4103-9e78-7f3e72ea9851';
+    const chapterId = 'fc16ef74-2e52-4db7-a69d-4081282b6219';
+    const initialScan = createScan(`https://mangadex.org/chapter/${chapterId}`, []);
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url.startsWith(`https://api.mangadex.org/chapter/${chapterId}`)) {
+        return JSON.stringify({
+          data: {
+            ...createMangaDexApiChapter(chapterId, '13', 'fr'),
+            relationships: [{ id: mangaId, type: 'manga' }],
+          },
+        });
+      }
+      if (url.startsWith(`https://api.mangadex.org/manga/${mangaId}/feed`)) {
+        const feedUrl = new URL(url);
+        expect(feedUrl.searchParams.get('translatedLanguage[]')).toBe('fr');
+        return JSON.stringify({
+          total: 2,
+          limit: 100,
+          offset: 0,
+          data: [
+            createMangaDexApiChapter('a606faeb-fd0d-4cd8-8e33-2820e047332d', '1', 'fr'),
+            createMangaDexApiChapter('9a7a6f6c-5379-46e9-8fef-9baabe51fb30', '2', 'fr'),
+          ],
+        });
+      }
+      return '<html><body></body></html>';
+    });
+
+    const chapters = await discoverChapters(initialScan, { fetchDocument });
+
+    expect(chapters.map((chapter) => chapter.chapterNumber)).toEqual([1, 2]);
+    expect(chapters[0]?.label).toBe('Chapitre 1');
+    expect(fetchDocument).toHaveBeenCalledWith(
+      expect.stringContaining(`https://api.mangadex.org/chapter/${chapterId}`),
+      expect.anything()
     );
   });
 });
@@ -436,5 +516,96 @@ describe('chapterCrawler loadChapterPreview', () => {
 
     expect(preview.items).toHaveLength(2);
     expect(preview.items.some((item) => item.url.startsWith('data:image/svg+xml'))).toBe(false);
+  });
+
+  it('loads WeebCentral images from the htmx long-strip fragment', async () => {
+    const chapterUrl = 'https://weebcentral.com/chapters/abc123';
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === chapterUrl) {
+        return `
+          <html><body>
+            <div id="last-chapter-top"></div>
+            <div hx-get="/chapter/pages/abc123"></div>
+          </body></html>
+        `;
+      }
+      if (url === 'https://weebcentral.com/chapter/pages/abc123?is_prev=False&current_page=1&reading_style=long_strip') {
+        return `
+          <html><body>
+            <section>
+              <img src="/images/abc123/001.jpg" alt="Page 1" />
+              <img src="/images/abc123/002.jpg" alt="Page 2" />
+            </section>
+          </body></html>
+        `;
+      }
+      return '<html><body></body></html>';
+    });
+
+    const preview = await loadChapterPreview(chapterUrl, { fetchDocument });
+
+    expect(preview.items.map((item) => item.url)).toEqual([
+      'https://weebcentral.com/images/abc123/001.jpg',
+      'https://weebcentral.com/images/abc123/002.jpg',
+    ]);
+    expect(fetchDocument).toHaveBeenCalledWith(
+      'https://weebcentral.com/chapter/pages/abc123?is_prev=False&current_page=1&reading_style=long_strip',
+      expect.objectContaining({ referrer: chapterUrl })
+    );
+  });
+
+  it('loads MangaDex images directly from the at-home API', async () => {
+    const chapterId = 'fc16ef74-2e52-4db7-a69d-4081282b6219';
+    const chapterUrl = `https://mangadex.org/chapter/${chapterId}`;
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === `https://api.mangadex.org/at-home/server/${chapterId}`) {
+        return JSON.stringify({
+          baseUrl: 'https://cmdxd98sb0x3yprd.mangadex.network',
+          chapter: {
+            hash: 'aff285f6aa83af6102b2e00f4e4a7f13',
+            data: ['001.jpg', '002.jpg'],
+            dataSaver: [],
+          },
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const preview = await loadChapterPreview(chapterUrl, { fetchDocument });
+
+    expect(preview.items.map((item) => item.url)).toEqual([
+      'https://cmdxd98sb0x3yprd.mangadex.network/data/aff285f6aa83af6102b2e00f4e4a7f13/001.jpg',
+      'https://cmdxd98sb0x3yprd.mangadex.network/data/aff285f6aa83af6102b2e00f4e4a7f13/002.jpg',
+    ]);
+    expect(fetchDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('crawls legacy sequential reader pages when total_pages is embedded in scripts', async () => {
+    const chapterUrl = 'https://www.mangatown.com/manga/series/c001/';
+    const fetchDocument = jest.fn(async (url: string) => {
+      if (url === chapterUrl) {
+        return `
+          <html><body>
+            <script>var total_pages = 3;</script>
+            <div class="read_img"><img id="image" src="https://cdn.example.com/c001/1.jpg" /></div>
+          </body></html>
+        `;
+      }
+      if (url === 'https://www.mangatown.com/manga/series/c001/2.html') {
+        return '<html><body><div class="read_img"><img id="image" src="https://cdn.example.com/c001/2.jpg" /></div></body></html>';
+      }
+      if (url === 'https://www.mangatown.com/manga/series/c001/3.html') {
+        return '<html><body><div class="read_img"><img id="image" src="https://cdn.example.com/c001/3.jpg" /></div></body></html>';
+      }
+      return '<html><body></body></html>';
+    });
+
+    const preview = await loadChapterPreview(chapterUrl, { fetchDocument });
+
+    expect(preview.items.map((item) => item.url)).toEqual([
+      'https://cdn.example.com/c001/1.jpg',
+      'https://cdn.example.com/c001/2.jpg',
+      'https://cdn.example.com/c001/3.jpg',
+    ]);
   });
 });

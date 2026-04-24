@@ -67,6 +67,30 @@ describe('madaraAdapter', () => {
     expect(chapterOne?.label).toBe('Chapitre 1');
   });
 
+  test('does not turn same-page first chapter CTA into a fake Astral chapter', () => {
+    document.body.innerHTML = `
+      <a href="/manga/series/">Lire le premier chapitre</a>
+      <ul class="main version-chap">
+        <li class="wp-manga-chapter"><a href="/manga/series/chapter/chapter-2-id">Chapitre 2</a></li>
+      </ul>
+    `;
+
+    const result = madaraAdapter.scan({
+      document,
+      page: {
+        url: 'https://astral-manga.fr/manga/series/',
+        title: 'Series',
+        host: 'astral-manga.fr',
+        pathname: '/manga/series/',
+      },
+      origin: 'live-dom',
+      imageCandidates: [],
+    });
+
+    expect(result.chapters.map((chapter) => chapter.chapterNumber)).toEqual([2]);
+    expect(result.chapters.every((chapter) => chapter.url !== 'https://astral-manga.fr/manga/series/')).toBe(true);
+  });
+
   test('preserves Next image proxy URLs for Astral previews', () => {
     const proxyUrl =
       'https://astral-manga.fr/_next/image?url=https%3A%2F%2Fcdn.astral.test%2Fchapter%2F001.webp&w=1920&q=75';

@@ -27,4 +27,24 @@ describe('collectRuntimeMangaGlobals', () => {
     expect(result.mangagoImages).toEqual(['https://cdn.example.com/mg-1.png']);
     expect(result.nextDataImages).toEqual(['https://cdn.example.com/next-1.webp']);
   });
+
+  test('extracts Manga Downloader Plus script image list patterns', () => {
+    document.body.innerHTML = `
+      <script>
+        var chapImages = 'https://cdn.example.com/chapter/001.jpg,https://cdn.example.com/chapter/002.jpg';
+      </script>
+      <script>
+        const chapterImages = JSON.parse(\`["/relative/003.webp","/relative/004.webp"]\`);
+      </script>
+    `;
+
+    const result = collectRuntimeMangaGlobals(document);
+
+    expect(result.mangagoImages).toEqual([
+      'https://cdn.example.com/chapter/001.jpg',
+      'https://cdn.example.com/chapter/002.jpg',
+      '/relative/003.webp',
+      '/relative/004.webp',
+    ]);
+  });
 });

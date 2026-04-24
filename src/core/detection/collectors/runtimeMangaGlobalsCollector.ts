@@ -6,6 +6,13 @@ function parseJsonCandidate(text: string): unknown {
   }
 }
 
+const IMAGE_RESOURCE_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i;
+const RELATIVE_IMAGE_RE = /^(?:\/|\.\/|\.\.\/)[^"'<>]+\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i;
+
+function isLikelyImageResource(value: string): boolean {
+  return /^https?:\/\//i.test(value) || RELATIVE_IMAGE_RE.test(value) || IMAGE_RESOURCE_RE.test(value);
+}
+
 function extractStringArray(value: unknown, maxDepth = 6): string[] {
   const results: string[] = [];
   const seen = new Set<unknown>();
@@ -13,7 +20,7 @@ function extractStringArray(value: unknown, maxDepth = 6): string[] {
   function walk(node: unknown, depth: number): void {
     if (!node || depth > maxDepth || seen.has(node)) return;
     if (typeof node === 'string') {
-      if (/^https?:\/\//i.test(node)) {
+      if (isLikelyImageResource(node)) {
         results.push(node);
       }
       return;
@@ -56,9 +63,48 @@ function extractArrayAssignment(document: ParentNode, variableName: string): str
     if (!match?.[1]) continue;
     const parsed = parseJsonCandidate(match[1]);
     if (Array.isArray(parsed)) {
-      const urls = parsed.filter((value): value is string => typeof value === 'string' && /^https?:\/\//i.test(value));
+      const urls = parsed.filter((value): value is string => typeof value === 'string' && isLikelyImageResource(value));
       if (urls.length > 0) return urls;
     }
+  }
+
+  return [];
+}
+
+function extractStringAssignmentImages(document: ParentNode, variableName: string): string[] {
+  const scripts = Array.from((document as Document).querySelectorAll<HTMLScriptElement>('script:not([src])'));
+  const pattern = new RegExp(`(?:var|let|const)\\s+${variableName}\\s*=\\s*(['"\`])([\\s\\S]*?)\\1`, 'i');
+
+  for (const script of scripts) {
+    const text = script.textContent ?? '';
+    const match = text.match(pattern);
+    if (!match?.[2]) continue;
+
+    const values = match[2]
+      .split(',')
+      .map((value) => value.trim().replace(/\\\//g, '/'))
+      .filter((value) => isLikelyImageResource(value));
+    if (values.length > 0) return values;
+  }
+
+  return [];
+}
+
+function extractJsonParseAssignmentImages(document: ParentNode, variableName: string): string[] {
+  const scripts = Array.from((document as Document).querySelectorAll<HTMLScriptElement>('script:not([src])'));
+  const pattern = new RegExp(
+    `(?:var|let|const)\\s+${variableName}\\s*=\\s*JSON\\.parse\\(\\s*(['"\`])([\\s\\S]*?)\\1\\s*\\)`,
+    'i'
+  );
+
+  for (const script of scripts) {
+    const text = script.textContent ?? '';
+    const match = text.match(pattern);
+    if (!match?.[2]) continue;
+    const rawJson = match[2].replace(/\\`/g, '`').replace(/\\"/g, '"').replace(/\\\//g, '/');
+    const parsed = parseJsonCandidate(rawJson);
+    const urls = extractStringArray(parsed);
+    if (urls.length > 0) return urls;
   }
 
   return [];
@@ -96,7 +142,14 @@ export function collectRuntimeMangaGlobals(document: ParentNode): RuntimeMangaGl
   return {
     tsReaderImages: unique(extractTsReaderSources(document)),
     chapterPages: unique(extractArrayAssignment(document, 'chapterPages')),
-    mangagoImages: unique(extractArrayAssignment(document, 'imglist')),
+    mangagoImages: unique([
+      ...extractArrayAssignment(document, 'imglist'),
+      ...extractArrayAssignment(document, 'chapImages'),
+      ...extractArrayAssignment(document, 'chapterImages'),
+      ...extractStringAssignmentImages(document, 'chapImages'),
+      ...extractStringAssignmentImages(document, 'chapterImages'),
+      ...extractJsonParseAssignmentImages(document, 'chapterImages'),
+    ]),
     nextDataImages: unique(extractNextDataImages(document)),
   };
 }

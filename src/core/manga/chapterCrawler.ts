@@ -17,6 +17,7 @@ import { collectRuntimeMangaGlobals } from '@core/detection/collectors/runtimeMa
 import { detectPageStrategy } from '@core/detection/pageStrategy';
 import { scanPageDocument } from '@core/detection/scanPage';
 import { isLikelyDecorative } from '@core/detection/pipeline/scoreImageCandidate';
+import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
 
 export interface ChapterCrawlerDependencies {
   fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
@@ -26,11 +27,105 @@ export interface ChapterCrawlerDependencies {
 const DEFAULT_LINEAR_CHAPTER_LIMIT = 64;
 const DEFAULT_DISCOVERY_TIME_BUDGET_MS = 7_000;
 const DEFAULT_LISTING_PAGE_LIMIT = 24;
+const MANGADEX_FEED_LIMIT = 100;
+const MANGADEX_FEED_PAGE_LIMIT = 20;
 const SVG_URL_RE = /^data:image\/svg\+xml/i;
 const RASTER_HINT_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp)(?:$|[?#])/i;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+
+interface MangaDexRelationship {
+  id: string;
+  type: string;
+}
+
+interface MangaDexChapterData {
+  id: string;
+  attributes?: {
+    chapter?: string | null;
+    title?: string | null;
+    translatedLanguage?: string | null;
+    volume?: string | null;
+    pages?: number | null;
+  };
+  relationships?: MangaDexRelationship[];
+}
+
+interface MangaDexChapterResponse {
+  data?: MangaDexChapterData;
+}
+
+interface MangaDexFeedResponse {
+  data?: MangaDexChapterData[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
+interface MangaDexAtHomeResponse {
+  baseUrl?: string;
+  chapter?: {
+    hash?: string;
+    data?: string[];
+    dataSaver?: string[];
+  };
+}
 
 function isSvgLikeUrl(url: string): boolean {
   return SVG_URL_RE.test(url) || /\.svg(?:$|[?#])/i.test(url);
+}
+
+function isMangaDexUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'mangadex.org' || host.endsWith('.mangadex.org');
+  } catch {
+    return false;
+  }
+}
+
+function extractMangaDexChapterUuid(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/\/chapter\/([0-9a-f-]{36})(?:\/|$)/i);
+    return match?.[1] && UUID_RE.test(match[1]) ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractMangaDexMangaUuid(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/\/(?:title|manga)\/([0-9a-f-]{36})(?:\/|$)/i);
+    return match?.[1] && UUID_RE.test(match[1]) ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractMangaDexLanguageFromUrl(url: string): string | null {
+  try {
+    const params = new URL(url).searchParams;
+    const language =
+      params.get('translatedLanguage[]') ||
+      params.get('translatedLanguage') ||
+      params.get('language') ||
+      params.get('lang');
+    return language && /^[a-z]{2}(?:-[a-z]{2})?$/i.test(language) ? language.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+async function fetchJsonDocument<T>(
+  url: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number } = {}
+): Promise<T> {
+  const text = await dependencies.fetchDocument(url, options);
+  return JSON.parse(text) as T;
 }
 
 function isRasterPreviewCandidate(item: ImageCandidate): boolean {
@@ -137,6 +232,231 @@ function mergePreviewCollections(...collections: Array<ImageCollectionResult | n
     totalCandidates,
     diagnostics,
   };
+}
+
+function resolveImageUrlsFromDocument(document: Document, baseUrl: string, selector: string): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  const images = Array.from(document.querySelectorAll<HTMLImageElement>(selector));
+
+  for (const image of images) {
+    const raw =
+      image.getAttribute('data-cfsrc') ||
+      image.getAttribute('data-src') ||
+      image.getAttribute('data-url') ||
+      image.getAttribute('data-lazy-src') ||
+      image.getAttribute('data-original') ||
+      image.currentSrc ||
+      image.getAttribute('src') ||
+      '';
+    if (!raw || raw.startsWith('data:')) continue;
+
+    try {
+      const resolved = new URL(raw, baseUrl).href;
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      urls.push(resolved);
+    } catch {
+      // Ignore malformed image URLs.
+    }
+  }
+
+  return urls;
+}
+
+function buildPreviewCollectionFromUrls(
+  urls: string[],
+  chapterUrl: string,
+  sourceKind: string,
+  diagnosticCode: string,
+  diagnosticMessage: string
+): ImageCollectionResult | null {
+  const rawCandidates: RawImageCandidate[] = urls.map((url, index) => ({
+    id: `${sourceKind}-${index}`,
+    url,
+    previewUrl: url,
+    referrer: chapterUrl,
+    captureStrategy: 'network',
+    sourceKind,
+    origin: 'static-html',
+    width: 0,
+    height: 0,
+    domIndex: index,
+    top: index * 100,
+    left: 0,
+    altText: `Page ${index + 1}`,
+    titleText: '',
+    containerSignature: sourceKind,
+    visible: true,
+    diagnostics: [],
+  }));
+
+  if (rawCandidates.length === 0) return null;
+  const collection = buildImageCollection(rawCandidates, 'manga');
+  return {
+    ...collection,
+    diagnostics: collection.diagnostics.concat({
+      code: diagnosticCode,
+      message: diagnosticMessage,
+      level: 'info',
+    }),
+  };
+}
+
+function buildMangaDexPageUrls(response: MangaDexAtHomeResponse): string[] {
+  const baseUrl = response.baseUrl?.replace(/\/+$/, '');
+  const hash = response.chapter?.hash;
+  if (!baseUrl || !hash) return [];
+
+  if (isStringArray(response.chapter?.data) && response.chapter.data.length > 0) {
+    return response.chapter.data.map((filename) => `${baseUrl}/data/${hash}/${filename}`);
+  }
+
+  if (isStringArray(response.chapter?.dataSaver) && response.chapter.dataSaver.length > 0) {
+    return response.chapter.dataSaver.map((filename) => `${baseUrl}/data-saver/${hash}/${filename}`);
+  }
+
+  return [];
+}
+
+async function collectMangaDexAtHomePreview(
+  chapterUrl: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number }
+): Promise<ImageCollectionResult | null> {
+  if (!isMangaDexUrl(chapterUrl)) return null;
+  const chapterId = extractMangaDexChapterUuid(chapterUrl);
+  if (!chapterId) return null;
+
+  try {
+    const response = await fetchJsonDocument<MangaDexAtHomeResponse>(
+      `https://api.mangadex.org/at-home/server/${chapterId}`,
+      dependencies,
+      {
+        ...options,
+        referrer: options.referrer || chapterUrl,
+      }
+    );
+    const urls = buildMangaDexPageUrls(response);
+    return buildPreviewCollectionFromUrls(
+      urls,
+      chapterUrl,
+      'mangadex-api',
+      'mangadex-at-home',
+      `${urls.length} images récupérées depuis MangaDex@Home.`
+    );
+  } catch {
+    return null;
+  }
+}
+
+function findWeebCentralImageListUrl(document: Document, chapterUrl: string): string | null {
+  const explicitHtmxElement =
+    document.getElementById('last-chapter-top')?.nextElementSibling as HTMLElement | null;
+  const fallbackHtmxElement = document.querySelector<HTMLElement>(
+    '[hx-get*="chapter"], [hx-get*="page"], [hx-get*="reader"], [data-hx-get*="chapter"], [data-hx-get*="page"]'
+  );
+  const raw =
+    explicitHtmxElement?.getAttribute('hx-get') ||
+    explicitHtmxElement?.getAttribute('data-hx-get') ||
+    fallbackHtmxElement?.getAttribute('hx-get') ||
+    fallbackHtmxElement?.getAttribute('data-hx-get') ||
+    '';
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw, chapterUrl);
+    url.search = '?is_prev=False&current_page=1&reading_style=long_strip';
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+async function collectWeebCentralHtmxPreview(
+  document: Document,
+  chapterUrl: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number }
+): Promise<ImageCollectionResult | null> {
+  const imageListUrl = findWeebCentralImageListUrl(document, chapterUrl);
+  if (!imageListUrl) return null;
+
+  try {
+    const html = await dependencies.fetchDocument(imageListUrl, {
+      ...options,
+      referrer: chapterUrl,
+    });
+    const imageListDocument = parseRemoteDocument(html);
+    const urls = resolveImageUrlsFromDocument(imageListDocument, imageListUrl, 'section > img, main section img, img[alt*="Page"]')
+      .filter((url) => RASTER_HINT_RE.test(url) || /\/cdn-cgi\/image\/|\/_next\/image/i.test(url));
+    return buildPreviewCollectionFromUrls(
+      urls,
+      chapterUrl,
+      'weebcentral-htmx',
+      'weebcentral-htmx',
+      `${urls.length} images récupérées depuis le fragment WeebCentral.`
+    );
+  } catch {
+    return null;
+  }
+}
+
+function extractLegacyTotalPages(document: Document): number | null {
+  const text = Array.from(document.querySelectorAll<HTMLScriptElement>('script:not([src])'))
+    .map((script) => script.textContent || '')
+    .join('\n');
+  const match =
+    text.match(/total_pages\s*[=:]\s*['"]?(\d{1,4})/i) ||
+    text.match(/pagesNum\s*[=:]\s*['"]?(\d{1,4})/i);
+  if (!match?.[1]) return null;
+  const total = Number(match[1]);
+  return Number.isFinite(total) && total > 1 ? Math.min(total, 200) : null;
+}
+
+function buildLegacyPageUrl(chapterUrl: string, page: number): string | null {
+  try {
+    const base = chapterUrl.endsWith('/') ? chapterUrl : `${chapterUrl.replace(/\/\d+\.html(?:[?#].*)?$/i, '')}/`;
+    return new URL(`${page}.html`, base).href;
+  } catch {
+    return null;
+  }
+}
+
+async function collectLegacySequentialPreview(
+  document: Document,
+  chapterUrl: string,
+  dependencies: ChapterCrawlerDependencies
+): Promise<ImageCollectionResult | null> {
+  const totalPages = extractLegacyTotalPages(document);
+  if (!totalPages) return null;
+
+  const urls: string[] = [];
+  const firstPageImage = resolveImageUrlsFromDocument(document, chapterUrl, 'div.read_img img#image, div.read_img img.image, img#image');
+  urls.push(...firstPageImage);
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const pageUrl = buildLegacyPageUrl(chapterUrl, page);
+    if (!pageUrl) break;
+    try {
+      const html = await dependencies.fetchDocument(pageUrl, { referrer: chapterUrl });
+      const pageDocument = parseRemoteDocument(html);
+      const pageImages = resolveImageUrlsFromDocument(pageDocument, pageUrl, 'div.read_img img#image, div.read_img img.image, img#image');
+      urls.push(...pageImages);
+    } catch {
+      break;
+    }
+  }
+
+  const uniqueUrls = [...new Set(urls)].filter((url) => RASTER_HINT_RE.test(url));
+  if (uniqueUrls.length < Math.min(2, totalPages)) return null;
+  return buildPreviewCollectionFromUrls(
+    uniqueUrls,
+    chapterUrl,
+    'legacy-paginated-crawl',
+    'legacy-paginated-crawl',
+    `${uniqueUrls.length} images récupérées depuis ${totalPages} pages séquentielles.`
+  );
 }
 
 function parseRemoteDocument(html: string): Document {
@@ -359,6 +679,139 @@ function mergeChapterItems(existing: ChapterItem | undefined, candidate: Chapter
   if (candidate.chapterNumber !== null && existing.chapterNumber === null) return candidate;
   if (existing.chapterNumber !== null && candidate.chapterNumber === null) return existing;
   return candidate.score > existing.score ? candidate : existing;
+}
+
+function parseMangaDexNumber(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatMangaDexChapterLabel(chapter: MangaDexChapterData, showLanguage: boolean): string {
+  const attributes = chapter.attributes || {};
+  const chapterNumber = attributes.chapter?.trim();
+  const title = attributes.title?.trim();
+  const language = attributes.translatedLanguage?.trim();
+  const prefix = chapterNumber ? `Chapitre ${chapterNumber}` : 'Chapitre';
+  const label = title ? `${prefix} - ${title}` : prefix;
+  return showLanguage && language ? `${label} (${language})` : label;
+}
+
+function mangaDexChapterToItem(chapter: MangaDexChapterData, showLanguage: boolean): ChapterItem {
+  const canonicalUrl = `https://mangadex.org/chapter/${chapter.id}`;
+  return {
+    id: `mangadex-${chapter.id}`,
+    url: canonicalUrl,
+    canonicalUrl,
+    label: formatMangaDexChapterLabel(chapter, showLanguage),
+    relation: 'candidate',
+    chapterNumber: parseMangaDexNumber(chapter.attributes?.chapter),
+    volumeNumber: parseMangaDexNumber(chapter.attributes?.volume),
+    score: 120,
+    previewStatus: 'idle',
+    diagnostics: [],
+  };
+}
+
+function getMangaDexMangaRelationshipId(chapter: MangaDexChapterData | null | undefined): string | null {
+  return chapter?.relationships?.find((relationship) => relationship.type === 'manga')?.id || null;
+}
+
+async function fetchMangaDexChapterMetadata(
+  chapterId: string,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number }
+): Promise<MangaDexChapterData | null> {
+  try {
+    const url = new URL(`https://api.mangadex.org/chapter/${chapterId}`);
+    url.searchParams.append('includes[]', 'manga');
+    const response = await fetchJsonDocument<MangaDexChapterResponse>(url.href, dependencies, options);
+    return response.data || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMangaDexFeedChapters(
+  mangaId: string,
+  language: string | null,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number },
+  deadline: number
+): Promise<ChapterItem[]> {
+  const items: ChapterItem[] = [];
+  let offset = 0;
+  let total = Infinity;
+  let pageCount = 0;
+
+  while (offset < total && pageCount < MANGADEX_FEED_PAGE_LIMIT && Date.now() <= deadline) {
+    const url = new URL(`https://api.mangadex.org/manga/${mangaId}/feed`);
+    url.searchParams.set('limit', String(MANGADEX_FEED_LIMIT));
+    url.searchParams.set('offset', String(offset));
+    url.searchParams.set('order[volume]', 'asc');
+    url.searchParams.set('order[chapter]', 'asc');
+    url.searchParams.append('includes[]', 'scanlation_group');
+    if (language) {
+      url.searchParams.append('translatedLanguage[]', language);
+    }
+
+    let response: MangaDexFeedResponse;
+    try {
+      response = await fetchJsonDocument<MangaDexFeedResponse>(url.href, dependencies, options);
+    } catch {
+      break;
+    }
+
+    const data = response.data || [];
+    const showLanguage = !language;
+    items.push(...data.map((chapter) => mangaDexChapterToItem(chapter, showLanguage)));
+
+    const responseLimit = response.limit && response.limit > 0 ? response.limit : MANGADEX_FEED_LIMIT;
+    total = typeof response.total === 'number' ? response.total : offset + data.length;
+    offset += responseLimit;
+    pageCount += 1;
+    if (data.length === 0) break;
+  }
+
+  return items;
+}
+
+async function discoverMangaDexChapters(
+  initialScan: PageScanResult,
+  dependencies: ChapterCrawlerDependencies,
+  options: { referrer?: string; tabId?: number },
+  deadline: number
+): Promise<ChapterItem[]> {
+  const candidateUrls = [
+    initialScan.page.url,
+    initialScan.manga.navigation.current?.url,
+    initialScan.manga.navigation.listing?.url,
+    initialScan.manga.navigation.previous?.url,
+    initialScan.manga.navigation.next?.url,
+  ].filter((url): url is string => Boolean(url));
+
+  if (!candidateUrls.some(isMangaDexUrl)) {
+    return [];
+  }
+
+  let mangaId = candidateUrls.map(extractMangaDexMangaUuid).find((id): id is string => Boolean(id)) || null;
+  let language = candidateUrls.map(extractMangaDexLanguageFromUrl).find((lang): lang is string => Boolean(lang)) || null;
+  const chapterId = candidateUrls.map(extractMangaDexChapterUuid).find((id): id is string => Boolean(id)) || null;
+
+  if (chapterId && (!mangaId || !language) && Date.now() <= deadline) {
+    const metadata = await fetchMangaDexChapterMetadata(chapterId, dependencies, {
+      ...options,
+      referrer: options.referrer || `https://mangadex.org/chapter/${chapterId}`,
+    });
+    mangaId ||= getMangaDexMangaRelationshipId(metadata);
+    language ||= metadata?.attributes?.translatedLanguage || null;
+  }
+
+  if (!mangaId || Date.now() > deadline) {
+    return [];
+  }
+
+  return fetchMangaDexFeedChapters(mangaId, language, dependencies, options, deadline);
 }
 
 function sortChapterItems(items: ChapterItem[]): ChapterItem[] {
@@ -652,6 +1105,9 @@ export async function discoverChapters(
     addChapterItem(accumulator, chapterLinkToItem(chapter));
   });
 
+  const mangaDexChapters = await discoverMangaDexChapters(initialScan, dependencies, fetchOptions, context.deadline);
+  mangaDexChapters.forEach((chapter) => addChapterItem(accumulator, chapter));
+
   const fetchAndMergeListingPage = async (
     pageUrl: string,
     requestOptions: { referrer?: string; tabId?: number }
@@ -776,6 +1232,11 @@ export async function loadChapterPreview(
   dependencies: ChapterCrawlerDependencies,
   options: { referrer?: string; tabId?: number } = {}
 ): Promise<ImageCollectionResult> {
+  const mangaDexAtHomeResult = await collectMangaDexAtHomePreview(chapterUrl, dependencies, options);
+  if (mangaDexAtHomeResult && mangaDexAtHomeResult.items.length > 0) {
+    return mangaDexAtHomeResult;
+  }
+
   // ── Step 1: Fetch the HTML (always) ─────────────────────────────────────────
   let html = '';
   let htmlFetchError: unknown = null;
@@ -832,6 +1293,8 @@ export async function loadChapterPreview(
 
       // ── Step 4b: Paginated reader crawl ────────────────────────────────────
       let paginatedResult: ImageCollectionResult | null = null;
+      let weebCentralHtmxResult: ImageCollectionResult | null = null;
+      let legacySequentialResult: ImageCollectionResult | null = null;
       const paginatedInfo = detectPaginatedReader(doc, chapterUrl);
       const looksLikeImageUrl = (url: string): boolean =>
         RASTER_HINT_RE.test(url) ||
@@ -886,7 +1349,25 @@ export async function loadChapterPreview(
         }
       }
 
-      const merged = mergePreviewCollections(liveBest, mangaResult, generalResult, paginatedResult);
+      weebCentralHtmxResult = await collectWeebCentralHtmxPreview(
+        doc,
+        chapterUrl,
+        dependencies,
+        options
+      );
+
+      if (!paginatedResult) {
+        legacySequentialResult = await collectLegacySequentialPreview(doc, chapterUrl, dependencies);
+      }
+
+      const merged = mergePreviewCollections(
+        liveBest,
+        mangaResult,
+        generalResult,
+        paginatedResult,
+        weebCentralHtmxResult,
+        legacySequentialResult
+      );
       if (merged && merged.items.length > 0) {
         const liveScanner = dependencies.scanPage;
         const shouldAugmentWithLive =
