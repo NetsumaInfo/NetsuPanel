@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ChapterItem, ImageCandidate, ImageCollectionResult } from '@shared/types';
 import { resolveCandidateImageMode, resolveCandidateImageSrc } from '@app/services/imagePresentation';
 import { SafeImage } from './SafeImage';
@@ -36,16 +36,16 @@ export function ChapterAccordion({
   const [open, setOpen] = useState(chapter.relation === 'current');
   const isCurrentChapter = chapter.relation === 'current';
 
+  useEffect(() => {
+    if (!open || chapter.previewStatus !== 'idle') return;
+    void onEnsurePreview(chapter).catch(() => {
+      // Handled in state — badge error visible.
+    });
+  }, [chapter, onEnsurePreview, open]);
+
   const handleToggle = async () => {
     const nextOpen = !open;
     setOpen(nextOpen);
-    if (nextOpen && chapter.previewStatus === 'idle') {
-      try {
-        await onEnsurePreview(chapter);
-      } catch {
-        // Handled in state — badge error visible
-      }
-    }
   };
 
   const pageCount = chapter.preview?.items.length;

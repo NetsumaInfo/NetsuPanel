@@ -76,6 +76,23 @@ function buildGeneralSelection(scan: PageScanResult): Record<string, boolean> {
   return Object.fromEntries(scan.general.items.map((item) => [item.id, true]));
 }
 
+function mergeChapterRuntimeState(
+  previousChapters: ChapterItem[],
+  nextChapters: ChapterItem[]
+): ChapterItem[] {
+  const previousByUrl = new Map(previousChapters.map((chapter) => [chapter.canonicalUrl, chapter]));
+  return nextChapters.map((chapter) => {
+    const previous = previousByUrl.get(chapter.canonicalUrl);
+    if (!previous) return chapter;
+    return {
+      ...chapter,
+      previewStatus: previous.previewStatus,
+      preview: previous.preview,
+      previewError: previous.previewError,
+    };
+  });
+}
+
 export function resolvePreferredMode(scan: PageScanResult): AppMode {
   const readerPages = scan.manga.currentPages.items;
   const hasReaderPages = readerPages.length >= 2;
@@ -163,7 +180,7 @@ export function appReducer(state: NetsuAppState, action: AppAction): NetsuAppSta
     case 'set-chapters':
       return {
         ...state,
-        chapters: action.chapters,
+        chapters: mergeChapterRuntimeState(state.chapters, action.chapters),
       };
 
     case 'set-chapter-preview-status':

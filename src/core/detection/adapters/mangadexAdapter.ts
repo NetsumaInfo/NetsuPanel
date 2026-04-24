@@ -88,6 +88,7 @@ function buildPageUrls(baseUrl: string, hash: string, filenames: string[]): stri
 
 function scanMangaDex(input: ScanAdapterInput): MangaScanResult {
   const chapterUuid = extractChapterUuid(input.page.url);
+  const mangaUuid = extractMangaUuid(input.page.url);
   const atHome = parseAtHomeFromDom(input.document);
 
   let extraCandidates: typeof input.imageCandidates = [];
@@ -121,8 +122,12 @@ function scanMangaDex(input: ScanAdapterInput): MangaScanResult {
 
   const currentPages = buildImageCollection(allCandidates, 'manga');
 
-  // Chapter links from DOM (MangaDex SPA links may be in anchor tags)
-  const chapterCandidates = collectChapterLinks(input.document, input.page.url, input.page.url);
+  // MangaDex home/search pages contain unrelated feed links. Only title/chapter pages
+  // have enough series context; full lists are hydrated later through the v5 API.
+  const shouldCollectDomChapters = Boolean(chapterUuid || mangaUuid);
+  const chapterCandidates = shouldCollectDomChapters
+    ? collectChapterLinks(input.document, input.page.url, input.page.url)
+    : [];
   const links = buildMangaLinkMap(input.page, chapterCandidates);
 
   return {
@@ -138,6 +143,13 @@ function scanMangaDex(input: ScanAdapterInput): MangaScanResult {
             message: chapterUuid
               ? `Chapter UUID détecté (${chapterUuid}) mais at-home API data introuvable dans le DOM. Tentez de recharger la page.`
               : 'URL MangaDex sans chapter UUID — sur la page d\'accueil ou de titre.',
+            level: 'info' as const,
+          }]
+        : []),
+      ...(!shouldCollectDomChapters
+        ? [{
+            code: 'mangadex-no-series-context',
+            message: 'Page MangaDex sans titre/chapitre: les liens du flux ne sont pas utilisés comme chapitres.',
             level: 'info' as const,
           }]
         : []),

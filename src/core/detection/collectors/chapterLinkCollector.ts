@@ -24,6 +24,9 @@ const NON_CHAPTER_NAV_RE = /(?:^|\b)(?:accueil|home|homepage|index|catalogue|bro
 const CHAPTER_PATH_RE = /(chapter|chapitre|episode|ep|capitulo|capitolo|scan|fiction|novel|story)/i;
 const PAGINATION_PATH_RE = /(?:^|\/)(?:page|paged|pagination|pg)\/?\d+(?:$|[/?#])/i;
 const NAV_SECTION_RE = /(header|footer|nav|menu|breadcrumb|account|profile|social|share|comment)/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EXPLICIT_NUMBERED_CHAPTER_LABEL_RE =
+  /(?:chapter|chapitre|chap|ch\.?|episode|ep\.?|capitulo|capitolo|scan)\s*[#:–—._-]?\s*[0-9]+(?:\.[0-9]+)?/i;
 const KNOWN_CHAPTER_LIST_ANCHOR_SELECTOR = [
   'div#chapterlist a[href]',
   'div#chapter-list > div > a[href]',
@@ -178,11 +181,37 @@ function isLikelyHiddenElement(element: Element): boolean {
 }
 
 function isChapterLikeHint(label: string, href: string, chapterNumber: number | null): boolean {
+  if (isOpaqueChapterHrefWithoutExplicitLabel(label, href, chapterNumber)) {
+    return false;
+  }
   return (
     chapterNumber !== null ||
     CHAPTER_HINT_RE.test(`${label} ${href}`) ||
     CHAPTER_PATH_RE.test(href)
   );
+}
+
+function isOpaqueChapterHrefWithoutExplicitLabel(
+  label: string,
+  href: string,
+  chapterNumber: number | null
+): boolean {
+  if (chapterNumber !== null) return false;
+
+  let opaqueId: string | null = null;
+  try {
+    const segments = new URL(href).pathname.split('/').filter(Boolean);
+    const markerIndex = segments.findIndex((segment) => /^(chapter|chapitre|chap|ch|episode|ep)$/i.test(segment));
+    opaqueId = markerIndex >= 0 ? segments[markerIndex + 1] || null : null;
+  } catch {
+    opaqueId = href.match(/\/(?:chapter|chapitre|chap|ch|episode|ep)\/([^/?#]+)/i)?.[1] || null;
+  }
+
+  if (!opaqueId || !UUID_RE.test(opaqueId)) return false;
+  const trimmedLabel = compactWhitespace(label);
+  if (!trimmedLabel) return true;
+  if (trimmedLabel === href || trimmedLabel.endsWith(opaqueId) || UUID_RE.test(trimmedLabel)) return true;
+  return !EXPLICIT_NUMBERED_CHAPTER_LABEL_RE.test(trimmedLabel);
 }
 
 function extractChapterLabel(element: Element): string {
@@ -277,6 +306,9 @@ function collectScriptChapterLinks(
       const relation = relationFromHints(`${context} ${resolvedUrl}`);
       const identity = parseChapterIdentity(context, resolvedUrl);
       const urlLooksChapterLike = CHAPTER_PATH_RE.test(resolvedUrl);
+      if (isOpaqueChapterHrefWithoutExplicitLabel(context, resolvedUrl, identity.chapterNumber)) {
+        continue;
+      }
       if (!urlLooksChapterLike && !hasChapterContext && identity.chapterNumber === null) {
         continue;
       }

@@ -46,6 +46,7 @@ const CHAPTER_PATH_PATTERNS = [
 
 /** Markers that indicate a "reader-type" path (makes bare numerics more reliable) */
 const READER_PATH_RE = /(?:^|\/)(?:viewer|episode|chapter|chapitre|read|scan|detail)(?:$|[/?#_-])/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // ────────────────────────────────────────────────────────────
 // NetsuShelf-inspired: prologue / epilogue / special episode labels
@@ -130,6 +131,21 @@ function parseFromPath(url: string): number | null {
   if (fromQuery !== null) return fromQuery;
 
   const decoded = decodeURIComponent(url);
+  try {
+    const segments = new URL(decoded).pathname.split('/').filter(Boolean);
+    const chapterMarkerIndex = segments.findIndex((segment) =>
+      /^(chapter|chapitre|chap|ch|episode|ep)$/i.test(segment)
+    );
+    const opaqueChapterId = chapterMarkerIndex >= 0 ? segments[chapterMarkerIndex + 1] : null;
+    if (opaqueChapterId && UUID_RE.test(opaqueChapterId)) {
+      return null;
+    }
+  } catch {
+    const opaquePathMatch = decoded.match(/\/(?:chapter|chapitre|chap|ch|episode|ep)\/([^/?#]+)/i);
+    if (opaquePathMatch?.[1] && UUID_RE.test(opaquePathMatch[1])) {
+      return null;
+    }
+  }
 
   // Try known path patterns
   for (const pattern of CHAPTER_PATH_PATTERNS) {

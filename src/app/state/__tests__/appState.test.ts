@@ -1,5 +1,28 @@
-import type { PageScanResult } from '@shared/types';
-import { resolvePreferredMode } from '@app/state/appState';
+import type { ChapterItem, ImageCollectionResult, PageScanResult } from '@shared/types';
+import { appReducer, initialAppState, resolvePreferredMode } from '@app/state/appState';
+
+const emptyPreview: ImageCollectionResult = {
+  items: [],
+  totalCandidates: 0,
+  diagnostics: [],
+};
+
+function createChapter(url: string, label: string, previewStatus: ChapterItem['previewStatus'] = 'idle'): ChapterItem {
+  return {
+    id: url,
+    url,
+    canonicalUrl: url,
+    label,
+    relation: 'candidate',
+    chapterNumber: null,
+    volumeNumber: null,
+    score: 100,
+    previewStatus,
+    preview: previewStatus === 'ready' ? emptyPreview : undefined,
+    previewError: previewStatus === 'error' ? 'failed' : undefined,
+    diagnostics: [],
+  };
+}
 
 function createScan(overrides: Partial<PageScanResult>): PageScanResult {
   return {
@@ -79,5 +102,30 @@ describe('resolvePreferredMode', () => {
 
   it('returns general when no reader cues are present', () => {
     expect(resolvePreferredMode(createScan({}))).toBe('general');
+  });
+});
+
+describe('appReducer chapters', () => {
+  it('preserves loaded chapter previews when async chapter discovery refreshes the list', () => {
+    const chapterUrl = 'https://reader.example.com/chapter/abc';
+    const state = {
+      ...initialAppState,
+      chapters: [
+        createChapter(chapterUrl, 'Chapitre 1', 'ready'),
+      ],
+    };
+
+    const next = appReducer(state, {
+      type: 'set-chapters',
+      chapters: [
+        createChapter(chapterUrl, 'Chapitre 1 corrigé'),
+        createChapter('https://reader.example.com/chapter/def', 'Chapitre 2'),
+      ],
+    });
+
+    expect(next.chapters[0]?.label).toBe('Chapitre 1 corrigé');
+    expect(next.chapters[0]?.previewStatus).toBe('ready');
+    expect(next.chapters[0]?.preview).toBe(emptyPreview);
+    expect(next.chapters[1]?.previewStatus).toBe('idle');
   });
 });

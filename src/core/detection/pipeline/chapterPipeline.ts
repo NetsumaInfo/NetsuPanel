@@ -159,6 +159,20 @@ const GENERIC_SERIES_SEGMENTS = new Set([
   'vo',
 ]);
 
+function chapterCandidateSourcePriority(candidate: ChapterLinkCandidate): number {
+  const signature = candidate.containerSignature || '';
+  if (/madara:ajax-chapter-list|madara:chapter-list|known-chapter-list|chapter-list|chapterlist|wp-manga|version-chap/i.test(signature)) {
+    return 5;
+  }
+  if (/mangadex-api|site-adapter|chapter-select|hydration-json/i.test(signature)) {
+    return 4;
+  }
+  if (/script:inline-json|head:link-rel/i.test(signature)) {
+    return 2;
+  }
+  return 3;
+}
+
 function dedupeChapterCandidates(candidates: ChapterLinkCandidate[]): ChapterLinkCandidate[] {
   const byUrl = new Map<string, ChapterLinkCandidate>();
   for (const candidate of candidates) {
@@ -172,6 +186,8 @@ function dedupeChapterCandidates(candidates: ChapterLinkCandidate[]): ChapterLin
     const candidateHasNumber = candidate.chapterNumber !== null;
     const existingIsListing = existing.relation === 'listing';
     const candidateIsListing = candidate.relation === 'listing';
+    const existingPriority = chapterCandidateSourcePriority(existing);
+    const candidatePriority = chapterCandidateSourcePriority(candidate);
 
     // Prefer chapter-numbered candidates over unnumbered ones for the same URL.
     if (candidateHasNumber && !existingHasNumber) {
@@ -188,6 +204,13 @@ function dedupeChapterCandidates(candidates: ChapterLinkCandidate[]): ChapterLin
       continue;
     }
     if (candidateIsListing && !existingIsListing) {
+      continue;
+    }
+
+    if (candidatePriority !== existingPriority) {
+      if (candidatePriority > existingPriority) {
+        byUrl.set(candidate.canonicalUrl, candidate);
+      }
       continue;
     }
 
@@ -389,13 +412,13 @@ function pickBestChapterSet(candidates: ChapterLinkCandidate[]): ChapterLinkCand
   const cluster = pickBestChapterCluster(candidates);
   const numbered = candidates.filter((candidate) => candidate.chapterNumber !== null && candidate.score >= 18);
   const knownListCandidates = candidates.filter(
-    (candidate) => candidate.score >= 40 && /known-chapter-list|chapter-list|hydration-json|madara:chapter-list/i.test(candidate.containerSignature)
+    (candidate) => candidate.score >= 40 && /known-chapter-list|chapter-list|hydration-json|madara:chapter-list|madara:ajax-chapter-list/i.test(candidate.containerSignature)
   );
-  if (numbered.length >= 4) {
-    return numbered;
-  }
   if (knownListCandidates.length >= Math.max(4, cluster.length)) {
     return knownListCandidates;
+  }
+  if (numbered.length >= 4) {
+    return numbered;
   }
   if (numbered.length >= Math.max(4, Math.ceil(cluster.length * 1.35))) {
     return numbered;

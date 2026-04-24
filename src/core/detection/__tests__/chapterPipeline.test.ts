@@ -61,6 +61,58 @@ describe('buildMangaLinkMap', () => {
     expect(ch7s.length).toBeLessThanOrEqual(1);
   });
 
+  it('prefers trusted DOM chapter labels over script UUID candidates for the same URL', () => {
+    const url = 'https://astral-manga.fr/manga/series/chapter/21b2582b-f3fd-45eb-bee2-5cd36ac30aa2';
+    const result = buildMangaLinkMap(
+      {
+        url: 'https://astral-manga.fr/manga/series',
+        title: 'Series',
+        host: 'astral-manga.fr',
+        pathname: '/manga/series',
+      },
+      [
+        {
+          ...createChapterCandidate('script-uuid', '21b2582b-f3fd-45eb-bee2-5cd36ac30aa2', 21, 'candidate', 110),
+          url,
+          canonicalUrl: url,
+          containerSignature: 'script:inline-json',
+        },
+        {
+          ...createChapterCandidate('dom-ch4', 'Chapitre 4', 4, 'candidate', 90),
+          url,
+          canonicalUrl: url,
+          containerSignature: 'madara:chapter-list',
+        },
+      ]
+    );
+
+    expect(result.chapters.some((chapter) => chapter.chapterNumber === 21)).toBe(false);
+    expect(result.chapters.find((chapter) => chapter.canonicalUrl === url)?.chapterNumber).toBe(4);
+    expect(result.chapters.find((chapter) => chapter.canonicalUrl === url)?.label).toBe('Chapitre 4');
+  });
+
+  it('does not collect opaque UUID chapter URLs from scripts without explicit chapter labels', () => {
+    document.body.innerHTML = `
+      <script>
+        window.__DATA__ = {
+          href: "/manga/series/chapter/7f1c352b-2d1e-476d-bcaf-2705d5519317"
+        };
+      </script>
+      <ul class="main version-chap">
+        <li><a href="/manga/series/chapter/21b2582b-f3fd-45eb-bee2-5cd36ac30aa2">Chapitre 4</a></li>
+      </ul>
+    `;
+
+    const links = collectChapterLinks(
+      document,
+      'https://astral-manga.fr/manga/series',
+      'https://astral-manga.fr/manga/series'
+    );
+
+    expect(links.some((chapter) => chapter.label.includes('7f1c352b'))).toBe(false);
+    expect(links.some((chapter) => chapter.chapterNumber === 4)).toBe(true);
+  });
+
   it('keeps numbered chapter candidate over listing candidate when canonical URL is the same', () => {
     const sameUrl = 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/';
     const result = buildMangaLinkMap(
@@ -261,6 +313,8 @@ describe('chapter detection helpers', () => {
     expect(parseChapterIdentity('', 'https://reader.example.com/read?ep_no=27').chapterNumber).toBe(27);
     expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd').chapterNumber).toBe(null);
     expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/adcb8bf4-04d5-44a0-8b26-5b64f1fbfdfd/page/3').chapterNumber).toBe(null);
+    expect(parseChapterIdentity('', 'https://astral-manga.fr/manga/series/chapter/7f1c352b-2d1e-476d-bcaf-2705d5519317').chapterNumber).toBe(null);
+    expect(parseChapterIdentity('Chapitre 7', 'https://astral-manga.fr/manga/series/chapter/7f1c352b-2d1e-476d-bcaf-2705d5519317').chapterNumber).toBe(7);
   });
 
   it('injects chapter 1 only when chapter list starts at 2 and current page is missing', () => {
