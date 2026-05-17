@@ -6,7 +6,6 @@ import { isLikelyDecorative, scoreImageCandidate } from './scoreImageCandidate';
 
 const PAGE_NUMBER_RE =
   /(?:^|[/_\-\s(])(?:page|pg|p|img|image)[._\-\s#]*(\d{1,4})(?=$|[/)_\-\s.#?])|(?:^|[/_\-\s(])0*(\d{1,4})(?=\.(?:jpe?g|png|webp|avif|gif)(?:$|[?#]))/i;
-const IMAGE_EXTENSION_RE = /\.(?:jpe?g|png|webp|avif|gif|bmp|svg)(?:$|[?#])/i;
 const CACHE_BUSTER_QUERY_KEYS = new Set([
   '_',
   'cache',
@@ -16,30 +15,10 @@ const CACHE_BUSTER_QUERY_KEYS = new Set([
   'timestamp',
   'ver',
   'version',
-  'w',
-  'h',
-  'width',
-  'height',
-  'q',
-  'quality',
-  'fit',
-  'format',
-  'fm',
+  'rnd',
+  'random',
+  'nocache',
 ]);
-const IDENTITY_QUERY_KEYS = new Set([
-  'url',
-  'src',
-  'file',
-  'image',
-  'img',
-  'path',
-  'id',
-  'page',
-  'p',
-  'no',
-  'name',
-]);
-
 function extractPageNumber(input: string): number | null {
   const match = input.match(PAGE_NUMBER_RE);
   if (!match) return null;
@@ -97,23 +76,23 @@ function buildDedupeKey(candidate: ImageCandidate): string {
 
   try {
     const parsed = new URL(candidate.url);
-    const hasImagePath = IMAGE_EXTENSION_RE.test(parsed.pathname);
-    const identityParams = new URLSearchParams();
-    const fallbackParams = new URLSearchParams();
+    const significantParams = new URLSearchParams();
 
-    parsed.searchParams.forEach((value, key) => {
+    // Sort keys so order variations don't break dedup.
+    const sortedKeys = [...parsed.searchParams.keys()].sort();
+    const seenKeys = new Set<string>();
+    for (const key of sortedKeys) {
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
       const normalizedKey = key.toLowerCase();
-      if (IDENTITY_QUERY_KEYS.has(normalizedKey)) {
-        identityParams.append(key, value);
-        return;
+      if (CACHE_BUSTER_QUERY_KEYS.has(normalizedKey)) continue;
+      const values = parsed.searchParams.getAll(key);
+      for (const value of values) {
+        significantParams.append(key, value);
       }
-      if (!CACHE_BUSTER_QUERY_KEYS.has(normalizedKey)) {
-        fallbackParams.append(key, value);
-      }
-    });
+    }
 
-    const significantParams = identityParams.toString() || (!hasImagePath ? fallbackParams.toString() : '');
-    const normalizedUrl = `${parsed.origin}${parsed.pathname}${significantParams ? `?${significantParams}` : ''}`;
+    const normalizedUrl = `${parsed.origin}${parsed.pathname}${significantParams.toString() ? `?${significantParams.toString()}` : ''}`;
     return `${candidate.captureStrategy}:${normalizedUrl}`;
   } catch {
     return `${candidate.captureStrategy}:${candidate.querylessUrl || candidate.canonicalUrl || candidate.url}`;
@@ -225,16 +204,43 @@ export function buildImageCollection(
     const hasDimensions = normalized.width > 0 && normalized.height > 0;
 
     if (mode !== 'general') {
-      // Manga mode: strict filtering
+      // Manga mode: strict filtering, with carve-outs for script/json sources that
+      // legitimately lack DOM dimensions.
       const minSizeThreshold = 150;
-      const minScoreThreshold = 12;
+      const minScoreThreshold = 10;
+      const isScriptSourced =
+        normalized.sourceKind === 'json-embedded' ||
+        normalized.sourceKind === 'inline-script' ||
+        normalized.sourceKind === 'noscript-img' ||
+        normalized.origin === 'static-html';
       const isTooSmall = hasDimensions && Math.max(normalized.width, normalized.height) < minSizeThreshold;
       const isSvg = isSvgCandidate(normalized);
 
-      if (isTooSmall || isSvg || isLikelyDecorative(normalized.url) || normalized.score < minScoreThreshold) {
+      if (isSvg || isLikelyDecorative(normalized.url)) {
         diagnostics.push({
           code: 'image-rejected-low-signal',
-          message: `Rejected low-signal candidate ${normalized.filenameHint}.`,
+          message: `Rejected svg/decorative candidate ${normalized.filenameHint}.`,
+          level: 'info',
+          candidateId: normalized.id,
+        });
+        continue;
+      }
+
+      // Script/json/noscript sources skip the dimension floor; keep them unless score is poor.
+      if (!isScriptSourced && isTooSmall) {
+        diagnostics.push({
+          code: 'image-rejected-low-signal',
+          message: `Rejected too-small candidate ${normalized.filenameHint}.`,
+          level: 'info',
+          candidateId: normalized.id,
+        });
+        continue;
+      }
+
+      if (normalized.score < minScoreThreshold) {
+        diagnostics.push({
+          code: 'image-rejected-low-signal',
+          message: `Rejected low-score candidate ${normalized.filenameHint}.`,
           level: 'info',
           candidateId: normalized.id,
         });

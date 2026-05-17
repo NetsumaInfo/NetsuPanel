@@ -18,14 +18,15 @@ declare global {
 const capturableRegistry = new Map<string, CapturableNode>();
 const FETCH_RETRY_DELAYS = [200, 500, 1200];
 const STABILIZE_DELAYS = [60, 120, 220, 360, 500];
-const LAZY_SCROLL_WAIT_MS = 120;
-const LAZY_SETTLE_WAIT_MS = 260;
-const RECHECK_DELAY_MS = 160;
-const MAX_LAZY_SCROLL = 120000;
-const MAX_LAZY_STEPS = 24;
-const MAX_LAZY_PASSES = 3;
-const MAX_SCAN_DURATION_MS = 6500;
-const HYDRATE_SETTLE_WAIT_MS = 220;
+const LAZY_SCROLL_WAIT_MS = 220;
+const LAZY_SETTLE_WAIT_MS = 420;
+const RECHECK_DELAY_MS = 240;
+const MAX_LAZY_SCROLL = 160000;
+const MAX_LAZY_STEPS = 36;
+const MAX_LAZY_PASSES = 4;
+const MAX_SCAN_DURATION_MS = 8500;
+const HYDRATE_SETTLE_WAIT_MS = 320;
+const IMAGE_LOAD_QUIET_MS = 380;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -204,17 +205,30 @@ async function expandLazySections(): Promise<void> {
 // Scroll through the page to trigger lazy-loading, then scroll back
 async function triggerLazyLoading(): Promise<void> {
   const originalScrollY = window.scrollY;
-  const step = Math.max(Math.floor(window.innerHeight * 0.7), 320);
+  const step = Math.max(Math.floor(window.innerHeight * 0.6), 280);
   const scrollElement = getScrollElement();
   const maxScroll = Math.min(scrollElement.scrollHeight, MAX_LAZY_SCROLL);
-  const maxSteps = Math.max(4, Math.min(MAX_LAZY_STEPS, Math.ceil(maxScroll / step)));
+  const maxSteps = Math.max(6, Math.min(MAX_LAZY_STEPS, Math.ceil(maxScroll / step)));
   let position = 0;
+  let lastImageCount = document.querySelectorAll('img').length;
 
   for (let index = 0; index < maxSteps && position < maxScroll; index += 1) {
     position = Math.min(position + step, maxScroll);
     window.scrollTo({ top: position, behavior: 'instant' as ScrollBehavior });
     await sleep(LAZY_SCROLL_WAIT_MS);
+    // Give IntersectionObserver-driven loaders an extra quiet window when new imgs appeared.
+    const currentImageCount = document.querySelectorAll('img').length;
+    if (currentImageCount > lastImageCount) {
+      lastImageCount = currentImageCount;
+      await sleep(IMAGE_LOAD_QUIET_MS);
+    }
+    // Re-poke scroll height each step to handle infinite scroll/list expansion.
+    if (scrollElement.scrollHeight > maxScroll) {
+      break;
+    }
   }
+  window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  await sleep(LAZY_SCROLL_WAIT_MS);
   window.scrollTo({ top: originalScrollY, behavior: 'instant' as ScrollBehavior });
   await sleep(LAZY_SETTLE_WAIT_MS);
 }

@@ -1,6 +1,6 @@
 import type { RawImageCandidate } from '@shared/types';
 import { isPlaceholderImageUrl, resolveUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
-import { readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
+import { pickBestSrcsetCandidate, readBackgroundImageUrls, readImageSourceDescriptors } from './imageAttributeSources';
 import { collectJsonEmbeddedImages } from './jsonEmbeddedCollector';
 import { collectInlineScriptImages } from './inlineScriptCollector';
 
@@ -210,7 +210,7 @@ function buildCanvasCandidate(
 }
 
 function collectBackgroundCandidates(baseUrl: string, startIndex: number): RawImageCandidate[] {
-  const elements = [...document.querySelectorAll<HTMLElement>('div, section, figure, article, span')].slice(0, 600);
+  const elements = [...document.querySelectorAll<HTMLElement>('div, section, figure, article, span, a, li')].slice(0, 2400);
   const results: RawImageCandidate[] = [];
 
   elements.forEach((element, index) => {
@@ -323,9 +323,11 @@ function collectMediaCandidates(baseUrl: string, startIndex: number): RawImageCa
 
   // <picture> <source> elements — often contain higher-res images
   [...document.querySelectorAll<HTMLSourceElement>('picture source[srcset], picture source[src]')].forEach((source, index) => {
-    const raw = source.getAttribute('srcset') || source.getAttribute('src') || '';
-    const first = raw.split(',')[0].trim().split(/\s+/)[0];
-    const resolved = resolveUrl(first, baseUrl);
+    const rawSrcset = source.getAttribute('srcset') || '';
+    const rawSrc = source.getAttribute('src') || '';
+    const picked = rawSrcset ? pickBestSrcsetCandidate(rawSrcset) : null;
+    const candidate = picked || rawSrc;
+    const resolved = resolveUrl(candidate, baseUrl);
     if (!resolved) return;
     const picture = source.closest('picture');
     const img = picture?.querySelector('img');
@@ -403,46 +405,56 @@ function collectCssStyleTagCandidates(baseUrl: string, startIndex: number): RawI
 function collectNoscriptCandidates(baseUrl: string, startIndex: number): RawImageCandidate[] {
   const results: RawImageCandidate[] = [];
   const noscripts = [...document.querySelectorAll<HTMLElement>('noscript')];
+  let cursor = 0;
 
-  noscripts.forEach((ns, index) => {
+  for (const ns of noscripts) {
     const html = ns.textContent || ns.innerHTML || '';
-    if (!html.includes('<img')) return;
+    if (!html || !/<img\b/i.test(html)) continue;
 
-    // Parse the noscript content to extract img src
-    const srcMatch = html.match(/src=["']([^"']+)["']/i);
-    const dataSrcMatch = html.match(/data-src=["']([^"']+)["']/i);
-    const raw = dataSrcMatch?.[1] || srcMatch?.[1] || '';
-    if (!raw) return;
+    let fragmentImages: HTMLImageElement[] = [];
+    try {
+      const parsed = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
+      fragmentImages = [...parsed.querySelectorAll<HTMLImageElement>('img')];
+    } catch {
+      fragmentImages = [];
+    }
 
-    const resolved = resolveUrl(raw, baseUrl);
-    if (!resolved || resolved.startsWith('data:')) return;
+    for (const image of fragmentImages) {
+      const descriptors = readImageSourceDescriptors(image)
+        .map((descriptor) => ({
+          ...descriptor,
+          resolved: resolveUrl(descriptor.value, baseUrl),
+        }))
+        .filter((descriptor) => Boolean(descriptor.resolved) && !isPlaceholderImageUrl(descriptor.resolved as string));
 
-    // Extract width/height hints from noscript html
-    const widthMatch = html.match(/(?:width|data-width)=["']?(\d+)["']?/i);
-    const heightMatch = html.match(/(?:height|data-height)=["']?(\d+)["']?/i);
-    const altMatch = html.match(/alt=["']([^"']*)["']/i);
-    const width = widthMatch ? Number(widthMatch[1]) : 0;
-    const height = heightMatch ? Number(heightMatch[1]) : 0;
+      const selected = descriptors[0];
+      if (!selected?.resolved) continue;
+      if (selected.resolved.startsWith('data:')) continue;
 
-    results.push({
-      id: `noscript-${startIndex + index}`,
-      url: resolved,
-      previewUrl: resolved,
-      captureStrategy: 'network',
-      sourceKind: 'noscript-img',
-      origin: 'live-dom',
-      width,
-      height,
-      domIndex: startIndex + index,
-      top: 0,
-      left: 0,
-      altText: altMatch?.[1] || '',
-      titleText: '',
-      containerSignature: buildContainerSignature(ns),
-      visible: true,
-      diagnostics: [],
-    });
-  });
+      const widthAttr = Number(image.getAttribute('width')) || Number(image.getAttribute('data-width')) || 0;
+      const heightAttr = Number(image.getAttribute('height')) || Number(image.getAttribute('data-height')) || 0;
+
+      results.push({
+        id: `noscript-${startIndex + cursor}`,
+        url: selected.resolved,
+        previewUrl: selected.resolved,
+        captureStrategy: 'network',
+        sourceKind: 'noscript-img',
+        origin: 'live-dom',
+        width: widthAttr,
+        height: heightAttr,
+        domIndex: startIndex + cursor,
+        top: 0,
+        left: 0,
+        altText: image.getAttribute('alt') || '',
+        titleText: image.getAttribute('title') || '',
+        containerSignature: buildContainerSignature(ns),
+        visible: true,
+        diagnostics: [],
+      });
+      cursor += 1;
+    }
+  }
 
   return results;
 }
@@ -487,6 +499,10 @@ export async function collectLiveDomImages(
   const noscriptOffset = cssOffset + cssCandidates.length;
   const noscriptCandidates = collectNoscriptCandidates(baseUrl, noscriptOffset);
 
+  // <link rel="preload" as="image" href="..."> — Next.js, WP and others preload hero images.
+  const preloadOffset = noscriptOffset + noscriptCandidates.length;
+  const preloadCandidates = collectPreloadLinkCandidates(baseUrl, preloadOffset);
+
   // Multi-strategy: JSON embedded + inline scripts
   const jsonCandidates = settings.includeScriptCandidates ? collectJsonEmbeddedImages(document, baseUrl) : [];
   const scriptCandidates = settings.includeScriptCandidates ? collectInlineScriptImages(document, baseUrl) : [];
@@ -499,9 +515,45 @@ export async function collectLiveDomImages(
       mediaCandidates,
       cssCandidates,
       noscriptCandidates,
+      preloadCandidates,
       jsonCandidates,
       scriptCandidates
     ),
     capturables,
   };
+}
+
+function collectPreloadLinkCandidates(baseUrl: string, startIndex: number): RawImageCandidate[] {
+  const results: RawImageCandidate[] = [];
+  const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="preload"][as="image"], link[rel="prefetch"][as="image"]')];
+
+  links.forEach((link, index) => {
+    const rawSrcset = link.getAttribute('imagesrcset') || '';
+    const rawHref = link.getAttribute('href') || '';
+    const picked = rawSrcset ? pickBestSrcsetCandidate(rawSrcset) : null;
+    const candidate = picked || rawHref;
+    const resolved = resolveUrl(candidate, baseUrl);
+    if (!resolved || resolved.startsWith('data:')) return;
+
+    results.push({
+      id: `preload-link-${startIndex + index}`,
+      url: resolved,
+      previewUrl: resolved,
+      captureStrategy: 'network',
+      sourceKind: 'preload-link',
+      origin: 'live-dom',
+      width: 0,
+      height: 0,
+      domIndex: startIndex + index,
+      top: 0,
+      left: 0,
+      altText: '',
+      titleText: link.getAttribute('title') || '',
+      containerSignature: 'link:preload',
+      visible: false,
+      diagnostics: [],
+    });
+  });
+
+  return results;
 }

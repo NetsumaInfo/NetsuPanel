@@ -35,7 +35,7 @@ const IMAGE_ATTRIBUTES = [
   ['src', 'img-src'],
 ] as const;
 
-function pickBestSrcsetCandidate(srcset: string): string | null {
+export function pickBestSrcsetCandidate(srcset: string): string | null {
   const options = srcset
     .split(',')
     .map((entry) => entry.trim())
