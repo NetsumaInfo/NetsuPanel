@@ -601,7 +601,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
       }
 
       try {
-        // Strategy A: For same-origin images, try page-world first (has cookies)
+        const canUseTab = Boolean(message.tabId) && !shouldBypassTabFetch(message.url, message.referrer);
+
+        // Strategy A: Same-origin page-world fetch — uses page's cookies + correct
+        // headers natively. For cross-origin this fails CORS so we skip it.
         if (tabIsSameOrigin && message.tabId) {
           try {
             const pageWorldResource = await fetchBinaryViaPageWorld(
@@ -618,23 +621,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
           }
         }
 
-        // Strategy B: Background fetch with DNR-injected Referer header.
-        // This is the most reliable for cross-origin / protected images.
-        try {
-          return {
-            resource: serializeBinaryResource(
-              await fetchBinaryResource(normalizedUrl, {
-                referrer: normalizedReferrer || undefined,
-                headers: sanitizedHeaders,
-              })
-            ),
-          };
-        } catch (bgErr) {
-          console.debug('[NetsuPanel] Background binary fetch failed:', (bgErr as Error).message);
-        }
-
-        // Strategy C: Content-script fetch (different cookie jar than page-world)
-        if (message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
+        // Strategy B: Content-script fetch — runs in the tab so cookies for the
+        // image origin are available, and the extension's CORS bypass applies.
+        // First line of defence for Cloudflare-protected cross-origin CDNs.
+        if (canUseTab && message.tabId) {
           try {
             const contentResource = await fetchBinaryViaContentScript(
               message.tabId,
@@ -650,25 +640,22 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
           }
         }
 
-        // Strategy D: Page-world fetch for cross-origin (last resort — the page
-        // might have a broader session that works)
-        if (!tabIsSameOrigin && message.tabId && !shouldBypassTabFetch(message.url, message.referrer)) {
-          try {
-            const pageWorldResource = await fetchBinaryViaPageWorld(
-              message.tabId,
-              normalizedUrl,
-              normalizedReferrer || undefined,
-              sanitizedHeaders
-            );
-            return {
-              resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
-            };
-          } catch (pageWorldErr) {
-            console.debug('[NetsuPanel] Page-world binary fetch (cross-origin, last resort) failed:', (pageWorldErr as Error).message);
-          }
+        // Strategy C: Background fetch with DNR-rewritten Referer/Origin/Sec-Fetch-*.
+        // Used when the tab is gone or its fetches are blocked.
+        try {
+          return {
+            resource: serializeBinaryResource(
+              await fetchBinaryResource(normalizedUrl, {
+                referrer: normalizedReferrer || undefined,
+                headers: sanitizedHeaders,
+              })
+            ),
+          };
+        } catch (bgErr) {
+          console.debug('[NetsuPanel] Background binary fetch failed:', (bgErr as Error).message);
         }
 
-        // Strategy E: Background fetch without referrer (some CDNs reject wrong referrer)
+        // Strategy D: Background fetch without referrer (some CDNs 403 mismatched referrer).
         return {
           resource: serializeBinaryResource(
             await fetchBinaryResource(normalizedUrl, {
