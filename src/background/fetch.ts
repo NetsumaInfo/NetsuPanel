@@ -65,14 +65,6 @@ function allocateRuleId(): number {
   return nextRuleId;
 }
 
-function deriveOriginFromReferrer(referrer: string): string | null {
-  try {
-    return new URL(referrer).origin;
-  } catch {
-    return null;
-  }
-}
-
 function deriveFetchSite(referrer: string, targetUrl: string): 'same-origin' | 'same-site' | 'cross-site' {
   try {
     const refUrl = new URL(referrer);
@@ -87,33 +79,24 @@ function deriveFetchSite(referrer: string, targetUrl: string): 'same-origin' | '
   }
 }
 
-function escapeRegex(literal: string): string {
-  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 async function addReferrerRule(
   chromeApi: NonNullable<ReturnType<typeof getChromeDnrApi>>,
   ruleId: number,
   url: string,
   referrer: string
 ): Promise<void> {
-  const origin = deriveOriginFromReferrer(referrer);
   const fetchSite = deriveFetchSite(referrer, url);
-  const requestHeaders: Array<{ header: string; operation: 'set' | 'remove'; value?: string }> = [
+  // Mimic what a real <img> tag fetch sends. Critically: STRIP Origin so the
+  // request no longer carries `chrome-extension://…` (Cloudflare bot scoring
+  // auto-flags that). Real <img> tags omit Origin entirely for no-cors loads.
+  const requestHeaders = [
     { header: 'Referer', operation: 'set', value: referrer },
+    { header: 'Origin', operation: 'remove' },
     { header: 'Sec-Fetch-Site', operation: 'set', value: fetchSite },
     { header: 'Sec-Fetch-Mode', operation: 'set', value: 'no-cors' },
     { header: 'Sec-Fetch-Dest', operation: 'set', value: 'image' },
     { header: 'Sec-Fetch-User', operation: 'remove' },
-  ];
-  if (origin) {
-    // Cloudflare's bot scoring rejects Origin: chrome-extension://… ; set it to the
-    // referrer's origin so the request looks like a regular cross-site image fetch
-    // initiated from the source page.
-    requestHeaders.push({ header: 'Origin', operation: 'set', value: origin });
-  } else {
-    requestHeaders.push({ header: 'Origin', operation: 'remove' });
-  }
+  ] as const;
 
   await chromeApi.declarativeNetRequest.updateSessionRules({
     addRules: [
@@ -122,11 +105,11 @@ async function addReferrerRule(
         priority: 1,
         action: {
           type: 'modifyHeaders',
-          requestHeaders,
+          requestHeaders: requestHeaders.map((header) => ({ ...header })),
         },
         condition: {
           initiatorDomains: [chromeApi.runtime.id],
-          regexFilter: `^${escapeRegex(url)}$`,
+          urlFilter: `|${url}|`,
           resourceTypes: ['xmlhttprequest', 'image'],
         },
       },

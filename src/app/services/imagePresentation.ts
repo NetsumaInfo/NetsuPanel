@@ -1,5 +1,5 @@
 import type { CaptureStrategy, ImageResolveMode } from '@shared/types';
-import { isKnownImageProxyUrl, isPlaceholderImageUrl, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
+import { isKnownImageProxyUrl, isPlaceholderImageUrl, isProtectedImageHost, shouldPreserveImageProxyUrl, unwrapProxiedImageUrl } from '@shared/utils/url';
 
 interface ImagePresentationInput {
   url: string;
@@ -62,6 +62,14 @@ export function resolveCandidateImageMode(candidate: ImagePresentationInput): Im
   }
 
   if (isKnownImageProxyUrl(src)) {
+    return 'network-first';
+  }
+
+  // Known Cloudflare-protected hosts: skip native <img> attempt (the extension
+  // origin has no cf_clearance cookie, so it always 403/4xxs first). Go
+  // straight to the background fetch cascade which uses the source-tab cookies
+  // and DNR header rewrite.
+  if (isProtectedImageHost(src)) {
     return 'network-first';
   }
 

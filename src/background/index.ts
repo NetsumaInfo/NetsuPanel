@@ -546,14 +546,14 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
             const pageWorldDocument = await fetchDocumentViaPageWorld(message.tabId, message.url, message.referrer);
             return { html: pageWorldDocument.html };
           } catch (pageWorldErr) {
-            console.debug('[NetsuPanel] Page-world document fetch failed:', (pageWorldErr as Error).message);
+            console.warn('[NetsuPanel] Page-world document fetch failed:', (pageWorldErr as Error).message);
             try {
               const contentDocument = await fetchDocumentViaContentScript(message.tabId, message.url, message.referrer);
               return {
                 html: (contentDocument as { html: string }).html,
               };
             } catch (contentErr) {
-              console.debug('[NetsuPanel] Content-script document fetch failed:', (contentErr as Error).message);
+              console.warn('[NetsuPanel] Content-script document fetch failed:', (contentErr as Error).message);
             }
           }
         }
@@ -617,7 +617,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
               resource: serializeBinaryResource(await validateFetchedResource(pageWorldResource)),
             };
           } catch (pageWorldErr) {
-            console.debug('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
+            console.warn('[NetsuPanel] Page-world binary fetch failed:', (pageWorldErr as Error).message);
           }
         }
 
@@ -636,7 +636,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
               resource: serializeBinaryResource(await validateFetchedResource(contentResource)),
             };
           } catch (contentErr) {
-            console.debug('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
+            console.warn('[NetsuPanel] Content-script binary fetch failed:', (contentErr as Error).message);
           }
         }
 
@@ -652,7 +652,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeRequest, sender: un
             ),
           };
         } catch (bgErr) {
-          console.debug('[NetsuPanel] Background binary fetch failed:', (bgErr as Error).message);
+          console.warn('[NetsuPanel] Background binary fetch failed:', (bgErr as Error).message);
         }
 
         // Strategy D: Background fetch without referrer (some CDNs 403 mismatched referrer).

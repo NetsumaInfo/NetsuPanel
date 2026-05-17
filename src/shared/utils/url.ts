@@ -61,6 +61,46 @@ export function isKnownImageProxyUrl(input: string): boolean {
   );
 }
 
+// Hosts/host-suffixes that are known to sit behind Cloudflare hotlink / bot
+// protection or require the page's session cookies to deliver image bytes.
+// When the source URL matches, SafeImage skips the native <img> attempt and
+// goes straight to the fetch cascade (background DNR + content-script).
+const PROTECTED_IMAGE_HOST_PATTERNS: RegExp[] = [
+  /(?:^|\.)asuracomic\.net$/i,
+  /(?:^|\.)asurascans?\.(?:com|net)$/i,
+  /(?:^|\.)flamecomics?\.(?:xyz|com|net|io)$/i,
+  /(?:^|\.)astral-?manga\.(?:fr|com|net)$/i,
+  /(?:^|\.)raijin-?scans?\.(?:fr|com|net)$/i,
+  /(?:^|\.)rimu-?scans?\.(?:fr|com|net)$/i,
+  /(?:^|\.)poseidon-?scans?\.(?:co|com|net|fr)$/i,
+  /(?:^|\.)en-?thunderscans?\.com$/i,
+  /(?:^|\.)sushiscan\.(?:fr|net|com|su)$/i,
+  /(?:^|\.)scan-?manga\.com$/i,
+  /(?:^|\.)mangaball\.net$/i,
+  /(?:^|\.)mangabuddy\.com$/i,
+  /(?:^|\.)mangago\.me$/i,
+  /(?:^|\.)utoon\.net$/i,
+  /(?:^|\.)manhwaclan\.com$/i,
+  /(?:^|\.)vymanga\.com$/i,
+  /(?:^|\.)kunmanga\.com$/i,
+  /(?:^|\.)arenascan\.com$/i,
+  /(?:^|\.)amiactuallythestrongest\.com$/i,
+  /(?:^|\.)ibecamethemalelead\.com$/i,
+  /(?:^|\.)manhuaus\.com$/i,
+  /(?:^|\.)mangaread\.org$/i,
+  /(?:^|\.)galaxymanga\.io$/i,
+  /(?:^|\.)everythingmoe\.com$/i,
+  // Known CDN sub-hosts used by the families above.
+  /(?:^|\.)gg\.asuracomic\.net$/i,
+  /(?:^|\.)cdn\.flamecomics\.(?:xyz|com|net|io)$/i,
+];
+
+export function isProtectedImageHost(input: string): boolean {
+  const parsed = safeUrl(input);
+  if (!parsed) return false;
+  return PROTECTED_IMAGE_HOST_PATTERNS.some((re) => re.test(parsed.hostname));
+}
+
 export function shouldPreserveImageProxyUrl(input: string): boolean {
   const parsed = safeUrl(input);
   if (!parsed) return false;
