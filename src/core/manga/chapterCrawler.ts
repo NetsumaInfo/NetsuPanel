@@ -18,6 +18,7 @@ import { detectPageStrategy } from '@core/detection/pageStrategy';
 import { scanPageDocument } from '@core/detection/scanPage';
 import { isLikelyDecorative } from '@core/detection/pipeline/scoreImageCandidate';
 import { buildImageCollection } from '@core/detection/pipeline/imageCandidatePipeline';
+import { discoverHakuNekoChapters } from './hakunekoChapterBridge';
 
 export interface ChapterCrawlerDependencies {
   fetchDocument(url: string, options?: { referrer?: string; tabId?: number }): Promise<string>;
@@ -1107,6 +1108,21 @@ export async function discoverChapters(
 
   const mangaDexChapters = await discoverMangaDexChapters(initialScan, dependencies, fetchOptions, context.deadline);
   mangaDexChapters.forEach((chapter) => addChapterItem(accumulator, chapter));
+
+  // HakuNeko-template fast path: when the host matches a known connector,
+  // use the template's getChapters to seed the list before generic heuristics.
+  if (Date.now() <= context.deadline) {
+    try {
+      const hakunekoChapters = await discoverHakuNekoChapters(initialScan.page.url, {
+        fetchDocument: dependencies.fetchDocument,
+        referrer: fetchOptions.referrer,
+        tabId: fetchOptions.tabId,
+      });
+      hakunekoChapters.forEach((chapter) => addChapterItem(accumulator, chapter));
+    } catch {
+      // Template path failed — continue with generic flow.
+    }
+  }
 
   const fetchAndMergeListingPage = async (
     pageUrl: string,

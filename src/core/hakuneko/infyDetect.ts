@@ -283,7 +283,7 @@ function checkElementKeywords(
       }
     }
   }
-  const innerText = (element as HTMLElement).innerText;
+  const innerText = (element as HTMLElement).innerText || element.textContent || '';
   if (innerText) {
     parseText(
       urls,
