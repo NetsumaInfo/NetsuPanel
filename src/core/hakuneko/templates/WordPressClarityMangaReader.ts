@@ -24,17 +24,17 @@ export const WordPressClarityMangaReaderTemplate: HakuNekoTemplate = {
     const uri = new URL(manga.id, ctx.connector.url);
     const elements = (await ctx.fetchDOM({ url: uri.href }, selector)) as HTMLElement[];
 
-    return elements
-      .map((element) => {
-        const ref = element.dataset?.ref;
-        if (!ref) return null;
-        return {
-          id: ctx.getRootRelativeOrAbsoluteLink(ref, uri.href),
-          title: (element.textContent || '').replace(manga.title, '').trim(),
-          language: '',
-        };
-      })
-      .filter((c): c is HakuNekoChapter => c !== null);
+    const out: HakuNekoChapter[] = [];
+    for (const element of elements) {
+      const ref = element.dataset?.ref;
+      if (!ref) continue;
+      out.push({
+        id: ctx.getRootRelativeOrAbsoluteLink(ref, uri.href),
+        title: (element.textContent || '').replace(manga.title, '').trim(),
+        language: '',
+      });
+    }
+    return out;
   },
 
   async getPages(chapter: HakuNekoChapter, ctx: HakuNekoContext): Promise<HakuNekoPage[]> {

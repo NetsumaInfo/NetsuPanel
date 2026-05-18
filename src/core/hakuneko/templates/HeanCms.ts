@@ -53,7 +53,7 @@ function deProxifyStatically(uri: string): string {
 }
 
 function getApi(ctx: HakuNekoContext): string {
-  const o = (ctx.connector.overrides || {}) as HeanCmsOverrides;
+  const o = (ctx.connector.overrides || {}) as Partial<HeanCmsOverrides>;
   if (!o.api) throw new Error('HeanCms requires overrides.api');
   return o.api;
 }

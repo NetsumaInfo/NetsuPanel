@@ -14,20 +14,20 @@ export const GenkanTemplate: HakuNekoTemplate = {
   async getChapters(manga: HakuNekoManga, ctx: HakuNekoContext): Promise<HakuNekoChapter[]> {
     const uri = new URL(manga.id, ctx.connector.url);
     const elements = (await ctx.fetchDOM({ url: uri.href }, DEFAULT_QUERY_CHAPTER_ROW)) as HTMLElement[];
-    return elements
-      .map((element) => {
-        const link = element.querySelector<HTMLAnchorElement>('a.item-author');
-        const numberEl = element.querySelector<HTMLElement>('span.text-muted');
-        if (!link) return null;
-        const num = (numberEl?.textContent || '').trim();
-        const title = (link.textContent || '').replace(manga.title, '').trim();
-        return {
-          id: ctx.getRootRelativeOrAbsoluteLink(link, uri.href),
-          title: num ? `${num} - ${title}` : title,
-          language: '',
-        };
-      })
-      .filter((c): c is HakuNekoChapter => c !== null);
+    const out: HakuNekoChapter[] = [];
+    for (const element of elements) {
+      const link = element.querySelector<HTMLAnchorElement>('a.item-author');
+      const numberEl = element.querySelector<HTMLElement>('span.text-muted');
+      if (!link) continue;
+      const num = (numberEl?.textContent || '').trim();
+      const title = (link.textContent || '').replace(manga.title, '').trim();
+      out.push({
+        id: ctx.getRootRelativeOrAbsoluteLink(link, uri.href),
+        title: num ? `${num} - ${title}` : title,
+        language: '',
+      });
+    }
+    return out;
   },
 
   async getPages(chapter: HakuNekoChapter, ctx: HakuNekoContext): Promise<HakuNekoPage[]> {
